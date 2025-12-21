@@ -1,0 +1,89 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+
+# Common additional Python ignores
+*.py[cod]
+*$py.class
+*.so
+*.dylib
+*.egg
+*.egg-info/
+pip-wheel-metadata/
+__pypackages__/
+
+# Virtual environments
+env/
+venv/
+ENV/
+.venv/
+venv.bak/
+
+# Distribution / packaging
+dist/
+build/
+wheels/
+sdist/
+eggs/
+parts/
+target/
+
+# Installer / pip
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Django / Flask / databases
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+instance/
+.webassets-cache
+
+# Jupyter / IPython
+.ipynb_checkpoints
+profile_default/
+ipython_config.py
+
+# Sphinx / docs
+docs/_build/
+
+# Logs
+*.log
+
+# IDEs / editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+
+# OS files
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.Trashes
+Icon
+
+# Editor swap/tmp files
+*~
+*.swp
+*.swo
+.*.swp
