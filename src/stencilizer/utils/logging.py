@@ -19,6 +19,9 @@ class ProcessingStats:
     errors: list[tuple[str, str]] = field(default_factory=list)
     start_time: float | None = None
     end_time: float | None = None
+    glyph_timings_ms: list[float] = field(default_factory=list)
+    cancelled_count: int = 0
+    was_cancelled: bool = False
 
     @property
     def duration_seconds(self) -> float:
@@ -26,6 +29,23 @@ class ProcessingStats:
         if self.start_time and self.end_time:
             return self.end_time - self.start_time
         return 0.0
+
+    @property
+    def min_glyph_time_ms(self) -> float | None:
+        """Minimum per-glyph processing time."""
+        return min(self.glyph_timings_ms) if self.glyph_timings_ms else None
+
+    @property
+    def max_glyph_time_ms(self) -> float | None:
+        """Maximum per-glyph processing time."""
+        return max(self.glyph_timings_ms) if self.glyph_timings_ms else None
+
+    @property
+    def avg_glyph_time_ms(self) -> float | None:
+        """Average per-glyph processing time."""
+        if not self.glyph_timings_ms:
+            return None
+        return sum(self.glyph_timings_ms) / len(self.glyph_timings_ms)
 
 
 def configure_logging(

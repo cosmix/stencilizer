@@ -11,6 +11,9 @@ import typer
 from stencilizer import __version__
 from stencilizer.cli.output import (
     console,
+    create_progress,
+    print_cancellation_notice,
+    print_cancellation_summary,
     print_error,
     print_font_info,
     print_header,
@@ -286,36 +289,70 @@ def stencilize(
         if not quiet:
             print_step(3, 4, "Adding bridges...")
             console.print(f"      Using {workers if workers else 'auto'} parallel workers")
+            console.print("      [dim]Press Ctrl+C to cancel[/dim]")
+
+        # Determine output path early for cancellation handling
+        if output is None:
+            from stencilizer.io import FontWriter
+
+            actual_output_path = FontWriter.get_stenciled_path(input_font)
+        else:
+            actual_output_path = output
 
         processor = FontProcessor(settings)
-        stats = processor.process(
-            font_path=input_font,
-            output_path=output,
-            max_workers=workers,
-        )
+        stats = None
+
+        try:
+            if not quiet:
+                with create_progress() as progress:
+                    task_id = progress.add_task(
+                        f"Processing {len(island_glyphs)} glyphs",
+                        total=len(island_glyphs),
+                    )
+
+                    def update_progress(
+                        completed: int, _total: int, _glyph_name: str, _success: bool
+                    ) -> None:
+                        progress.update(task_id, completed=completed)
+
+                    stats = processor.process(
+                        font_path=input_font,
+                        output_path=actual_output_path,
+                        max_workers=workers,
+                        progress_callback=update_progress,
+                    )
+            else:
+                stats = processor.process(
+                    font_path=input_font,
+                    output_path=actual_output_path,
+                    max_workers=workers,
+                )
+        except KeyboardInterrupt:
+            if not quiet:
+                print_cancellation_notice()
+                print_cancellation_summary(
+                    processed=stats.processed_count if stats else 0,
+                    cancelled=stats.cancelled_count if stats else 0,
+                )
+            raise typer.Exit(code=130) from None  # Standard Unix SIGINT exit code
 
         if not quiet:
             print_processing_summary(
                 processed=stats.processed_count,
                 bridges=stats.bridges_added,
                 errors=stats.error_count,
+                avg_time_ms=stats.avg_glyph_time_ms,
+                min_time_ms=stats.min_glyph_time_ms,
+                max_time_ms=stats.max_glyph_time_ms,
             )
 
-        # Determine output path
-        if output is None:
-            from stencilizer.io import FontWriter
-
-            output_path = FontWriter.get_stenciled_path(input_font)
-        else:
-            output_path = output
-
         # Get file size
-        file_size = _format_file_size(output_path)
+        file_size = _format_file_size(actual_output_path)
 
         if not quiet:
             print_step(4, 4, "Saving font...")
             print_success(
-                output_path=str(output_path),
+                output_path=str(actual_output_path),
                 file_size=file_size,
             )
 
@@ -430,7 +467,7 @@ def _handle_dry_run(
         reader.close()
 
         if not quiet:
-            console.print(f"\n[bold]Dry run analysis:[/bold]\n")
+            console.print("\n[bold]Dry run analysis:[/bold]\n")
             console.print(f"  Glyphs with islands: [cyan]{len(island_glyphs)}[/cyan]")
             console.print(f"  Total islands: [cyan]{total_islands}[/cyan]")
             console.print(
@@ -442,7 +479,7 @@ def _handle_dry_run(
             )
 
             if verbose and island_glyphs:
-                console.print(f"\n[bold]Glyphs to process:[/bold]")
+                console.print("\n[bold]Glyphs to process:[/bold]")
                 for glyph_name, island_count in island_glyphs[:20]:
                     plural = "island" if island_count == 1 else "islands"
                     console.print(f"  {glyph_name}: {island_count} {plural}")

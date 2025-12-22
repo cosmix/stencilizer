@@ -10,9 +10,10 @@ Key components:
 
 import time
 import traceback
+from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from stencilizer.config import BridgeConfig, StencilizerSettings
 from stencilizer.core.analyzer import GlyphAnalyzer
@@ -42,9 +43,11 @@ def process_glyph(
 
     Returns:
         Dictionary containing either:
-        - Success: {"glyph": glyph_dict, "bridges_added": int}
-        - Error: {"error": str, "glyph_name": str, "traceback": str}
+        - Success: {"glyph": glyph_dict, "bridges_added": int, "duration_ms": float}
+        - Error: {"error": str, "glyph_name": str, "traceback": str, "duration_ms": float}
     """
+    start_time = time.time()
+
     try:
         # Deserialize glyph
         glyph = Glyph.from_dict(glyph_dict)
@@ -76,18 +79,22 @@ def process_glyph(
         # Count bridges as the number of islands we processed
         bridges_added = original_island_count
 
+        duration_ms = (time.time() - start_time) * 1000
         return {
             "glyph": transformed_glyph.to_dict(),
             "bridges_added": bridges_added,
+            "duration_ms": duration_ms,
         }
 
     except Exception as e:
         # Capture full traceback for debugging
+        duration_ms = (time.time() - start_time) * 1000
         tb = traceback.format_exc()
         return {
             "error": str(e),
             "glyph_name": glyph_dict.get("metadata", {}).get("name", "unknown"),
             "traceback": tb,
+            "duration_ms": duration_ms,
         }
 
 
@@ -112,7 +119,7 @@ class FontProcessor:
     """
 
     # Reference glyphs for calculating stroke width (in priority order)
-    REFERENCE_GLYPHS = ["H", "I", "l", "O", "o", "zero"]
+    REFERENCE_GLYPHS: ClassVar[list[str]] = ["H", "I", "l", "O", "o", "zero"]
 
     def __init__(self, config: StencilizerSettings) -> None:
         """Initialize font processor with configuration.
@@ -223,6 +230,7 @@ class FontProcessor:
         font_path: Path,
         output_path: Path | None = None,
         max_workers: int | None = None,
+        progress_callback: Callable[[int, int, str, bool], None] | None = None,
     ) -> ProcessingStats:
         """Process a font file with parallel glyph processing.
 
@@ -230,6 +238,8 @@ class FontProcessor:
             font_path: Path to input font file (TTF or OTF)
             output_path: Path for output font (auto-generated if None)
             max_workers: Maximum worker processes (None = auto-detect)
+            progress_callback: Optional callback(completed, total, glyph_name, success)
+                for progress updates
 
         Returns:
             ProcessingStats with counts, timing, and error details
@@ -237,6 +247,7 @@ class FontProcessor:
         Raises:
             FileNotFoundError: If font file does not exist
             ValueError: If font format is not supported
+            KeyboardInterrupt: If processing is cancelled by user
         """
         # Initialize stats
         stats = ProcessingStats()
@@ -315,6 +326,7 @@ class FontProcessor:
             reference_stroke_width = self._calculate_reference_stroke_width(all_glyphs, upm)
 
             # Process glyphs in parallel
+            processed_glyphs: dict[str, Glyph] = {}
             if glyphs_to_process:
                 processed_glyphs = self._process_glyphs_parallel(
                     glyphs=glyphs_to_process,
@@ -322,9 +334,9 @@ class FontProcessor:
                     max_workers=max_workers,
                     stats=stats,
                     reference_stroke_width=reference_stroke_width,
+                    progress_callback=progress_callback,
                 )
             else:
-                processed_glyphs = {}
                 self.logger.info("No glyphs to process")
 
             # Save modified font
@@ -358,6 +370,7 @@ class FontProcessor:
         max_workers: int | None,
         stats: ProcessingStats,
         reference_stroke_width: float,
+        progress_callback: Callable[[int, int, str, bool], None] | None = None,
     ) -> dict[str, Glyph]:
         """Process glyphs in parallel using ProcessPoolExecutor.
 
@@ -367,6 +380,8 @@ class FontProcessor:
             max_workers: Maximum worker processes
             stats: Statistics object to update
             reference_stroke_width: Reference stroke width for consistent bridges
+            progress_callback: Optional callback(completed, total, glyph_name, success)
+                for progress updates
 
         Returns:
             Dictionary mapping glyph names to transformed glyphs
@@ -389,58 +404,86 @@ class FontProcessor:
         )
 
         # Process in parallel
+        total = len(tasks)
+        completed = 0
+        pending_futures: dict = {}
+
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             # Submit all tasks
-            future_to_name = {
-                executor.submit(
+            for name, glyph_dict in tasks.items():
+                future = executor.submit(
                     process_glyph,
                     glyph_dict,
                     config_dict,
                     upm,
                     reference_stroke_width,
-                ): name
-                for name, glyph_dict in tasks.items()
-            }
+                )
+                pending_futures[future] = name
 
-            # Collect results as they complete
-            for future in as_completed(future_to_name):
-                glyph_name = future_to_name[future]
+            try:
+                # Collect results as they complete
+                for future in as_completed(pending_futures):
+                    glyph_name = pending_futures.pop(future)
+                    success = False
 
-                try:
-                    result = future.result()
+                    try:
+                        result = future.result()
 
-                    if "error" in result:
-                        # Processing error
+                        if "error" in result:
+                            # Processing error
+                            self.processing_logger.log_glyph_error(
+                                glyph_name=result["glyph_name"],
+                                error=Exception(result["error"]),
+                                traceback=result.get("traceback"),
+                            )
+                            stats.error_count += 1
+                        else:
+                            # Success
+                            success = True
+                            transformed_glyph = Glyph.from_dict(result["glyph"])
+                            processed_glyphs[glyph_name] = transformed_glyph
+
+                            bridges_added = result["bridges_added"]
+                            stats.processed_count += 1
+                            stats.bridges_added += bridges_added
+
+                            duration_ms = result.get("duration_ms", 0.0)
+                            self.processing_logger.log_glyph_complete(
+                                glyph_name=glyph_name,
+                                bridges_added=bridges_added,
+                                duration_ms=duration_ms,
+                            )
+                            stats.glyph_timings_ms.append(duration_ms)
+
+                    except Exception as e:
+                        # Executor-level error
+                        tb = traceback.format_exc()
                         self.processing_logger.log_glyph_error(
-                            glyph_name=result["glyph_name"],
-                            error=Exception(result["error"]),
-                            traceback=result.get("traceback"),
+                            glyph_name=glyph_name,
+                            error=e,
+                            traceback=tb,
                         )
                         stats.error_count += 1
-                    else:
-                        # Success
-                        transformed_glyph = Glyph.from_dict(result["glyph"])
-                        processed_glyphs[glyph_name] = transformed_glyph
 
-                        bridges_added = result["bridges_added"]
-                        stats.processed_count += 1
-                        stats.bridges_added += bridges_added
+                    # Update progress
+                    completed += 1
+                    if progress_callback is not None:
+                        progress_callback(completed, total, glyph_name, success)
 
-                        self.processing_logger.log_glyph_complete(
-                            glyph_name=glyph_name,
-                            bridges_added=bridges_added,
-                            duration_ms=0.0,  # Not tracked per-glyph in parallel mode
-                        )
+            except KeyboardInterrupt:
+                # Cancel pending futures
+                self.logger.info("Cancellation requested by user")
+                cancelled_count = 0
+                for f in pending_futures:
+                    if f.cancel():
+                        cancelled_count += 1
 
-                except Exception as e:
-                    # Executor-level error
-                    tb = traceback.format_exc()
-                    self.processing_logger.log_glyph_error(
-                        glyph_name=glyph_name,
-                        error=e,
-                        traceback=tb,
-                    )
-                    stats.error_count += 1
+                stats.was_cancelled = True
+                stats.cancelled_count = len(pending_futures)
+
+                # Shutdown executor with cancel_futures=True (Python 3.9+)
+                executor.shutdown(wait=True, cancel_futures=True)
+                raise
 
         return processed_glyphs
 

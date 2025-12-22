@@ -104,3 +104,14 @@ class BridgeGenerationError(BridgeError):
     def __init__(self, reason: str) -> None:
         self.reason = reason
         super().__init__(f"Bridge generation failed: {reason}")
+
+
+class ProcessingCancelledError(StencilizerError):
+    """Processing was cancelled by user."""
+
+    def __init__(self, processed_count: int, pending_count: int) -> None:
+        self.processed_count = processed_count
+        self.pending_count = pending_count
+        super().__init__(
+            f"Processing cancelled: {processed_count} completed, {pending_count} pending"
+        )
