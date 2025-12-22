@@ -134,9 +134,9 @@ class TestFontWriter:
     def test_get_stenciled_path(self):
         """Test get_stenciled_path static method."""
         test_cases = [
-            (Path("font.ttf"), Path("font-stenciled.ttf")),
-            (Path("Roboto-Regular.otf"), Path("Roboto-Regular-stenciled.otf")),
-            (Path("/path/to/MyFont.ttf"), Path("/path/to/MyFont-stenciled.ttf")),
+            (Path("font.ttf"), Path("font-Stenciled.ttf")),
+            (Path("Roboto-Regular.otf"), Path("Roboto-Regular-Stenciled.otf")),
+            (Path("/path/to/MyFont.ttf"), Path("/path/to/MyFont-Stenciled.ttf")),
         ]
 
         for input_path, expected_output in test_cases:

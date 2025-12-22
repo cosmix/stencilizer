@@ -66,7 +66,7 @@ stencilizer input.ttf
 # Specify output path
 stencilizer input.ttf -o output.ttf
 
-# Adjust bridge width (30-90% of stroke width)
+# Adjust bridge width (30-110% of stroke width)
 stencilizer input.ttf --bridge-width 70
 
 # Set minimum bridges per island
@@ -128,9 +128,7 @@ stencilizer input.ttf --log-level DEBUG
 
 ## Configuration
 
-Configuration is controlled via CLI options (see the usage examples above). The CLI
-does not read environment variables, so pass any desired settings as flags when invoking
-`stencilizer`.
+Configuration is controlled via CLI options (see the usage examples above).
 
 If you are using Stencilizer as a library, create a `StencilizerSettings` instance and set
 values directly before passing it to the processor:
@@ -262,7 +260,7 @@ Some fonts may not have enclosed contours. Use `--list-islands` to check which g
 
 ### Bridge width too wide/narrow
 
-Adjust the `--bridge-width` parameter (range: 30-90% of stroke width). Default is 60%.
+Adjust the `--bridge-width` parameter (range: 30-110% of stroke width). Default is 60%.
 
 ### Processing errors
 

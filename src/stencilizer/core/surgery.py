@@ -23,6 +23,191 @@ class ContourMerger:
     that reach the inner contour, creating clean bridge gaps.
     """
 
+    def _compute_winding_direction(self, points: list[Point]) -> WindingDirection:
+        """Compute winding direction from signed area of points.
+
+        Uses the shoelace formula to calculate signed area. Positive area
+        indicates clockwise winding, negative indicates counter-clockwise.
+
+        Args:
+            points: List of points forming a closed contour
+
+        Returns:
+            WindingDirection.CLOCKWISE or WindingDirection.COUNTER_CLOCKWISE
+        """
+        if len(points) < 3:
+            return WindingDirection.CLOCKWISE
+
+        # Shoelace formula for signed area
+        area = 0.0
+        n = len(points)
+        for i in range(n):
+            j = (i + 1) % n
+            area += points[i].x * points[j].y
+            area -= points[j].x * points[i].y
+        area /= 2.0
+
+        # Positive area = clockwise, negative = counter-clockwise
+        if area >= 0:
+            return WindingDirection.CLOCKWISE
+        else:
+            return WindingDirection.COUNTER_CLOCKWISE
+
+    def _compute_winding_at_point(
+        self, x: float, y: float, contours: list[Contour]
+    ) -> int:
+        """Compute winding number at a point for a set of contours.
+
+        Uses ray casting to count signed crossings.
+
+        Args:
+            x: X coordinate of point
+            y: Y coordinate of point
+            contours: List of contours to check
+
+        Returns:
+            Winding number (0 = outside, non-zero = inside)
+        """
+        winding = 0
+
+        for contour in contours:
+            points = contour.points
+            n = len(points)
+
+            for i in range(n):
+                p1 = points[i]
+                p2 = points[(i + 1) % n]
+
+                # Check if edge crosses the horizontal ray from (x, y) going right
+                if p1.y <= y < p2.y:  # Upward crossing
+                    # Compute x-coordinate of intersection
+                    t = (y - p1.y) / (p2.y - p1.y)
+                    x_intersect = p1.x + t * (p2.x - p1.x)
+                    if x < x_intersect:
+                        winding += 1
+                elif p2.y <= y < p1.y:  # Downward crossing
+                    t = (y - p1.y) / (p2.y - p1.y)
+                    x_intersect = p1.x + t * (p2.x - p1.x)
+                    if x < x_intersect:
+                        winding -= 1
+
+        return winding
+
+    def _is_bridge_path_clear(
+        self,
+        start_x: float,
+        start_y: float,
+        end_x: float,
+        end_y: float,
+        inner: Contour,
+        outer: Contour,
+        all_contours: list[Contour] | None = None,
+    ) -> bool:
+        """Check if a bridge path is clear of obstructions.
+
+        A bridge path is blocked if it intersects any contour OTHER than
+        the inner and outer contours being merged. This catches cases like
+        Theta where the horizontal bar blocks horizontal bridges.
+
+        Args:
+            start_x, start_y: Start point (on inner contour)
+            end_x, end_y: End point (on outer contour)
+            inner: Inner contour (island)
+            outer: Outer contour
+            all_contours: All contours in glyph (for obstruction check)
+
+        Returns:
+            True if path is clear, False if obstructed
+        """
+        if all_contours is None:
+            return True  # Can't check without all contours
+
+        # Check each "other" contour (not inner or outer) for intersection
+        for contour in all_contours:
+            if contour is inner or contour is outer:
+                continue  # Skip the contours we're merging
+
+            # Check if the bridge line segment intersects this contour
+            if self._line_intersects_contour(
+                start_x, start_y, end_x, end_y, contour
+            ):
+                return False  # Blocked by this contour
+
+        return True
+
+    def _line_intersects_contour(
+        self,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        contour: Contour,
+    ) -> bool:
+        """Check if a line segment intersects a contour.
+
+        Args:
+            x1, y1: Start point of line
+            x2, y2: End point of line
+            contour: Contour to check intersection with
+
+        Returns:
+            True if line intersects contour edges
+        """
+        points = contour.points
+        n = len(points)
+
+        for i in range(n):
+            p1 = points[i]
+            p2 = points[(i + 1) % n]
+
+            if self._segments_intersect(x1, y1, x2, y2, p1.x, p1.y, p2.x, p2.y):
+                return True
+
+        return False
+
+    def _segments_intersect(
+        self,
+        ax1: float, ay1: float, ax2: float, ay2: float,
+        bx1: float, by1: float, bx2: float, by2: float,
+    ) -> bool:
+        """Check if two line segments intersect.
+
+        Uses cross product method to determine intersection.
+        """
+        def cross(o_x: float, o_y: float, a_x: float, a_y: float, b_x: float, b_y: float) -> float:
+            return (a_x - o_x) * (b_y - o_y) - (a_y - o_y) * (b_x - o_x)
+
+        d1 = cross(bx1, by1, bx2, by2, ax1, ay1)
+        d2 = cross(bx1, by1, bx2, by2, ax2, ay2)
+        d3 = cross(ax1, ay1, ax2, ay2, bx1, by1)
+        d4 = cross(ax1, ay1, ax2, ay2, bx2, by2)
+
+        # Check if segments straddle each other (strictly)
+        # Use strict inequality to avoid false positives at endpoints
+        return d1 * d2 < 0 and d3 * d4 < 0
+
+    def _is_bridge_length_valid(
+        self,
+        inner_x: float,
+        inner_y: float,
+        outer_x: float,
+        outer_y: float,
+        max_length: float,
+    ) -> bool:
+        """Check if bridge length is within acceptable bounds.
+
+        Args:
+            inner_x, inner_y: Point on inner contour
+            outer_x, outer_y: Point on outer contour
+            max_length: Maximum acceptable bridge length
+
+        Returns:
+            True if length is acceptable, False if too long
+        """
+        import math
+        length = math.hypot(outer_x - inner_x, outer_y - inner_y)
+        return length <= max_length
+
     def find_contour_bounds(self, contour: Contour) -> tuple[float, float, float, float]:
         """Find bounding box of contour (min_x, min_y, max_x, max_y)."""
         xs = [p.x for p in contour.points]
@@ -84,19 +269,19 @@ class ContourMerger:
             if constraint_max is not None and other >= constraint_max:
                 continue
 
-            # Keep track of best - we want the CLOSEST crossing to the constraint boundary
-            # For constraint_min: want the MINIMUM other that satisfies constraint (closest to inner)
-            # For constraint_max: want the MAXIMUM other that satisfies constraint (closest to inner)
+            # Keep track of best crossing - we want the NEAREST valid crossing to the inner
+            # For constraint_min (finding RIGHT/TOP): want SMALLEST other > constraint_min (nearest from right/top)
+            # For constraint_max (finding LEFT/BOTTOM): want LARGEST other < constraint_max (nearest from left/bottom)
             if best is None:
                 best = (i, other, t)
                 best_other = other
             else:
                 if constraint_min is not None and best_other is not None and other < best_other:
-                    # Want smallest Y that's still > constraint_min (closest to inner_max_y)
+                    # Want smallest value > constraint_min (nearest to inner from right/top)
                     best = (i, other, t)
                     best_other = other
                 elif constraint_max is not None and best_other is not None and other > best_other:
-                    # Want largest Y that's still < constraint_max (closest to inner_min_y)
+                    # Want largest value < constraint_max (nearest to inner from left/bottom)
                     best = (i, other, t)
                     best_other = other
 
@@ -108,6 +293,8 @@ class ContourMerger:
         outer: Contour,
         bridge_width: float,
         force_horizontal: bool = False,
+        force_vertical: bool = False,
+        all_contours: list[Contour] | None = None,
     ) -> list[Contour]:
         """Merge outer and inner contours with bridge gaps.
 
@@ -118,7 +305,9 @@ class ContourMerger:
             inner: Inner contour (island/hole)
             outer: Outer contour (parent)
             bridge_width: Width of each bridge
-            force_horizontal: If True, only use horizontal bridges (for multi-island cases)
+            force_horizontal: If True, prefer horizontal bridges (TOP/BOTTOM pieces)
+            force_vertical: If True, prefer vertical bridges (LEFT/RIGHT pieces)
+            all_contours: All contours in the glyph (for obstruction checking)
 
         Returns:
             List of new contours (replacing both outer and inner)
@@ -146,6 +335,11 @@ class ContourMerger:
         horizontal_stroke = min(stroke_left, stroke_right)
         vertical_stroke = min(stroke_top, stroke_bottom)
 
+        # Maximum bridge length - bridges longer than this indicate
+        # the path goes through complex geometry (stems, bars, etc.)
+        # Use 3x the minimum stroke as threshold
+        max_bridge_length = max(min(stroke_left, stroke_right, stroke_top, stroke_bottom) * 3, 400)
+
         # Check which orientations are geometrically possible
         can_vertical = (
             vertical_stroke >= min_stroke
@@ -160,11 +354,102 @@ class ContourMerger:
             and horizontal_stroke <= max_stroke_h
         )
 
+        # Find ACTUAL crossing points for bridges and validate them
+        # This is critical - we must use real crossing points, not bounding box!
+
+        # Variables to store actual crossing points for later use
+        h_outer_left_x: float | None = None
+        h_outer_right_x: float | None = None
+        v_outer_top_y: float | None = None
+        v_outer_bottom_y: float | None = None
+
+        # Validate horizontal bridges using actual crossings
+        if can_horizontal:
+            # Find where horizontal bridges would actually cross the outer contour
+            outer_left_crossing = self.find_edge_crossing(
+                outer, center_y, False, constraint_max=inner_min_x
+            )
+            outer_right_crossing = self.find_edge_crossing(
+                outer, center_y, False, constraint_min=inner_max_x
+            )
+
+            if outer_left_crossing and outer_right_crossing:
+                h_outer_left_x = outer_left_crossing[1]
+                h_outer_right_x = outer_right_crossing[1]
+
+                # Check bridge lengths
+                left_bridge_len = inner_min_x - h_outer_left_x
+                right_bridge_len = h_outer_right_x - inner_max_x
+
+                if left_bridge_len > max_bridge_length or right_bridge_len > max_bridge_length:
+                    can_horizontal = False
+                elif left_bridge_len < 0 or right_bridge_len < 0:
+                    # Crossing is on wrong side - invalid
+                    can_horizontal = False
+            else:
+                can_horizontal = False
+
+        # Validate vertical bridges using actual crossings
+        if can_vertical:
+            # Find where vertical bridges would actually cross the outer contour
+            outer_top_crossing = self.find_edge_crossing(
+                outer, center_x, True, constraint_min=inner_max_y
+            )
+            outer_bottom_crossing = self.find_edge_crossing(
+                outer, center_x, True, constraint_max=inner_min_y
+            )
+
+            if outer_top_crossing and outer_bottom_crossing:
+                v_outer_top_y = outer_top_crossing[1]
+                v_outer_bottom_y = outer_bottom_crossing[1]
+
+                # Check bridge lengths
+                top_bridge_len = v_outer_top_y - inner_max_y
+                bottom_bridge_len = inner_min_y - v_outer_bottom_y
+
+                if top_bridge_len > max_bridge_length or bottom_bridge_len > max_bridge_length:
+                    can_vertical = False
+                elif top_bridge_len < 0 or bottom_bridge_len < 0:
+                    # Crossing is on wrong side - invalid
+                    can_vertical = False
+            else:
+                can_vertical = False
+
+        # Check for obstructions using ACTUAL crossing points (not bounding box!)
+        if all_contours and (can_horizontal or can_vertical):
+            # For horizontal bridges, check if actual path is clear
+            if can_horizontal and h_outer_left_x is not None and h_outer_right_x is not None:
+                left_clear = self._is_bridge_path_clear(
+                    inner_min_x, center_y, h_outer_left_x, center_y,
+                    inner, outer, all_contours
+                )
+                right_clear = self._is_bridge_path_clear(
+                    inner_max_x, center_y, h_outer_right_x, center_y,
+                    inner, outer, all_contours
+                )
+
+                if not left_clear or not right_clear:
+                    can_horizontal = False
+
+            # For vertical bridges, check if actual path is clear
+            if can_vertical and v_outer_top_y is not None and v_outer_bottom_y is not None:
+                top_clear = self._is_bridge_path_clear(
+                    center_x, inner_max_y, center_x, v_outer_top_y,
+                    inner, outer, all_contours
+                )
+                bottom_clear = self._is_bridge_path_clear(
+                    center_x, inner_min_y, center_x, v_outer_bottom_y,
+                    inner, outer, all_contours
+                )
+
+                if not top_clear or not bottom_clear:
+                    can_vertical = False
+
         if not can_horizontal and not can_vertical:
             # No valid bridges, return original contours unchanged
             return [outer, inner]
 
-        # For multi-island cases, force horizontal to separate vertically-stacked islands
+        # For multi-island cases, force specific orientation
         if force_horizontal:
             if can_horizontal:
                 result = self._create_horizontal_bridge_contours(
@@ -176,6 +461,20 @@ class ContourMerger:
             if can_vertical:
                 return self._create_vertical_bridge_contours(
                     inner, outer, center_x, half_width, inner_min_y, inner_max_y
+                )
+            return [outer, inner]
+
+        if force_vertical:
+            if can_vertical:
+                result = self._create_vertical_bridge_contours(
+                    inner, outer, center_x, half_width, inner_min_y, inner_max_y
+                )
+                if result != [outer, inner]:
+                    return result
+            # Fall through to try horizontal if vertical fails
+            if can_horizontal:
+                return self._create_horizontal_bridge_contours(
+                    inner, outer, center_y, half_width, inner_min_x, inner_max_x
                 )
             return [outer, inner]
 
@@ -528,7 +827,9 @@ class ContourMerger:
             if len(points) < 3:
                 return None
 
-            return Contour(points=points, direction=WindingDirection.CLOCKWISE)
+            # Compute winding direction from actual geometry
+            direction = self._compute_winding_direction(points)
+            return Contour(points=points, direction=direction)
         except Exception:
             return None
 
@@ -629,7 +930,9 @@ class ContourMerger:
             if len(points) < 3:
                 return None
 
-            return Contour(points=points, direction=WindingDirection.CLOCKWISE)
+            # Compute winding direction from actual geometry
+            direction = self._compute_winding_direction(points)
+            return Contour(points=points, direction=direction)
         except Exception:
             return None
 
@@ -665,7 +968,6 @@ class ContourMerger:
         bridge_right = center_x + half_width
 
         # Get bounds for constraint calculations
-        _outer_bbox = self.find_contour_bounds(outer)
         all_inner_min_y = min(inner.bounding_box()[1] for inner in inners)
         all_inner_max_y = max(inner.bounding_box()[3] for inner in inners)
 
@@ -853,7 +1155,9 @@ class ContourMerger:
             if len(points) < 3:
                 return None
 
-            return Contour(points=points, direction=WindingDirection.CLOCKWISE)
+            # Compute winding direction from actual geometry
+            direction = self._compute_winding_direction(points)
+            return Contour(points=points, direction=direction)
         except Exception:
             return None
 
@@ -924,10 +1228,14 @@ class GlyphTransformer:
                 key=lambda idx: -glyph.contours[idx].bounding_box()[3],  # -max_y (top first)
             )
 
-            # Check if islands are vertically stacked (distinct Y ranges)
+            # Check if islands are vertically stacked (distinct Y ranges) or
+            # horizontally arranged (distinct X ranges, similar Y)
             is_vertically_stacked = False
+            is_horizontally_arranged = False
             if len(island_indices_sorted) > 1:
                 bboxes = [glyph.contours[idx].bounding_box() for idx in island_indices_sorted]
+
+                # Check for vertical stacking (one above another)
                 for i in range(len(bboxes) - 1):
                     upper_center_y = (bboxes[i][1] + bboxes[i][3]) / 2
                     lower_max_y = bboxes[i + 1][3]
@@ -935,9 +1243,26 @@ class GlyphTransformer:
                         is_vertically_stacked = True
                         break
 
+                # Check for horizontal arrangement (side by side at similar Y)
+                if not is_vertically_stacked:
+                    # Sort by X to check horizontal arrangement
+                    bboxes_by_x = sorted(bboxes, key=lambda b: b[0])  # sort by min_x
+                    for i in range(len(bboxes_by_x) - 1):
+                        left_center_x = (bboxes_by_x[i][0] + bboxes_by_x[i][2]) / 2
+                        right_min_x = bboxes_by_x[i + 1][0]
+                        # Check if they're horizontally separated
+                        if right_min_x > left_center_x:
+                            # Also check Y overlap (similar Y range)
+                            y_overlap = (
+                                min(bboxes_by_x[i][3], bboxes_by_x[i + 1][3]) -
+                                max(bboxes_by_x[i][1], bboxes_by_x[i + 1][1])
+                            )
+                            if y_overlap > 0:
+                                is_horizontally_arranged = True
+                                break
+
             # For vertically-stacked multi-island glyphs (like 8, B),
-            # use horizontal bridges (TOP/BOTTOM pieces) to avoid issues where
-            # islands span both left/right halves
+            # use horizontal bridges (TOP/BOTTOM pieces)
             if is_vertically_stacked and len(island_indices_sorted) > 1:
                 current_pieces: list[Contour] = [glyph.contours[parent_idx]]
 
@@ -957,7 +1282,50 @@ class GlyphTransformer:
                         piece = current_pieces[containing_piece_idx]
                         # Force horizontal bridges for multi-island to create TOP/BOTTOM pieces
                         result = self.merger.merge_contours_with_bridges(
-                            inner, piece, bridge_width, force_horizontal=True
+                            inner, piece, bridge_width, force_horizontal=True,
+                            all_contours=glyph.contours
+                        )
+                        if len(result) >= 1 and result != [piece, inner]:
+                            current_pieces = (
+                                current_pieces[:containing_piece_idx]
+                                + result
+                                + current_pieces[containing_piece_idx + 1:]
+                            )
+                            processed_indices.add(island_idx)
+
+                new_contours.extend(current_pieces)
+                processed_indices.add(parent_idx)
+            elif is_horizontally_arranged and len(island_indices_sorted) > 1:
+                # For horizontally-arranged multi-island glyphs (like Phi),
+                # use vertical bridges (LEFT/RIGHT pieces) so each island
+                # ends up in a separate piece
+                current_pieces: list[Contour] = [glyph.contours[parent_idx]]
+
+                # Sort by X for left-to-right processing
+                island_indices_by_x = sorted(
+                    island_indices,
+                    key=lambda idx: glyph.contours[idx].bounding_box()[0],  # min_x
+                )
+
+                for island_idx in island_indices_by_x:
+                    inner = glyph.contours[island_idx]
+                    inner_bbox = inner.bounding_box()
+                    inner_center_x = (inner_bbox[0] + inner_bbox[2]) / 2
+                    inner_center_y = (inner_bbox[1] + inner_bbox[3]) / 2
+
+                    containing_piece_idx = None
+                    for i, piece in enumerate(current_pieces):
+                        if piece.contains_point(inner_center_x, inner_center_y):
+                            containing_piece_idx = i
+                            break
+
+                    if containing_piece_idx is not None:
+                        piece = current_pieces[containing_piece_idx]
+                        # Force vertical bridges for horizontal arrangement
+                        # This creates LEFT/RIGHT pieces, keeping each island separate
+                        result = self.merger.merge_contours_with_bridges(
+                            inner, piece, bridge_width, force_vertical=True,
+                            all_contours=glyph.contours
                         )
                         if len(result) >= 1 and result != [piece, inner]:
                             current_pieces = (
@@ -970,7 +1338,7 @@ class GlyphTransformer:
                 new_contours.extend(current_pieces)
                 processed_indices.add(parent_idx)
             else:
-                # Single island or horizontally arranged - process normally
+                # Single island - process normally
                 current_pieces: list[Contour] = [glyph.contours[parent_idx]]
 
                 for island_idx in island_indices_sorted:
@@ -998,6 +1366,7 @@ class GlyphTransformer:
                         inner=inner,
                         outer=outer,
                         bridge_width=bridge_width,
+                        all_contours=glyph.contours,
                     )
 
                     if len(merged) >= 1 and merged != [outer, inner]:

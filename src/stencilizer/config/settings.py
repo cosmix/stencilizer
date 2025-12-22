@@ -22,9 +22,9 @@ class BridgeConfig(BaseModel):
     """Configuration for bridge generation."""
 
     width_percent: float = Field(
-        default=235.0,
+        default=60.0,
         ge=30.0,
-        le=300.0,
+        le=110.0,
         description="Bridge width as percentage of stroke width",
     )
     inset_percent: float = Field(

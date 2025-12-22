@@ -444,7 +444,7 @@ class TestFontProcessor:
 
         mock_writer = Mock()
         mock_writer_class.return_value = mock_writer
-        mock_writer_class.get_stenciled_path.return_value = Path("input-stenciled.ttf")
+        mock_writer_class.get_stenciled_path.return_value = Path("input-Stenciled.ttf")
 
         processor = FontProcessor(settings)
         processor.process(Path("input.ttf"))

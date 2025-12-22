@@ -154,5 +154,5 @@ class FontWriter:
         suffix = input_path.suffix
         parent = input_path.parent
 
-        stenciled_name = f"{stem}-stenciled{suffix}"
+        stenciled_name = f"{stem}-Stenciled{suffix}"
         return parent / stenciled_name
