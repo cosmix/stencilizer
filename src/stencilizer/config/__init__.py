@@ -1,11 +1,7 @@
 """Configuration management for stencilizer.
 
-This module provides configuration management using Pydantic Settings.
-Configuration can be provided via:
-
-- CLI arguments (highest priority)
-- Environment variables (STENCILIZER_ prefix)
-- Default values
+This module provides configuration management using Pydantic models.
+Configuration can be provided via CLI arguments or defaults.
 
 Key classes:
 - BridgeConfig: Bridge generation settings

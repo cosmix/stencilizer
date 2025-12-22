@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Optional
 
 from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings
 
 
 class BridgePosition(str, Enum):
@@ -82,18 +81,12 @@ class LoggingConfig(BaseModel):
     )
 
 
-class StencilizerSettings(BaseSettings):
+class StencilizerSettings(BaseModel):
     """Main application settings."""
 
     bridge: BridgeConfig = Field(default_factory=BridgeConfig)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
-
-    model_config = {
-        "env_prefix": "STENCILIZER_",
-        "env_nested_delimiter": "__",
-    }
-
 
 def get_default_settings() -> StencilizerSettings:
     """Get default application settings."""

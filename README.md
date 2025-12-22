@@ -129,18 +129,18 @@ stencilizer input.ttf --log-level DEBUG
 ## Configuration
 
 Configuration is controlled via CLI options (see the usage examples above). The CLI
-does not currently read environment variables, so pass any desired settings as flags
-when invoking `stencilizer`.
+does not read environment variables, so pass any desired settings as flags when invoking
+`stencilizer`.
 
-If you are using Stencilizer as a library, `StencilizerSettings()` will load values
-from environment variables with the `STENCILIZER_` prefix and `__` as the nested
-delimiter (for example, `STENCILIZER_BRIDGE__WIDTH_PERCENT`), but these environment
-variables are not applied automatically by the CLI:
+If you are using Stencilizer as a library, create a `StencilizerSettings` instance and set
+values directly before passing it to the processor:
 
 ```python
 from stencilizer.config import StencilizerSettings
 
 settings = StencilizerSettings()
+settings.bridge.width_percent = 70.0
+settings.processing.max_workers = 4
 ```
 
 ## How It Works
