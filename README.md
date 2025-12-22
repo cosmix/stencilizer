@@ -128,21 +128,14 @@ stencilizer input.ttf --log-level DEBUG
 
 ## Configuration
 
-Stencilizer can be configured via environment variables with the `STENCILIZER_` prefix:
+Configuration is controlled via CLI options (see the usage examples above). The CLI
+does not currently read environment variables, so pass any desired settings as flags
+when invoking `stencilizer`.
 
-```bash
-# Bridge configuration
-export STENCILIZER_BRIDGE__WIDTH_PERCENT=70.0
-export STENCILIZER_BRIDGE__MIN_BRIDGES=2
-export STENCILIZER_BRIDGE__POSITION_PREFERENCE=top
-
-# Processing configuration
-export STENCILIZER_PROCESSING__MAX_WORKERS=4
-export STENCILIZER_PROCESSING__SKIP_COMPOSITE=true
-
-# Logging configuration
-export STENCILIZER_LOGGING__LOG_LEVEL=INFO
-```
+If you are using Stencilizer as a library, `StencilizerSettings()` will load values
+from environment variables with the `STENCILIZER_` prefix and `__` as the nested
+delimiter (for example, `STENCILIZER_BRIDGE__WIDTH_PERCENT`), but these environment
+variables are not applied automatically by the CLI.
 
 ## How It Works
 
