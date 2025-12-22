@@ -60,7 +60,7 @@ def stencilize(
         typer.Option(
             "--output",
             "-o",
-            help="Output path (default: {name}-stenciled.{ext})",
+            help="Output path (default: {name}-Stenciled.{ext})",
         ),
     ] = None,
     bridge_width: Annotated[
@@ -68,9 +68,9 @@ def stencilize(
         typer.Option(
             "--bridge-width",
             "-w",
-            help="Bridge width as percentage of stroke width (30-90)",
+            help="Bridge width as percentage of stroke width (30-110)",
             min=30.0,
-            max=90.0,
+            max=110.0,
         ),
     ] = 60.0,
     min_bridges: Annotated[
@@ -163,7 +163,7 @@ def stencilize(
     Example:
         stencilizer Roboto-Regular.ttf
 
-    This will create Roboto-Regular-stenciled.ttf with bridges added to all glyphs
+    This will create Roboto-Regular-Stenciled.ttf with bridges added to all glyphs
     that have enclosed contours.
     """
     # Validate mutually exclusive options

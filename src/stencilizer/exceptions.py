@@ -104,10 +104,3 @@ class BridgeGenerationError(BridgeError):
     def __init__(self, reason: str) -> None:
         self.reason = reason
         super().__init__(f"Bridge generation failed: {reason}")
-
-
-class ConfigurationError(StencilizerError):
-    """Invalid configuration."""
-
-    def __init__(self, message: str) -> None:
-        super().__init__(message)

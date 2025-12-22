@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from fontTools.ttLib import TTFont
@@ -38,12 +39,12 @@ class TestIslandDetection:
     """Test island detection on real font glyphs."""
 
     # Glyphs known to have islands (enclosed counters)
-    GLYPHS_WITH_ISLANDS = ["O", "o", "A", "B", "D", "P", "Q", "R", "a", "b", "d", "e", "g", "p", "q"]
+    GLYPHS_WITH_ISLANDS: ClassVar[list[str]] = ["O", "o", "A", "B", "D", "P", "Q", "R", "a", "b", "d", "e", "g", "p", "q"]
 
     # Glyphs known to NOT have islands
-    GLYPHS_WITHOUT_ISLANDS = ["I", "l", "T", "L", "V", "W", "X", "Y", "Z"]
+    GLYPHS_WITHOUT_ISLANDS: ClassVar[list[str]] = ["I", "l", "T", "L", "V", "W", "X", "Y", "Z"]
 
-    def test_detects_islands_in_O(self, roboto_reader: FontReader) -> None:
+    def test_detects_islands_in_capital_o(self, roboto_reader: FontReader) -> None:
         """Test that 'O' is detected as having an island."""
         analyzer = GlyphAnalyzer()
 
@@ -56,7 +57,7 @@ class TestIslandDetection:
 
         pytest.fail("Glyph 'O' not found in font")
 
-    def test_detects_islands_in_B(self, roboto_reader: FontReader) -> None:
+    def test_detects_islands_in_capital_b(self, roboto_reader: FontReader) -> None:
         """Test that 'B' is detected as having islands (two counters)."""
         analyzer = GlyphAnalyzer()
 
@@ -70,7 +71,7 @@ class TestIslandDetection:
 
         pytest.fail("Glyph 'B' not found in font")
 
-    def test_no_islands_in_I(self, roboto_reader: FontReader) -> None:
+    def test_no_islands_in_capital_i(self, roboto_reader: FontReader) -> None:
         """Test that 'I' has no islands."""
         analyzer = GlyphAnalyzer()
 
@@ -107,7 +108,7 @@ class TestIslandDetection:
 class TestBridgePlacement:
     """Test bridge placement on real glyphs."""
 
-    def test_bridge_candidates_for_O(self, roboto_reader: FontReader) -> None:
+    def test_bridge_candidates_for_capital_o(self, roboto_reader: FontReader) -> None:
         """Test that bridge candidates can be generated for 'O'."""
         analyzer = GlyphAnalyzer()
         config = BridgeConfig()
@@ -172,7 +173,7 @@ class TestBridgePlacement:
 class TestGlyphTransformation:
     """Test full glyph transformation."""
 
-    def test_transform_O_creates_merged_contours(self, roboto_reader: FontReader) -> None:
+    def test_transform_capital_o_creates_merged_contours(self, roboto_reader: FontReader) -> None:
         """Test that transforming 'O' creates merged contours with bridge gaps."""
         analyzer = GlyphAnalyzer()
         config = BridgeConfig()

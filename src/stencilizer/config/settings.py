@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Optional
 
 from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings
 
 
 class BridgePosition(str, Enum):
@@ -23,9 +22,9 @@ class BridgeConfig(BaseModel):
     """Configuration for bridge generation."""
 
     width_percent: float = Field(
-        default=235.0,
+        default=60.0,
         ge=30.0,
-        le=300.0,
+        le=110.0,
         description="Bridge width as percentage of stroke width",
     )
     inset_percent: float = Field(
@@ -82,18 +81,12 @@ class LoggingConfig(BaseModel):
     )
 
 
-class StencilizerSettings(BaseSettings):
+class StencilizerSettings(BaseModel):
     """Main application settings."""
 
     bridge: BridgeConfig = Field(default_factory=BridgeConfig)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
-
-    model_config = {
-        "env_prefix": "STENCILIZER_",
-        "env_nested_delimiter": "__",
-    }
-
 
 def get_default_settings() -> StencilizerSettings:
     """Get default application settings."""
