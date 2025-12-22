@@ -29,7 +29,6 @@ from stencilizer.config import (
 from stencilizer.core import FontProcessor, GlyphAnalyzer
 from stencilizer.exceptions import FontLoadError, FontSaveError, StencilizerError
 from stencilizer.io import FontReader
-from stencilizer.utils import configure_logging
 
 # Create the Typer app
 app = typer.Typer(
@@ -145,7 +144,7 @@ def stencilize(
             help="Minimal console output",
         ),
     ] = False,
-    version: Annotated[  # noqa: ARG001
+    _version: Annotated[
         bool | None,
         typer.Option(
             "--version",

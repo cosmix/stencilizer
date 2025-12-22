@@ -66,10 +66,12 @@ class Glyph:
     Attributes:
         metadata: Glyph metadata (name, unicode, metrics)
         contours: List of contours forming the glyph outline
+        _is_composite: Internal flag indicating if glyph uses component references
     """
 
     metadata: GlyphMetadata
     contours: list[Contour]
+    _is_composite: bool = False
 
     @property
     def name(self) -> str:
@@ -99,7 +101,7 @@ class Glyph:
         Returns:
             True if glyph is composite, False otherwise
         """
-        return getattr(self, "_is_composite", False)
+        return self._is_composite
 
     def has_islands(self) -> bool:
         """Check if glyph has inner contours (islands/holes).
@@ -158,6 +160,5 @@ class Glyph:
         """
         metadata = GlyphMetadata.from_dict(data["metadata"])
         contours = [Contour.from_dict(c) for c in data["contours"]]
-        glyph = cls(metadata=metadata, contours=contours)
-        glyph._is_composite = data.get("is_composite", False)
-        return glyph
+        is_composite = data.get("is_composite", False)
+        return cls(metadata=metadata, contours=contours, _is_composite=is_composite)

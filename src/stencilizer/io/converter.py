@@ -176,18 +176,18 @@ def _extract_glyph_metadata(name: str, font: TTFont) -> GlyphMetadata:
     )
 
 
-def _update_truetype_glyph(glyph: Glyph, original_glyph: Any, font: TTFont) -> None:
+def _update_truetype_glyph(glyph: Glyph, _original_glyph: Any, font: TTFont) -> None:
     """Update TrueType glyph from domain model.
 
     Args:
         glyph: Domain glyph model
-        original_glyph: Original fonttools glyph
+        _original_glyph: Original fonttools glyph
         font: The TTFont object
     """
     glyf_table = font["glyf"]
     glyph_name = glyph.name
 
-    pen = TTGlyphPen(font.getGlyphSet())
+    pen = TTGlyphPen(font.getGlyphSet())  # type: ignore[arg-type]
 
     for contour in glyph.contours:
         if not contour.points:
@@ -229,12 +229,12 @@ def _update_truetype_glyph(glyph: Glyph, original_glyph: Any, font: TTFont) -> N
     glyf_table[glyph_name] = new_glyph
 
 
-def _update_cff_glyph(glyph: Glyph, original_glyph: Any, font: TTFont) -> None:
+def _update_cff_glyph(glyph: Glyph, _original_glyph: Any, font: TTFont) -> None:
     """Update CFF/OpenType glyph from domain model.
 
     Args:
         glyph: Domain glyph model
-        original_glyph: Original fonttools glyph
+        _original_glyph: Original fonttools glyph
         font: The TTFont object
     """
     cff_table = font["CFF "]
@@ -242,7 +242,7 @@ def _update_cff_glyph(glyph: Glyph, original_glyph: Any, font: TTFont) -> None:
     charstrings = top_dict.CharStrings
     glyph_name = glyph.name
 
-    pen = T2CharStringPen(width=glyph.metadata.advance_width, glyphSet=font.getGlyphSet())
+    pen = T2CharStringPen(width=glyph.metadata.advance_width, glyphSet=font.getGlyphSet())  # type: ignore[arg-type]
 
     for contour in glyph.contours:
         if not contour.points:

@@ -5,8 +5,6 @@ Tests cover:
 - Glyph transformation with bridge holes
 """
 
-import pytest
-
 from stencilizer.config import BridgeConfig
 from stencilizer.core.analyzer import GlyphAnalyzer
 from stencilizer.core.bridge import BridgeGenerator, BridgePlacer

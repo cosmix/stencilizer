@@ -44,7 +44,7 @@ from stencilizer.core.geometry import (
     signed_area,
 )
 from stencilizer.core.processor import FontProcessor, process_glyph
-from stencilizer.core.surgery import BridgeHoleCreator, ContourMerger, GlyphTransformer
+from stencilizer.core.surgery import BridgeHoleCreator, GlyphTransformer
 
 __all__ = [
     # Geometry functions

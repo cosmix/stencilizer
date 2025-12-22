@@ -91,11 +91,11 @@ class ContourMerger:
                 best = (i, other, t)
                 best_other = other
             else:
-                if constraint_min is not None and other < best_other:
+                if constraint_min is not None and best_other is not None and other < best_other:
                     # Want smallest Y that's still > constraint_min (closest to inner_max_y)
                     best = (i, other, t)
                     best_other = other
-                elif constraint_max is not None and other > best_other:
+                elif constraint_max is not None and best_other is not None and other > best_other:
                     # Want largest Y that's still < constraint_max (closest to inner_min_y)
                     best = (i, other, t)
                     best_other = other
@@ -267,6 +267,16 @@ class ContourMerger:
             # Couldn't find all intersection points, return originals
             return [outer, inner]
 
+        # Type narrowing: assert all values are not None after the check above
+        assert outer_bot_left is not None
+        assert outer_top_left is not None
+        assert inner_bot_left is not None
+        assert inner_top_left is not None
+        assert outer_top_right is not None
+        assert outer_bot_right is not None
+        assert inner_top_right is not None
+        assert inner_bot_right is not None
+
         # Create LEFT piece: left portion of outer + bridges + left portion of inner
         # Start at BOTTOM, go UP the left side of outer, bridge to inner TOP, go DOWN the left side of inner
         left_piece = self._build_merged_contour(
@@ -320,6 +330,16 @@ class ContourMerger:
         if not all([outer_left_top, outer_left_bot, outer_right_top, outer_right_bot,
                     inner_left_top, inner_left_bot, inner_right_top, inner_right_bot]):
             return [outer, inner]
+
+        # Type narrowing: assert all values are not None after the check above
+        assert outer_right_top is not None
+        assert outer_left_top is not None
+        assert inner_right_top is not None
+        assert inner_left_top is not None
+        assert outer_left_bot is not None
+        assert outer_right_bot is not None
+        assert inner_left_bot is not None
+        assert inner_right_bot is not None
 
         # Create TOP piece: start at RIGHT, go LEFT along top of outer, bridge to inner, go RIGHT along top of inner
         top_piece = self._build_merged_contour_horizontal(
@@ -613,7 +633,6 @@ class ContourMerger:
         except Exception:
             return None
 
-
     def merge_multi_island_vertical(
         self,
         outer: Contour,
@@ -646,7 +665,7 @@ class ContourMerger:
         bridge_right = center_x + half_width
 
         # Get bounds for constraint calculations
-        outer_bbox = self.find_contour_bounds(outer)
+        _outer_bbox = self.find_contour_bounds(outer)
         all_inner_min_y = min(inner.bounding_box()[1] for inner in inners)
         all_inner_max_y = max(inner.bounding_box()[3] for inner in inners)
 
@@ -661,7 +680,13 @@ class ContourMerger:
             outer_bot_right = self.find_edge_crossing(outer, bridge_right, True, constraint_max=all_inner_min_y)
 
             if not all([outer_top_left, outer_top_right, outer_bot_left, outer_bot_right]):
-                return [outer] + inners
+                return [outer, *inners]
+
+            # Type narrowing: assert all outer values are not None
+            assert outer_top_left is not None
+            assert outer_top_right is not None
+            assert outer_bot_left is not None
+            assert outer_bot_right is not None
 
             # Find crossings for each inner
             inner_crossings = []
@@ -676,7 +701,7 @@ class ContourMerger:
                 right_bot = self.find_edge_crossing(inner, bridge_right, True, constraint_max=inner_mid_y + 1)
 
                 if not all([left_top, left_bot, right_top, right_bot]):
-                    return [outer] + inners
+                    return [outer, *inners]
 
                 inner_crossings.append({
                     'inner': inner,
@@ -705,10 +730,10 @@ class ContourMerger:
             if left_piece and right_piece:
                 return [left_piece, right_piece]
             else:
-                return [outer] + inners
+                return [outer, *inners]
 
         except Exception:
-            return [outer] + inners
+            return [outer, *inners]
 
     def _build_multi_island_piece(
         self,

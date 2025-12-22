@@ -1,7 +1,5 @@
 """Unit tests for bridge placement algorithm."""
 
-import math
-
 import pytest
 
 from stencilizer.config import BridgeConfig, BridgePosition

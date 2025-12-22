@@ -80,7 +80,7 @@ class FontReader:
         if self._font is None:
             raise RuntimeError("Font not loaded. Call load() first.")
 
-        return self._font["head"].unitsPerEm
+        return self._font["head"].unitsPerEm  # type: ignore[attr-defined]
 
     @property
     def glyph_count(self) -> int:
@@ -112,7 +112,7 @@ class FontReader:
         if self._font is None:
             raise RuntimeError("Font not loaded. Call load() first.")
 
-        glyph_set = self._font.getGlyphSet()
+        _glyph_set = self._font.getGlyphSet()
         glyph_order = self._font.getGlyphOrder()
 
         for glyph_name in glyph_order:
@@ -161,6 +161,6 @@ class FontReader:
         self.load()
         return self
 
-    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+    def __exit__(self, _exc_type: object, _exc_val: object, _exc_tb: object) -> None:
         """Context manager exit."""
         self.close()

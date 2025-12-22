@@ -143,8 +143,6 @@ class FontProcessor:
         Returns:
             Reference stroke width in font units
         """
-        import math
-
         from stencilizer.core.geometry import nearest_point_on_contour
 
         # Build name lookup

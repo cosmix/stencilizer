@@ -8,6 +8,7 @@ Tests the full algorithm with real font files to verify:
 
 import subprocess
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,7 @@ ROBOTO_PATH = FIXTURES_DIR / "Roboto-Regular.ttf"
 
 
 @pytest.fixture
-def roboto_reader() -> FontReader:
+def roboto_reader() -> Generator[FontReader, None, None]:
     """Load Roboto font for testing."""
     if not ROBOTO_PATH.exists():
         pytest.skip("Roboto font fixture not available")

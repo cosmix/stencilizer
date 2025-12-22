@@ -115,6 +115,9 @@ class BridgeGeometry:
         Returns:
             BridgeGeometry instance
         """
-        vertices = tuple(Point.from_dict(v) for v in data["vertices"])
+        vertices_list = [Point.from_dict(v) for v in data["vertices"]]
+        vertices: tuple[Point, Point, Point, Point] = (
+            vertices_list[0], vertices_list[1], vertices_list[2], vertices_list[3]
+        )
         spec = BridgeSpec.from_dict(data["spec"])
         return cls(vertices=vertices, spec=spec)
