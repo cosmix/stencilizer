@@ -135,7 +135,13 @@ when invoking `stencilizer`.
 If you are using Stencilizer as a library, `StencilizerSettings()` will load values
 from environment variables with the `STENCILIZER_` prefix and `__` as the nested
 delimiter (for example, `STENCILIZER_BRIDGE__WIDTH_PERCENT`), but these environment
-variables are not applied automatically by the CLI.
+variables are not applied automatically by the CLI:
+
+```python
+from stencilizer.config import StencilizerSettings
+
+settings = StencilizerSettings()
+```
 
 ## How It Works
 
