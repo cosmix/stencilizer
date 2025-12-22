@@ -107,6 +107,7 @@ class ContourMerger:
         inner: Contour,
         outer: Contour,
         bridge_width: float,
+        force_horizontal: bool = False,
     ) -> list[Contour]:
         """Merge outer and inner contours with bridge gaps.
 
@@ -117,6 +118,7 @@ class ContourMerger:
             inner: Inner contour (island/hole)
             outer: Outer contour (parent)
             bridge_width: Width of each bridge
+            force_horizontal: If True, only use horizontal bridges (for multi-island cases)
 
         Returns:
             List of new contours (replacing both outer and inner)
@@ -127,8 +129,9 @@ class ContourMerger:
         min_stroke = 20
         inner_width = inner_max_x - inner_min_x
         inner_height = inner_max_y - inner_min_y
-        max_stroke_h = max(inner_width * 0.5, 200)
-        max_stroke_v = max(inner_height * 0.5, 200)
+        # Use generous max_stroke limits to support bold fonts with thick strokes
+        max_stroke_h = max(inner_width * 1.5, 400)
+        max_stroke_v = max(inner_height * 1.5, 400)
 
         half_width = bridge_width / 2.0
         center_x = (inner_min_x + inner_max_x) / 2.0
@@ -143,34 +146,95 @@ class ContourMerger:
         horizontal_stroke = min(stroke_left, stroke_right)
         vertical_stroke = min(stroke_top, stroke_bottom)
 
-        # Choose orientation based on which has actual stroke on both sides
-        use_horizontal = False  # left/right bridges
-        use_vertical = False    # top/bottom bridges
+        # Check which orientations are geometrically possible
+        can_vertical = (
+            vertical_stroke >= min_stroke
+            and stroke_top >= min_stroke
+            and stroke_bottom >= min_stroke
+            and vertical_stroke <= max_stroke_v
+        )
+        can_horizontal = (
+            horizontal_stroke >= min_stroke
+            and stroke_left >= min_stroke
+            and stroke_right >= min_stroke
+            and horizontal_stroke <= max_stroke_h
+        )
 
-        if vertical_stroke >= min_stroke and stroke_top >= min_stroke and stroke_bottom >= min_stroke:
-            if vertical_stroke <= max_stroke_v:
-                use_vertical = True
-
-        if horizontal_stroke >= min_stroke and stroke_left >= min_stroke and stroke_right >= min_stroke:
-            if horizontal_stroke <= max_stroke_h:
-                if not use_vertical or horizontal_stroke < vertical_stroke:
-                    use_horizontal = True
-                    use_vertical = False
-
-        if not use_horizontal and not use_vertical:
+        if not can_horizontal and not can_vertical:
             # No valid bridges, return original contours unchanged
             return [outer, inner]
 
-        if use_vertical:
-            # Top and bottom bridges - split into left and right pieces
-            return self._create_vertical_bridge_contours(
+        # For multi-island cases, force horizontal to separate vertically-stacked islands
+        if force_horizontal:
+            if can_horizontal:
+                result = self._create_horizontal_bridge_contours(
+                    inner, outer, center_y, half_width, inner_min_x, inner_max_x
+                )
+                if result != [outer, inner]:
+                    return result
+            # Fall through to try vertical if horizontal fails
+            if can_vertical:
+                return self._create_vertical_bridge_contours(
+                    inner, outer, center_x, half_width, inner_min_y, inner_max_y
+                )
+            return [outer, inner]
+
+        # Check for asymmetric shapes where vertical bridges would cut off parts
+        # For glyphs like '6' and '9', the outer extends much more on one side
+        # vertically, making horizontal bridges safer
+        vertical_asymmetry = max(stroke_top, stroke_bottom) / max(min(stroke_top, stroke_bottom), 1)
+        horizontal_asymmetry = max(stroke_left, stroke_right) / max(min(stroke_left, stroke_right), 1)
+
+        # If vertical strokes are highly asymmetric (>2.5x), prefer horizontal bridges
+        # to avoid cutting off stems/tails that extend on one side
+        force_horizontal_for_asymmetry = (
+            can_horizontal
+            and vertical_asymmetry > 2.5
+            and vertical_asymmetry > horizontal_asymmetry
+        )
+
+        # Prefer the orientation with smaller stroke (cleaner cut)
+        # unless the shape is asymmetric
+        prefer_vertical = (
+            can_vertical
+            and not force_horizontal_for_asymmetry
+            and (not can_horizontal or vertical_stroke <= horizontal_stroke)
+        )
+
+        if prefer_vertical:
+            # Try vertical bridges first (top/bottom)
+            result = self._create_vertical_bridge_contours(
                 inner, outer, center_x, half_width, inner_min_y, inner_max_y
             )
+            # Fallback to horizontal if vertical failed
+            if result == [outer, inner] and can_horizontal:
+                result = self._create_horizontal_bridge_contours(
+                    inner, outer, center_y, half_width, inner_min_x, inner_max_x
+                )
+            # If still failed, try horizontal at bottom of inner (for triangular counters)
+            if result == [outer, inner] and can_horizontal:
+                bottom_center_y = inner_min_y + half_width + 10  # Just above bottom edge
+                result = self._create_horizontal_bridge_contours(
+                    inner, outer, bottom_center_y, half_width, inner_min_x, inner_max_x
+                )
+            return result
         else:
-            # Left and right bridges - split into top and bottom pieces
-            return self._create_horizontal_bridge_contours(
+            # Try horizontal bridges first (left/right)
+            result = self._create_horizontal_bridge_contours(
                 inner, outer, center_y, half_width, inner_min_x, inner_max_x
             )
+            # Fallback to vertical if horizontal failed
+            if result == [outer, inner] and can_vertical:
+                result = self._create_vertical_bridge_contours(
+                    inner, outer, center_x, half_width, inner_min_y, inner_max_y
+                )
+            # If still failed, try horizontal at bottom of inner (for triangular counters)
+            if result == [outer, inner] and can_horizontal:
+                bottom_center_y = inner_min_y + half_width + 10
+                result = self._create_horizontal_bridge_contours(
+                    inner, outer, bottom_center_y, half_width, inner_min_x, inner_max_x
+                )
+            return result
 
     def _create_vertical_bridge_contours(
         self,
@@ -550,6 +614,225 @@ class ContourMerger:
             return None
 
 
+    def merge_multi_island_vertical(
+        self,
+        outer: Contour,
+        inners: list[Contour],
+        bridge_width: float,
+    ) -> list[Contour]:
+        """Merge outer with multiple inner contours using a single vertical cut.
+
+        Creates a single vertical line through all contours, splitting the glyph
+        into LEFT and RIGHT pieces. This is ideal for vertically-stacked islands
+        like '8' and 'B' where a single vertical bridge line is desired.
+
+        Args:
+            outer: Outer contour (parent)
+            inners: List of inner contours (islands), sorted by Y position (top first)
+            bridge_width: Width of the bridge gap
+
+        Returns:
+            List of 2 contours [left_piece, right_piece], or original contours if failed
+        """
+        if not inners:
+            return [outer]
+
+        # Compute common bridge X position from all inners
+        all_inner_min_x = min(inner.bounding_box()[0] for inner in inners)
+        all_inner_max_x = max(inner.bounding_box()[2] for inner in inners)
+        center_x = (all_inner_min_x + all_inner_max_x) / 2.0
+        half_width = bridge_width / 2.0
+        bridge_left = center_x - half_width
+        bridge_right = center_x + half_width
+
+        # Get bounds for constraint calculations
+        outer_bbox = self.find_contour_bounds(outer)
+        all_inner_min_y = min(inner.bounding_box()[1] for inner in inners)
+        all_inner_max_y = max(inner.bounding_box()[3] for inner in inners)
+
+        # Sort inners by Y position (bottom to top for processing)
+        inners_sorted = sorted(inners, key=lambda c: c.bounding_box()[1])  # by min_y
+
+        try:
+            # Find outer crossings at top and bottom of entire region
+            outer_top_left = self.find_edge_crossing(outer, bridge_left, True, constraint_min=all_inner_max_y)
+            outer_top_right = self.find_edge_crossing(outer, bridge_right, True, constraint_min=all_inner_max_y)
+            outer_bot_left = self.find_edge_crossing(outer, bridge_left, True, constraint_max=all_inner_min_y)
+            outer_bot_right = self.find_edge_crossing(outer, bridge_right, True, constraint_max=all_inner_min_y)
+
+            if not all([outer_top_left, outer_top_right, outer_bot_left, outer_bot_right]):
+                return [outer] + inners
+
+            # Find crossings for each inner
+            inner_crossings = []
+            for inner in inners_sorted:
+                inner_bbox = inner.bounding_box()
+                inner_mid_y = (inner_bbox[1] + inner_bbox[3]) / 2
+
+                # Find crossings on each side of this inner
+                left_top = self.find_edge_crossing(inner, bridge_left, True, constraint_min=inner_mid_y - 1)
+                left_bot = self.find_edge_crossing(inner, bridge_left, True, constraint_max=inner_mid_y + 1)
+                right_top = self.find_edge_crossing(inner, bridge_right, True, constraint_min=inner_mid_y - 1)
+                right_bot = self.find_edge_crossing(inner, bridge_right, True, constraint_max=inner_mid_y + 1)
+
+                if not all([left_top, left_bot, right_top, right_bot]):
+                    return [outer] + inners
+
+                inner_crossings.append({
+                    'inner': inner,
+                    'left_top': left_top,
+                    'left_bot': left_bot,
+                    'right_top': right_top,
+                    'right_bot': right_bot,
+                    'min_y': inner_bbox[1],
+                    'max_y': inner_bbox[3],
+                })
+
+            # Build LEFT piece: outer_left + all inner_lefts connected with bridges
+            left_piece = self._build_multi_island_piece(
+                outer, inner_crossings,
+                outer_bot_left, outer_top_left,
+                bridge_left, is_left=True
+            )
+
+            # Build RIGHT piece: outer_right + all inner_rights connected with bridges
+            right_piece = self._build_multi_island_piece(
+                outer, inner_crossings,
+                outer_top_right, outer_bot_right,
+                bridge_right, is_left=False
+            )
+
+            if left_piece and right_piece:
+                return [left_piece, right_piece]
+            else:
+                return [outer] + inners
+
+        except Exception:
+            return [outer] + inners
+
+    def _build_multi_island_piece(
+        self,
+        outer: Contour,
+        inner_crossings: list[dict],
+        outer_start: tuple[int, float, float],
+        outer_end: tuple[int, float, float],
+        bridge_x: float,
+        is_left: bool,
+    ) -> Contour | None:
+        """Build a merged contour piece with multiple inner cutouts.
+
+        For LEFT piece (is_left=True): traverse outer bottom-to-top on left side,
+        splicing in left halves of each inner (bottom to top).
+
+        For RIGHT piece (is_left=False): traverse outer top-to-bottom on right side,
+        splicing in right halves of each inner (top to bottom).
+        """
+        from stencilizer.domain import PointType
+
+        try:
+            points = []
+            outer_points = outer.points
+            n_outer = len(outer_points)
+
+            outer_start_idx, outer_start_y, _ = outer_start
+            outer_end_idx, outer_end_y, _ = outer_end
+
+            # Detect traversal direction for outer
+            outer_dir = self._detect_traversal_direction(
+                outer_points, outer_start_idx, outer_end_idx,
+                bridge_x, want_less_than=is_left, is_x=True
+            )
+
+            # Sort inner_crossings by Y for proper splice order
+            if is_left:
+                # For left piece: process bottom to top
+                sorted_crossings = sorted(inner_crossings, key=lambda c: c['min_y'])
+            else:
+                # For right piece: process top to bottom
+                sorted_crossings = sorted(inner_crossings, key=lambda c: -c['max_y'])
+
+            # Start point on outer
+            points.append(Point(bridge_x, outer_start_y, PointType.ON_CURVE))
+
+            # We'll traverse outer segments and splice in inners at appropriate Y positions
+            # For simplicity, traverse the entire outer side first, then add inner segments
+            # This creates a contour that goes: outer_left -> bridge -> inner1_left -> bridge -> inner2_left -> etc.
+
+            # Traverse outer from start to end
+            if outer_dir == -1:
+                idx = outer_start_idx
+                count = 0
+                while idx != outer_end_idx and count < n_outer:
+                    p = outer_points[idx]
+                    points.append(Point(p.x, p.y, p.point_type))
+                    idx = (idx - 1) % n_outer
+                    count += 1
+            else:
+                idx = (outer_start_idx + 1) % n_outer
+                count = 0
+                while idx != (outer_end_idx + 1) % n_outer and count < n_outer:
+                    p = outer_points[idx]
+                    points.append(Point(p.x, p.y, p.point_type))
+                    idx = (idx + 1) % n_outer
+                    count += 1
+
+            # End point on outer
+            points.append(Point(bridge_x, outer_end_y, PointType.ON_CURVE))
+
+            # Now add each inner's left/right segment with bridges
+            for crossing in sorted_crossings:
+                inner = crossing['inner']
+                inner_points = inner.points
+                n_inner = len(inner_points)
+
+                if is_left:
+                    start_crossing = crossing['left_bot']
+                    end_crossing = crossing['left_top']
+                else:
+                    start_crossing = crossing['right_top']
+                    end_crossing = crossing['right_bot']
+
+                start_idx, start_y, _ = start_crossing
+                end_idx, end_y, _ = end_crossing
+
+                # Bridge to inner
+                points.append(Point(bridge_x, start_y, PointType.ON_CURVE))
+
+                # Detect inner traversal direction
+                inner_dir = self._detect_traversal_direction(
+                    inner_points, start_idx, end_idx,
+                    bridge_x, want_less_than=is_left, is_x=True
+                )
+
+                # Traverse inner
+                if inner_dir == -1:
+                    idx = start_idx
+                    count = 0
+                    while idx != end_idx and count < n_inner:
+                        p = inner_points[idx]
+                        points.append(Point(p.x, p.y, p.point_type))
+                        idx = (idx - 1) % n_inner
+                        count += 1
+                else:
+                    idx = (start_idx + 1) % n_inner
+                    count = 0
+                    while idx != (end_idx + 1) % n_inner and count < n_inner:
+                        p = inner_points[idx]
+                        points.append(Point(p.x, p.y, p.point_type))
+                        idx = (idx + 1) % n_inner
+                        count += 1
+
+                # Bridge back
+                points.append(Point(bridge_x, end_y, PointType.ON_CURVE))
+
+            if len(points) < 3:
+                return None
+
+            return Contour(points=points, direction=WindingDirection.CLOCKWISE)
+        except Exception:
+            return None
+
+
 # Keep the old class name as an alias for compatibility
 BridgeHoleCreator = ContourMerger
 
@@ -592,46 +875,118 @@ class GlyphTransformer:
         reference_stroke = upm * 0.1
         bridge_width = (self.placer.config.width_percent / 100.0) * reference_stroke
 
-        # Check which outers have multiple islands - we can't handle those yet
-        parent_island_count: dict[int, int] = {}
+        # Group islands by their parent outer contour
+        islands_by_parent: dict[int, list[int]] = {}
         for island_idx in hierarchy.islands:
             parent_idx = hierarchy.containment.get(island_idx)
             if parent_idx is not None:
-                parent_island_count[parent_idx] = parent_island_count.get(parent_idx, 0) + 1
+                if parent_idx not in islands_by_parent:
+                    islands_by_parent[parent_idx] = []
+                islands_by_parent[parent_idx].append(island_idx)
 
         # Track which contours have been processed
-        processed_indices = set()
-        new_contours = []
+        processed_indices: set[int] = set()
+        new_contours: list[Contour] = []
 
-        # Process each island (only if its parent has exactly one island)
-        for island_idx in hierarchy.islands:
-            parent_idx = hierarchy.containment.get(island_idx)
-
-            if parent_idx is None:
+        # Process each parent's islands sequentially
+        for parent_idx, island_indices in islands_by_parent.items():
+            if parent_idx in processed_indices:
                 continue
 
-            # Skip if this parent has multiple islands - we can't merge properly
-            if parent_island_count.get(parent_idx, 0) > 1:
-                continue
-
-            if island_idx in processed_indices or parent_idx in processed_indices:
-                continue
-
-            inner = glyph.contours[island_idx]
-            outer = glyph.contours[parent_idx]
-
-            # Merge contours with bridges
-            merged = self.merger.merge_contours_with_bridges(
-                inner=inner,
-                outer=outer,
-                bridge_width=bridge_width,
+            # Sort islands by Y position (top-to-bottom) for consistent merge order
+            island_indices_sorted = sorted(
+                island_indices,
+                key=lambda idx: -glyph.contours[idx].bounding_box()[3],  # -max_y (top first)
             )
 
-            new_contours.extend(merged)
-            processed_indices.add(island_idx)
-            processed_indices.add(parent_idx)
+            # Check if islands are vertically stacked (distinct Y ranges)
+            is_vertically_stacked = False
+            if len(island_indices_sorted) > 1:
+                bboxes = [glyph.contours[idx].bounding_box() for idx in island_indices_sorted]
+                for i in range(len(bboxes) - 1):
+                    upper_center_y = (bboxes[i][1] + bboxes[i][3]) / 2
+                    lower_max_y = bboxes[i + 1][3]
+                    if lower_max_y < upper_center_y:
+                        is_vertically_stacked = True
+                        break
 
-        # Add any unprocessed contours
+            # For vertically-stacked multi-island glyphs (like 8, B),
+            # use horizontal bridges (TOP/BOTTOM pieces) to avoid issues where
+            # islands span both left/right halves
+            if is_vertically_stacked and len(island_indices_sorted) > 1:
+                current_pieces: list[Contour] = [glyph.contours[parent_idx]]
+
+                for island_idx in island_indices_sorted:
+                    inner = glyph.contours[island_idx]
+                    inner_bbox = inner.bounding_box()
+                    inner_center_x = (inner_bbox[0] + inner_bbox[2]) / 2
+                    inner_center_y = (inner_bbox[1] + inner_bbox[3]) / 2
+
+                    containing_piece_idx = None
+                    for i, piece in enumerate(current_pieces):
+                        if piece.contains_point(inner_center_x, inner_center_y):
+                            containing_piece_idx = i
+                            break
+
+                    if containing_piece_idx is not None:
+                        piece = current_pieces[containing_piece_idx]
+                        # Force horizontal bridges for multi-island to create TOP/BOTTOM pieces
+                        result = self.merger.merge_contours_with_bridges(
+                            inner, piece, bridge_width, force_horizontal=True
+                        )
+                        if len(result) >= 1 and result != [piece, inner]:
+                            current_pieces = (
+                                current_pieces[:containing_piece_idx]
+                                + result
+                                + current_pieces[containing_piece_idx + 1:]
+                            )
+                            processed_indices.add(island_idx)
+
+                new_contours.extend(current_pieces)
+                processed_indices.add(parent_idx)
+            else:
+                # Single island or horizontally arranged - process normally
+                current_pieces: list[Contour] = [glyph.contours[parent_idx]]
+
+                for island_idx in island_indices_sorted:
+                    if island_idx in processed_indices:
+                        continue
+
+                    inner = glyph.contours[island_idx]
+                    inner_bbox = inner.bounding_box()
+                    inner_center_x = (inner_bbox[0] + inner_bbox[2]) / 2
+                    inner_center_y = (inner_bbox[1] + inner_bbox[3]) / 2
+
+                    # Find which current piece contains this island
+                    containing_piece_idx: int | None = None
+                    for i, piece in enumerate(current_pieces):
+                        if piece.contains_point(inner_center_x, inner_center_y):
+                            containing_piece_idx = i
+                            break
+
+                    if containing_piece_idx is None:
+                        continue
+
+                    # Merge this island with the containing piece
+                    outer = current_pieces[containing_piece_idx]
+                    merged = self.merger.merge_contours_with_bridges(
+                        inner=inner,
+                        outer=outer,
+                        bridge_width=bridge_width,
+                    )
+
+                    if len(merged) >= 1 and merged != [outer, inner]:
+                        current_pieces = (
+                            current_pieces[:containing_piece_idx]
+                            + merged
+                            + current_pieces[containing_piece_idx + 1:]
+                        )
+                        processed_indices.add(island_idx)
+
+                new_contours.extend(current_pieces)
+                processed_indices.add(parent_idx)
+
+        # Add any unprocessed contours (non-islands, failed merges, orphans)
         for i, contour in enumerate(glyph.contours):
             if i not in processed_indices:
                 new_contours.append(contour)
