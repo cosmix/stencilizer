@@ -6,7 +6,7 @@ Convert TrueType and OpenType fonts to stencil-ready versions by automatically a
 
 Stencilizer is a Python CLI tool that transforms regular fonts into stencil fonts by detecting "islands" (enclosed contours) in glyphs and adding bridges to connect them. This is essential for creating fonts suitable for stencil cutting, where disconnected parts would fall out.
 
-Characters like **O**, **A**, **B**, **D**, **P**, **R**, **Q**, **4**, **6**, **8**, **9**, and **@** all have enclosed contours that need bridges to remain connected during cutting.
+Characters like **O**, **A**, **B**, **D**, **P**, **R**, **Q**, **4**, **6**, **8**, **9**, **@** and others often have enclosed contours that need bridges to remain connected during cutting.
 
 ## Features
 
@@ -14,6 +14,7 @@ Characters like **O**, **A**, **B**, **D**, **P**, **R**, **Q**, **4**, **6**, *
 - **Smart Bridge Placement**: Places bridges optimally based on contour geometry and user preferences
 - **Parallel Processing**: Leverages multicore CPUs for fast processing of large fonts
 - **Flexible Configuration**: Control bridge width, position, and count
+- **Font Coexistence**: Output fonts get a "Stenciled" suffix in their internal name table, allowing installation alongside the original font
 - **Multiple Output Modes**:
   - Full processing (default)
   - Dry-run analysis
@@ -39,7 +40,7 @@ pip install stencilizer
 ### From source
 
 ```bash
-git clone https://github.com/yourusername/stencilizer.git
+git clone https://github.com/cosmix/stencilizer.git
 cd stencilizer
 uv pip install -e .
 ```
@@ -173,23 +174,6 @@ Bridges are added by cutting notches into both the island and outer contour, cre
 
 Glyphs are processed in parallel using Python's ProcessPoolExecutor, enabling efficient utilization of multi-core systems.
 
-## Architecture
-
-```text
-stencilizer/
-├── cli/              # CLI interface and output formatting
-├── config/           # Configuration and settings
-├── core/             # Core processing algorithms
-│   ├── analyzer.py   # Island detection and hierarchy analysis
-│   ├── bridge.py     # Bridge placement and generation
-│   ├── geometry.py   # Geometric utilities
-│   ├── processor.py  # Parallel processing orchestration
-│   └── surgery.py    # Glyph transformation
-├── domain/           # Domain models (Glyph, Contour, Bridge)
-├── io/               # Font reading and writing
-└── utils/            # Logging and utilities
-```
-
 ## Examples
 
 ### Convert with custom bridge settings
@@ -236,7 +220,7 @@ stencilizer Roboto-Regular.ttf \
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/stencilizer.git
+git clone https://github.com/cosmix/stencilizer.git
 cd stencilizer
 
 # Install with development dependencies
@@ -289,14 +273,11 @@ Enable detailed logging to diagnose issues:
 stencilizer input.ttf --log-file debug.log --log-level DEBUG
 ```
 
+## Future Work
+
+- OpenType (CFF) font support
+- Variable font support
+
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Author
-
-Dimosthenis Kaponis <dkaponis@gmail.com>
-
-## Version
-
-0.1.0
+MIT License - see the [LICENSE](LICENSE) file for details.

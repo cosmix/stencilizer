@@ -11,6 +11,75 @@ from fontTools.ttLib import TTFont
 from stencilizer.domain.glyph import Glyph
 from stencilizer.io.converter import domain_glyph_to_fonttools
 
+# Name table IDs we modify
+NAME_ID_FAMILY = 1
+NAME_ID_FULL_NAME = 4
+NAME_ID_POSTSCRIPT = 6
+NAME_ID_TYPOGRAPHIC_FAMILY = 16
+
+
+def update_font_names(font: TTFont, suffix: str = " Stenciled") -> None:
+    """Update font name table entries with stenciled suffix.
+
+    Modifies the font's name table so the stencilized font can coexist
+    with the original when installed on the same system.
+
+    Args:
+        font: The fonttools TTFont object to modify
+        suffix: Suffix to add (default: " Stenciled")
+    """
+    name_table = font["name"]
+
+    # Collect updates to apply (avoid modifying while iterating)
+    updates: list[tuple[int, int, int, int, str]] = []
+
+    for record in name_table.names:
+        name_id = record.nameID
+        platform_id = record.platformID
+        plat_enc_id = record.platEncID
+        lang_id = record.langID
+
+        try:
+            original = record.toUnicode()
+        except UnicodeDecodeError:
+            continue
+
+        new_name: str | None = None
+
+        if name_id == NAME_ID_FAMILY:
+            # "Roboto" → "Roboto Stenciled"
+            new_name = original + suffix
+
+        elif name_id == NAME_ID_TYPOGRAPHIC_FAMILY:
+            # Same treatment as family name
+            new_name = original + suffix
+
+        elif name_id == NAME_ID_FULL_NAME:
+            # "Roboto Regular" → "Roboto Stenciled Regular"
+            # Insert suffix before the last word (style name)
+            parts = original.rsplit(" ", 1)
+            if len(parts) == 2:
+                new_name = f"{parts[0]}{suffix} {parts[1]}"
+            else:
+                new_name = original + suffix
+
+        elif name_id == NAME_ID_POSTSCRIPT:
+            # "Roboto-Regular" → "RobotoStenciled-Regular"
+            # PostScript names can't have spaces
+            ps_suffix = suffix.replace(" ", "")
+            if "-" in original:
+                parts = original.split("-", 1)
+                new_name = f"{parts[0]}{ps_suffix}-{parts[1]}"
+            else:
+                new_name = original + ps_suffix
+
+        if new_name is not None:
+            updates.append((name_id, platform_id, plat_enc_id, lang_id, new_name))
+
+    # Apply all updates
+    for name_id, platform_id, plat_enc_id, lang_id, new_name in updates:
+        name_table.setName(new_name, name_id, platform_id, plat_enc_id, lang_id)
+
 
 class FontWriter:
     """Writes modified fonts with stencilized naming convention.
@@ -59,9 +128,13 @@ class FontWriter:
     def save(self) -> None:
         """Save the font file to the output path.
 
+        Updates font name table with stenciled suffix before saving
+        so the font can coexist with the original.
+
         Raises:
             IOError: If file cannot be written
         """
+        update_font_names(self._font)
         self._font.save(str(self._output_path))
 
     @staticmethod

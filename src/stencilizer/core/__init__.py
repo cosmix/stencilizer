@@ -47,25 +47,25 @@ from stencilizer.core.processor import FontProcessor, process_glyph
 from stencilizer.core.surgery import BridgeHoleCreator, GlyphTransformer
 
 __all__ = [
+    "BridgeGenerator",
+    # Surgery classes
+    "BridgeHoleCreator",
+    # Bridge classes
+    "BridgePlacer",
+    # Analyzer classes
+    "ContourHierarchy",
+    # Processor classes
+    "FontProcessor",
+    "GlyphAnalyzer",
+    "GlyphTransformer",
     # Geometry functions
     "bezier_flatten",
+    "get_island_glyphs",
     "line_intersection",
     "nearest_point_on_contour",
     "nearest_point_on_segment",
     "perpendicular_direction",
     "point_in_polygon",
-    "signed_area",
-    # Analyzer classes
-    "ContourHierarchy",
-    "GlyphAnalyzer",
-    "get_island_glyphs",
-    # Bridge classes
-    "BridgePlacer",
-    "BridgeGenerator",
-    # Surgery classes
-    "BridgeHoleCreator",
-    "GlyphTransformer",
-    # Processor classes
-    "FontProcessor",
     "process_glyph",
+    "signed_area",
 ]
