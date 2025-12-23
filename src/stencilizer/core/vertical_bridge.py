@@ -4,12 +4,16 @@ This module handles creating contours with vertical bridges (TOP/BOTTOM gaps),
 which splits glyphs into LEFT/RIGHT pieces.
 """
 
+import logging
+
 from stencilizer.core.geometry import (
     compute_winding_direction,
     find_all_edge_crossings,
     signed_area,
 )
 from stencilizer.domain import Contour, Point, PointType, WindingDirection
+
+logger = logging.getLogger(__name__)
 
 
 def create_vertical_bridge_contours(
@@ -49,6 +53,24 @@ def create_vertical_bridge_contours(
     if not (outer_left_above and outer_left_below and
             outer_right_above and outer_right_below and
             inner_left_crossings and inner_right_crossings):
+        missing = []
+        if not outer_left_above:
+            missing.append("outer_left_above")
+        if not outer_left_below:
+            missing.append("outer_left_below")
+        if not outer_right_above:
+            missing.append("outer_right_above")
+        if not outer_right_below:
+            missing.append("outer_right_below")
+        if not inner_left_crossings:
+            missing.append("inner_left_crossings")
+        if not inner_right_crossings:
+            missing.append("inner_right_crossings")
+        logger.debug(
+            "Vertical bridge creation failed: missing crossings %s at center_x=%.1f, "
+            "inner_y_range=[%.1f, %.1f]",
+            missing, center_x, inner_min_y, inner_max_y
+        )
         return [outer, inner]
 
     result = []
@@ -377,7 +399,11 @@ def build_outer_portion_vertical(
             direction = WindingDirection.CLOCKWISE
         return Contour(points=cleaned_points, direction=direction)
 
-    except Exception:
+    except Exception as e:
+        logger.debug(
+            "build_outer_portion_vertical failed: %s at bridge_x=%.1f, is_left=%s",
+            str(e), bridge_x, is_left
+        )
         return None
 
 
@@ -603,5 +629,9 @@ def build_inner_portion_vertical(
 
         return Contour(points=best_result, direction=target_winding)
 
-    except Exception:
+    except Exception as e:
+        logger.debug(
+            "build_inner_portion_vertical failed: %s at bridge_x=%.1f, is_left=%s",
+            str(e), bridge_x, is_left
+        )
         return None
