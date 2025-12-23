@@ -2,7 +2,6 @@
 
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +15,71 @@ class BridgePosition(str, Enum):
     LEFT = "left"
     RIGHT = "right"
     TOP_BOTTOM = "top_bottom"
+
+
+class GeometryConfig(BaseModel):
+    """Configuration for geometry operations with scale-relative tolerances.
+
+    All tolerance values are specified at a reference UPM of 1000 and will be
+    scaled proportionally for fonts with different UPM values.
+    """
+
+    reference_upm: int = Field(
+        default=1000,
+        description="Reference UPM for tolerance values",
+    )
+    point_dedup_tolerance: float = Field(
+        default=0.5,
+        ge=0.1,
+        le=5.0,
+        description="Tolerance for point deduplication (at reference UPM)",
+    )
+    line_intersection_epsilon: float = Field(
+        default=0.001,
+        ge=0.0001,
+        le=0.1,
+        description="Epsilon for line intersection calculations (at reference UPM)",
+    )
+    bezier_flatten_tolerance: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=10.0,
+        description="Tolerance for Bezier curve flattening (at reference UPM)",
+    )
+    min_contour_gap: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=10.0,
+        description="Minimum gap between contour points to consider distinct (at reference UPM)",
+    )
+
+    def scale_tolerance(self, base_value: float, upm: int) -> float:
+        """Scale a tolerance value for the given UPM.
+
+        Args:
+            base_value: The tolerance value at reference UPM
+            upm: The actual UPM of the font
+
+        Returns:
+            Scaled tolerance value
+        """
+        return base_value * (upm / self.reference_upm)
+
+    def get_point_dedup_tolerance(self, upm: int) -> float:
+        """Get point deduplication tolerance scaled for UPM."""
+        return self.scale_tolerance(self.point_dedup_tolerance, upm)
+
+    def get_line_epsilon(self, upm: int) -> float:
+        """Get line intersection epsilon scaled for UPM."""
+        return self.scale_tolerance(self.line_intersection_epsilon, upm)
+
+    def get_bezier_tolerance(self, upm: int) -> float:
+        """Get Bezier flattening tolerance scaled for UPM."""
+        return self.scale_tolerance(self.bezier_flatten_tolerance, upm)
+
+    def get_contour_gap(self, upm: int) -> float:
+        """Get minimum contour gap scaled for UPM."""
+        return self.scale_tolerance(self.min_contour_gap, upm)
 
 
 class BridgeConfig(BaseModel):
@@ -58,7 +122,7 @@ class BridgeConfig(BaseModel):
 class ProcessingConfig(BaseModel):
     """Configuration for font processing."""
 
-    max_workers: Optional[int] = Field(
+    max_workers: int | None = Field(
         default=None,
         description="Max worker processes (None = auto)",
     )
@@ -71,7 +135,7 @@ class ProcessingConfig(BaseModel):
 class LoggingConfig(BaseModel):
     """Logging configuration."""
 
-    log_file: Optional[Path] = Field(
+    log_file: Path | None = Field(
         default=None,
         description="Path to log file",
     )
@@ -89,6 +153,7 @@ class StencilizerSettings(BaseModel):
     """Main application settings."""
 
     bridge: BridgeConfig = Field(default_factory=BridgeConfig)
+    geometry: GeometryConfig = Field(default_factory=GeometryConfig)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 

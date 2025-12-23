@@ -4,6 +4,8 @@ This module handles glyphs with multiple islands (like '8', 'B', 'Phi')
 using spanning vertical bridges.
 """
 
+import logging
+
 from stencilizer.core.geometry import (
     find_all_edge_crossings,
     find_edge_crossing,
@@ -13,8 +15,9 @@ from stencilizer.core.vertical_bridge import (
     build_inner_portion_vertical,
     build_outer_portion_vertical,
 )
-
 from stencilizer.domain import Contour, WindingDirection
+
+logger = logging.getLogger(__name__)
 
 
 def classify_obstruction(
@@ -256,12 +259,20 @@ def merge_multi_island_vertical(
     common_max_x = min(inner.bounding_box()[2] for inner in inners)
 
     if common_max_x <= common_min_x:
+        logger.debug(
+            "Multi-island merge failed: no common X overlap (common_min_x=%.1f, common_max_x=%.1f)",
+            common_min_x, common_max_x
+        )
         return [outer, *inners]
 
     center_x = (common_min_x + common_max_x) / 2.0
     available_width = common_max_x - common_min_x
 
     if bridge_width > available_width:
+        logger.debug(
+            "Bridge width (%.1f) exceeds available width (%.1f), clamping to %.1f",
+            bridge_width, available_width, available_width * 0.9
+        )
         bridge_width = available_width * 0.9
 
     half_width = bridge_width / 2.0
@@ -272,6 +283,10 @@ def merge_multi_island_vertical(
     if all_contours and has_spanning_obstruction(
         outer, inners, all_contours, bridge_left, bridge_right
     ):
+        logger.debug(
+            "Multi-island merge aborted: spanning obstruction detected at x=[%.1f, %.1f]",
+            bridge_left, bridge_right
+        )
         return [outer, *inners]
 
     all_inner_min_y = min(inner.bounding_box()[1] for inner in inners)
@@ -294,6 +309,19 @@ def merge_multi_island_vertical(
         )
 
         if not all([outer_top_left, outer_top_right, outer_bot_left, outer_bot_right]):
+            missing = []
+            if not outer_top_left:
+                missing.append("outer_top_left")
+            if not outer_top_right:
+                missing.append("outer_top_right")
+            if not outer_bot_left:
+                missing.append("outer_bot_left")
+            if not outer_bot_right:
+                missing.append("outer_bot_right")
+            logger.debug(
+                "Multi-island merge failed: missing outer crossings %s",
+                missing
+            )
             return [outer, *inners]
 
         # Find crossings for each inner
@@ -316,6 +344,11 @@ def merge_multi_island_vertical(
             )
 
             if not all([left_top, left_bot, right_top, right_bot]):
+                inner_bbox = inner.bounding_box()
+                logger.debug(
+                    "Multi-island merge failed: missing inner crossings for island at y=[%.1f, %.1f]",
+                    inner_bbox[1], inner_bbox[3]
+                )
                 return [outer, *inners]
 
             inner_crossings.append(
@@ -382,8 +415,17 @@ def merge_multi_island_vertical(
         # Verify ALL core portions were built - if any inner failed, fall back
         # We need: left_outer, right_outer, and both left+right for EVERY inner
         if not left_outer or not right_outer:
+            logger.debug(
+                "Multi-island merge failed: outer portion build failed (left=%s, right=%s)",
+                left_outer is not None, right_outer is not None
+            )
             return [outer, *inners]
         if left_inners_built != num_inners or right_inners_built != num_inners:
+            logger.debug(
+                "Multi-island merge failed: inner portions incomplete "
+                "(left=%d/%d, right=%d/%d)",
+                left_inners_built, num_inners, right_inners_built, num_inners
+            )
             return [outer, *inners]
 
         # Also split any NESTED contours that cross the bridge lines
@@ -538,5 +580,9 @@ def merge_multi_island_vertical(
         else:
             return [outer, *inners]
 
-    except Exception:
+    except Exception as e:
+        logger.debug(
+            "Multi-island merge failed with exception: %s",
+            str(e)
+        )
         return [outer, *inners]

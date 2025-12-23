@@ -10,10 +10,13 @@ The analysis uses signed area calculation to determine winding direction
 and point-in-polygon tests to establish containment relationships.
 """
 
+import logging
 from dataclasses import dataclass
 
 from stencilizer.core.geometry import point_in_polygon, signed_area
-from stencilizer.domain import Contour, Glyph
+from stencilizer.domain import Contour, Glyph, PointType
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -198,23 +201,30 @@ class GlyphAnalyzer:
     def _is_island(self, inner_contour: Contour, outer_contour: Contour) -> bool:
         """Check if an inner contour is fully enclosed within an outer contour.
 
-        An island is defined as an inner contour where ALL points are inside
-        the outer contour. This is a strict definition to ensure the inner
-        contour is truly isolated.
+        An island is defined as an inner contour where ALL on-curve points are
+        inside the outer contour. Only ON_CURVE points are tested because
+        OFF_CURVE control points (Bezier handles) can extend outside the
+        containing contour while the actual curve path stays inside.
 
         Args:
             inner_contour: The inner contour to test
             outer_contour: The outer contour to test against
 
         Returns:
-            True if all points of inner contour are inside outer contour
+            True if all on-curve points of inner contour are inside outer contour
         """
-        # Test all points to ensure complete containment
-        for point in inner_contour.points:
-            if not point_in_polygon(point, outer_contour.points):
-                return False
+        # Filter to only ON_CURVE points - OFF_CURVE control points can legitimately
+        # extend outside the containing contour while the actual curve stays inside
+        on_curve_points = [p for p in inner_contour.points if p.point_type == PointType.ON_CURVE]
 
-        return True
+        # If no on-curve points (shouldn't happen), fall back to all points
+        if not on_curve_points:
+            logger.warning(
+                "Contour has no ON_CURVE points, falling back to all points for containment test"
+            )
+            on_curve_points = inner_contour.points
+
+        return all(point_in_polygon(point, outer_contour.points) for point in on_curve_points)
 
     def _build_nesting_tree(
         self,
