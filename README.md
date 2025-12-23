@@ -1,9 +1,7 @@
 # Stencilizer
 Convert TrueType and OpenType fonts to stencil-ready versions by automatically adding bridges to enclosed contours.
 
-
-<img width="800"  alt="stencilizer" src="https://github.com/user-attachments/assets/3d7e886a-7a2b-4ee9-a4c5-06e434230cae" />
-
+<img width="1024" height="409" alt="stencil" src="https://github.com/user-attachments/assets/03d0c074-4d97-4d39-a457-60366c400de2" />
 
 ## Overview
 
