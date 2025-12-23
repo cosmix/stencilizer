@@ -49,6 +49,10 @@ class BridgeConfig(BaseModel):
         le=72,
         description="Number of candidate points to sample per island",
     )
+    use_spanning_bridges: bool = Field(
+        default=True,
+        description="For vertically-stacked islands, use spanning vertical bridges instead of per-island horizontal bridges",
+    )
 
 
 class ProcessingConfig(BaseModel):

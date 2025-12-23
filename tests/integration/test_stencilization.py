@@ -39,7 +39,23 @@ class TestIslandDetection:
     """Test island detection on real font glyphs."""
 
     # Glyphs known to have islands (enclosed counters)
-    GLYPHS_WITH_ISLANDS: ClassVar[list[str]] = ["O", "o", "A", "B", "D", "P", "Q", "R", "a", "b", "d", "e", "g", "p", "q"]
+    GLYPHS_WITH_ISLANDS: ClassVar[list[str]] = [
+        "O",
+        "o",
+        "A",
+        "B",
+        "D",
+        "P",
+        "Q",
+        "R",
+        "a",
+        "b",
+        "d",
+        "e",
+        "g",
+        "p",
+        "q",
+    ]
 
     # Glyphs known to NOT have islands
     GLYPHS_WITHOUT_ISLANDS: ClassVar[list[str]] = ["I", "l", "T", "L", "V", "W", "X", "Y", "Z"]
@@ -191,15 +207,15 @@ class TestGlyphTransformation:
 
                 transformed = transformer.transform(glyph, upm=roboto_reader.units_per_em)
 
-                # Should have 2 merged contours (replacing outer + inner with bridge gaps)
-                # The contours are DIFFERENT from originals (merged with bridges)
-                assert len(transformed.contours) == 2, (
-                    f"Expected 2 merged contours, got {len(transformed.contours)}"
+                # Should have 4 contours (2 outer CW + 2 inner CCW for LEFT/RIGHT pieces)
+                # Each piece has an outer boundary and a hole boundary
+                assert len(transformed.contours) == 4, (
+                    f"Expected 4 contours (2 outer + 2 inner), got {len(transformed.contours)}"
                 )
 
-                # Contours should be different from originals (they're merged)
+                # Contours should be different from originals (they're cut with bridges)
                 assert transformed.contours[0] != glyph.contours[0], (
-                    "First contour should be different (merged with bridges)"
+                    "First contour should be different (cut with bridges)"
                 )
                 return
 
@@ -471,6 +487,118 @@ class TestBridgeQuality:
                 return
 
         pytest.fail("Glyph 'O' not found")
+
+
+class TestSpanningBridges:
+    """Test spanning bridges feature on shaped glyphs."""
+
+    def test_glyph_eight_shape_uses_spanning_bridges(self, roboto_reader: FontReader) -> None:
+        """Test that real glyphs with vertically-stacked islands use spanning bridges."""
+        from stencilizer.config import BridgeConfig
+        from stencilizer.core.analyzer import GlyphAnalyzer
+        from stencilizer.core.bridge import BridgeGenerator, BridgePlacer
+        from stencilizer.core.surgery import GlyphTransformer
+
+        analyzer = GlyphAnalyzer()
+        config = BridgeConfig(width_percent=60.0, use_spanning_bridges=True)
+        placer = BridgePlacer(config)
+        generator = BridgeGenerator(config)
+        transformer = GlyphTransformer(analyzer, placer, generator, bridge_config=config)
+
+        # Use real glyph 'B' which has vertically-stacked islands
+        for glyph in roboto_reader.iter_glyphs():
+            if glyph.name == "B":
+                hierarchy = analyzer.analyze(glyph)
+                if not hierarchy.has_islands():
+                    pytest.skip("Glyph 'B' doesn't have islands in this font")
+
+                islands = hierarchy.get_islands()
+                if len(islands) < 2:
+                    pytest.skip("Glyph 'B' doesn't have multiple islands")
+
+                original_contour_count = len(glyph.contours)
+                transformed = transformer.transform(glyph, upm=roboto_reader.units_per_em)
+
+                # With spanning bridges enabled, the glyph should be transformed
+                # and should have different (typically fewer) contours
+                assert len(transformed.contours) != original_contour_count, (
+                    f"Expected transformation with spanning bridges, "
+                    f"got same count: {len(transformed.contours)}"
+                )
+
+                # Verify the contours actually changed (not just same contours)
+                assert transformed.contours != glyph.contours, (
+                    "Contours should be different after transformation"
+                )
+                return
+
+        pytest.fail("Glyph 'B' not found in font")
+
+    def test_spanning_bridges_config_flag_exists(self) -> None:
+        """Test that the use_spanning_bridges config flag exists and can be set."""
+        from stencilizer.config import BridgeConfig
+
+        # Test that the config flag can be set to True
+        config_enabled = BridgeConfig(width_percent=60.0, use_spanning_bridges=True)
+        assert config_enabled.use_spanning_bridges is True, (
+            "use_spanning_bridges should be True when explicitly set"
+        )
+
+        # Test that the config flag can be set to False
+        config_disabled = BridgeConfig(width_percent=60.0, use_spanning_bridges=False)
+        assert config_disabled.use_spanning_bridges is False, (
+            "use_spanning_bridges should be False when explicitly set"
+        )
+
+        # Test default value
+        config_default = BridgeConfig(width_percent=60.0)
+        assert hasattr(config_default, "use_spanning_bridges"), (
+            "BridgeConfig should have use_spanning_bridges attribute"
+        )
+
+    def test_spanning_bridges_with_multiple_islands(self, roboto_reader: FontReader) -> None:
+        """Test that spanning bridges work with glyphs that have 2+ vertically-stacked islands."""
+        from stencilizer.config import BridgeConfig
+        from stencilizer.core.analyzer import GlyphAnalyzer
+        from stencilizer.core.bridge import BridgeGenerator, BridgePlacer
+        from stencilizer.core.surgery import GlyphTransformer
+
+        analyzer = GlyphAnalyzer()
+        config = BridgeConfig(width_percent=60.0, use_spanning_bridges=True)
+        placer = BridgePlacer(config)
+        generator = BridgeGenerator(config)
+        transformer = GlyphTransformer(analyzer, placer, generator, bridge_config=config)
+
+        # Try to find any glyph with 2+ islands
+        candidates = ["B", "8", "g", "%"]
+
+        for glyph in roboto_reader.iter_glyphs():
+            if glyph.name in candidates:
+                hierarchy = analyzer.analyze(glyph)
+                if not hierarchy.has_islands():
+                    continue
+
+                islands = hierarchy.get_islands()
+                if len(islands) < 2:
+                    continue
+
+                # Found a glyph with multiple islands
+                original_contour_count = len(glyph.contours)
+                transformed = transformer.transform(glyph, upm=roboto_reader.units_per_em)
+
+                # Verify transformation occurred
+                assert (
+                    len(transformed.contours) != original_contour_count
+                    or transformed.contours != glyph.contours
+                ), f"Glyph '{glyph.name}' should be transformed with spanning bridges"
+
+                # The result should have valid contours
+                assert len(transformed.contours) >= 1, (
+                    f"Transformed glyph should have at least 1 contour, got {len(transformed.contours)}"
+                )
+                return
+
+        pytest.skip("No suitable multi-island glyph found in font")
 
 
 class TestEdgeCases:

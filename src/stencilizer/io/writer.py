@@ -4,16 +4,19 @@ This module provides the FontWriter class for writing modified fonts
 with the stencilized naming convention.
 """
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fontTools.ttLib import TTFont
 
+from stencilizer import __version__
 from stencilizer.domain.glyph import Glyph
 from stencilizer.io.converter import domain_glyph_to_fonttools
 
 # Name table IDs we modify
 NAME_ID_FAMILY = 1
 NAME_ID_FULL_NAME = 4
+NAME_ID_VERSION = 5
 NAME_ID_POSTSCRIPT = 6
 NAME_ID_TYPOGRAPHIC_FAMILY = 16
 
@@ -72,6 +75,12 @@ def update_font_names(font: TTFont, suffix: str = " Stenciled") -> None:
                 new_name = f"{parts[0]}{ps_suffix}-{parts[1]}"
             else:
                 new_name = original + ps_suffix
+
+        elif name_id == NAME_ID_VERSION:
+            # Append stencilization timestamp to version with GitHub URL
+            # "Version 2.015" → "Version 2.015; Stencil Version generated 2025-12-23T14:30:45 (UTC) using Stencilizer v0.1.0 https://github.com/cosmix/stencilizer"
+            timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+            new_name = f"{original}; Stencil Version generated {timestamp} (UTC) using Stencilizer v{__version__} https://github.com/cosmix/stencilizer"
 
         if new_name is not None:
             updates.append((name_id, platform_id, plat_enc_id, lang_id, new_name))

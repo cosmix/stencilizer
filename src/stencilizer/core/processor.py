@@ -66,6 +66,7 @@ def process_glyph(
             analyzer=analyzer,
             placer=placer,
             generator=generator,
+            bridge_config=bridge_config,
         )
 
         # Count original islands using analyzer
@@ -406,7 +407,7 @@ class FontProcessor:
         # Process in parallel
         total = len(tasks)
         completed = 0
-        pending_futures: dict = {}
+        pending_futures: dict[Any, str] = {}
 
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             # Submit all tasks

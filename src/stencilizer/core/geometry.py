@@ -15,7 +15,7 @@ import math
 
 from stencilizer.core._bezier import flatten_cubic as _flatten_cubic
 from stencilizer.core._bezier import flatten_quadratic as _flatten_quadratic
-from stencilizer.domain import Contour, Point, PointType
+from stencilizer.domain import Contour, Point, PointType, WindingDirection
 
 
 def signed_area(points: list[Point]) -> float:
@@ -357,3 +357,343 @@ def perpendicular_direction(p1: Point, p2: Point) -> tuple[float, float]:
     py = dx
 
     return px, py
+
+
+# --- Surgery-specific geometry functions ---
+
+
+def compute_winding_direction(points: list[Point]) -> WindingDirection:
+    """Compute winding direction from signed area of points.
+
+    Uses the shoelace formula to calculate signed area.
+    Standard convention: CCW traversal gives positive area, CW gives negative.
+
+    Args:
+        points: List of points forming a closed contour
+
+    Returns:
+        WindingDirection.CLOCKWISE or WindingDirection.COUNTER_CLOCKWISE
+    """
+    if len(points) < 3:
+        return WindingDirection.CLOCKWISE
+
+    area = signed_area(points)
+
+    # Standard convention: positive area = CCW, negative area = CW
+    if area < 0:
+        return WindingDirection.CLOCKWISE
+    else:
+        return WindingDirection.COUNTER_CLOCKWISE
+
+
+def segments_intersect(
+    ax1: float,
+    ay1: float,
+    ax2: float,
+    ay2: float,
+    bx1: float,
+    by1: float,
+    bx2: float,
+    by2: float,
+) -> bool:
+    """Check if two line segments intersect using cross product method."""
+
+    def cross(o_x: float, o_y: float, a_x: float, a_y: float, b_x: float, b_y: float) -> float:
+        return (a_x - o_x) * (b_y - o_y) - (a_y - o_y) * (b_x - o_x)
+
+    d1 = cross(bx1, by1, bx2, by2, ax1, ay1)
+    d2 = cross(bx1, by1, bx2, by2, ax2, ay2)
+    d3 = cross(ax1, ay1, ax2, ay2, bx1, by1)
+    d4 = cross(ax1, ay1, ax2, ay2, bx2, by2)
+
+    return d1 * d2 < 0 and d3 * d4 < 0
+
+
+def line_intersects_contour(x1: float, y1: float, x2: float, y2: float, contour: Contour) -> bool:
+    """Check if a line segment intersects a contour."""
+    points = contour.points
+    n = len(points)
+
+    for i in range(n):
+        p1 = points[i]
+        p2 = points[(i + 1) % n]
+
+        if segments_intersect(x1, y1, x2, y2, p1.x, p1.y, p2.x, p2.y):
+            return True
+
+    return False
+
+
+def is_bridge_path_clear(
+    start_x: float,
+    start_y: float,
+    end_x: float,
+    end_y: float,
+    inner: Contour,
+    outer: Contour,
+    all_contours: list[Contour] | None = None,
+) -> bool:
+    """Check if a bridge path is clear of obstructions.
+
+    Only FILLED contours (CW, negative area) are considered obstructions.
+    Holes (CCW, positive area) can be split by the bridge function and
+    are not obstructions.
+    """
+    if all_contours is None:
+        return True
+
+    for contour in all_contours:
+        if contour is inner or contour is outer:
+            continue
+        # Only filled contours (CW = negative signed area) are obstructions.
+        # Holes (CCW = positive signed area) can be split by bridge functions.
+        if signed_area(contour.points) >= 0:
+            continue  # This is a hole, not an obstruction
+        if line_intersects_contour(start_x, start_y, end_x, end_y, contour):
+            return False
+
+    return True
+
+
+def find_edge_crossing(
+    contour: Contour,
+    coord: float,
+    is_x: bool,
+    constraint_min: float | None = None,
+    constraint_max: float | None = None,
+    pick_extreme: bool = False,
+) -> tuple[int, float, float] | None:
+    """Find where contour edge crosses a coordinate.
+
+    Args:
+        contour: The contour to search
+        coord: The X or Y coordinate to find crossing at
+        is_x: If True, find Y at given X; if False, find X at given Y
+        constraint_min: Only return crossings where the other coord > this
+        constraint_max: Only return crossings where the other coord < this
+        pick_extreme: If True, pick extreme crossing instead of nearest
+
+    Returns:
+        (edge_index, crossing_coord, t_param) or None
+    """
+    points = contour.points
+    n = len(points)
+    best = None
+    best_other = None
+
+    for i in range(n):
+        p1 = points[i]
+        p2 = points[(i + 1) % n]
+
+        if is_x:
+            c1, c2 = p1.x, p2.x
+            o1, o2 = p1.y, p2.y
+        else:
+            c1, c2 = p1.y, p2.y
+            o1, o2 = p1.x, p2.x
+
+        if not ((c1 <= coord <= c2) or (c2 <= coord <= c1)):
+            continue
+
+        if abs(c2 - c1) < 0.001:
+            t = 0.5
+            other = (o1 + o2) / 2
+        else:
+            t = (coord - c1) / (c2 - c1)
+            other = o1 + t * (o2 - o1)
+
+        if constraint_min is not None and other <= constraint_min:
+            continue
+        if constraint_max is not None and other >= constraint_max:
+            continue
+
+        if best is None:
+            best = (i, other, t)
+            best_other = other
+        else:
+            if pick_extreme:
+                if (
+                    constraint_min is not None and best_other is not None and other > best_other
+                ) or (constraint_max is not None and best_other is not None and other < best_other):
+                    best = (i, other, t)
+                    best_other = other
+            else:
+                if (
+                    constraint_min is not None and best_other is not None and other < best_other
+                ) or (constraint_max is not None and best_other is not None and other > best_other):
+                    best = (i, other, t)
+                    best_other = other
+
+    return best
+
+
+def find_all_edge_crossings(
+    contour: Contour, coord: float, is_x: bool
+) -> list[tuple[int, float, float]]:
+    """Find ALL points where contour edges cross a coordinate.
+
+    Returns:
+        List of (edge_index, crossing_coord, other_coord) sorted by other_coord descending
+    """
+    points = contour.points
+    n = len(points)
+    crossings = []
+
+    for i in range(n):
+        p1 = points[i]
+        p2 = points[(i + 1) % n]
+
+        if is_x:
+            c1, c2 = p1.x, p2.x
+            o1, o2 = p1.y, p2.y
+        else:
+            c1, c2 = p1.y, p2.y
+            o1, o2 = p1.x, p2.x
+
+        if not ((c1 <= coord <= c2) or (c2 <= coord <= c1)):
+            continue
+
+        if abs(c2 - c1) < 0.001:
+            other = (o1 + o2) / 2
+        else:
+            t = (coord - c1) / (c2 - c1)
+            other = o1 + t * (o2 - o1)
+
+        crossings.append((i, coord, other))
+
+    crossings.sort(key=lambda c: -c[2])
+    return crossings
+
+
+def _compute_side_percentages(
+    contour_points: list[Point],
+    start_idx: int,
+    end_idx: int,
+    threshold: float,
+    want_less_than: bool,
+    is_x: bool,
+) -> tuple[float, float]:
+    """Compute percentage of points on correct side for forward and backward traversal.
+
+    Args:
+        contour_points: List of points in the contour
+        start_idx: Starting index
+        end_idx: Ending index
+        threshold: The coordinate threshold to check against
+        want_less_than: If True, check for coord < threshold; else coord > threshold
+        is_x: If True, check x coordinate; else check y coordinate
+
+    Returns:
+        Tuple of (forward_percentage, backward_percentage)
+    """
+    n = len(contour_points)
+
+    forward_correct = 0
+    forward_total = 0
+    idx = (start_idx + 1) % n
+    count = 0
+    while idx != end_idx and count < n:
+        p = contour_points[idx]
+        coord = p.x if is_x else p.y
+        if want_less_than:
+            if coord < threshold:
+                forward_correct += 1
+        else:
+            if coord > threshold:
+                forward_correct += 1
+        forward_total += 1
+        idx = (idx + 1) % n
+        count += 1
+
+    backward_correct = 0
+    backward_total = 0
+    idx = start_idx
+    count = 0
+    while idx != end_idx and count < n:
+        p = contour_points[idx]
+        coord = p.x if is_x else p.y
+        if want_less_than:
+            if coord < threshold:
+                backward_correct += 1
+        else:
+            if coord > threshold:
+                backward_correct += 1
+        backward_total += 1
+        idx = (idx - 1) % n
+        count += 1
+
+    forward_pct = forward_correct / max(forward_total, 1)
+    backward_pct = backward_correct / max(backward_total, 1)
+
+    return forward_pct, backward_pct
+
+
+def detect_traversal_direction(
+    contour_points: list[Point],
+    start_idx: int,
+    end_idx: int,
+    threshold: float,
+    want_less_than: bool,
+    is_x: bool,
+) -> int:
+    """Detect which traversal direction stays on the correct side.
+
+    Returns:
+        +1 for forward traversal, -1 for backward traversal
+    """
+    forward_pct, backward_pct = _compute_side_percentages(
+        contour_points, start_idx, end_idx, threshold, want_less_than, is_x
+    )
+
+    return -1 if backward_pct > forward_pct else 1
+
+
+def detect_traversal_direction_robust(
+    contour_points: list[Point],
+    start_idx: int,
+    end_idx: int,
+    threshold: float,
+    want_less_than: bool,
+    is_x: bool,
+) -> int:
+    """Detect traversal direction using multiple heuristics.
+
+    Combines:
+    1. Percentage of points on correct side
+    2. First point after start check (critical)
+    3. Signed distance accumulation
+
+    Args:
+        contour_points: List of points in the contour
+        start_idx: Starting index
+        end_idx: Ending index
+        threshold: The coordinate threshold to check against
+        want_less_than: If True, check for coord < threshold; else coord > threshold
+        is_x: If True, check x coordinate; else check y coordinate
+
+    Returns:
+        1 for forward direction, -1 for backward direction
+    """
+    n = len(contour_points)
+
+    # Get the existing percentage-based scores
+    forward_pct, backward_pct = _compute_side_percentages(
+        contour_points, start_idx, end_idx, threshold, want_less_than, is_x
+    )
+
+    # Check first point after start in each direction
+    forward_first_idx = (start_idx + 1) % n
+    backward_first_idx = (start_idx - 1) % n
+
+    def on_correct_side(p: Point) -> bool:
+        coord = p.x if is_x else p.y
+        return (coord < threshold) if want_less_than else (coord > threshold)
+
+    forward_first_ok = on_correct_side(contour_points[forward_first_idx])
+    backward_first_ok = on_correct_side(contour_points[backward_first_idx])
+
+    # Combine heuristics with weights
+    forward_score = forward_pct * 0.5 + (0.5 if forward_first_ok else 0.0)
+    backward_score = backward_pct * 0.5 + (0.5 if backward_first_ok else 0.0)
+
+    return -1 if backward_score > forward_score else 1
