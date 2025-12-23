@@ -433,13 +433,22 @@ def is_bridge_path_clear(
     outer: Contour,
     all_contours: list[Contour] | None = None,
 ) -> bool:
-    """Check if a bridge path is clear of obstructions."""
+    """Check if a bridge path is clear of obstructions.
+
+    Only FILLED contours (CW, negative area) are considered obstructions.
+    Holes (CCW, positive area) can be split by the bridge function and
+    are not obstructions.
+    """
     if all_contours is None:
         return True
 
     for contour in all_contours:
         if contour is inner or contour is outer:
             continue
+        # Only filled contours (CW = negative signed area) are obstructions.
+        # Holes (CCW = positive signed area) can be split by bridge functions.
+        if signed_area(contour.points) >= 0:
+            continue  # This is a hole, not an obstruction
         if line_intersects_contour(start_x, start_y, end_x, end_y, contour):
             return False
 

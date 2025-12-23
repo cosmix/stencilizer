@@ -109,8 +109,8 @@ class TestContourMerger:
         assert cw_count == 2, f"Expected 2 CW (outer) contours, got {cw_count}"
         assert ccw_count >= 2, f"Expected at least 2 CCW (inner) contours, got {ccw_count}"
 
-    def test_has_spanning_obstruction_detects_horizontal_bar(self) -> None:
-        """Test that has_spanning_obstruction detects horizontal bars like in Theta."""
+    def test_has_spanning_obstruction_allows_structural_bars(self) -> None:
+        """Test that has_spanning_obstruction allows structural bars (same winding as outer)."""
         # Outer contour (large rectangle)
         outer = Contour(
             points=[
@@ -157,11 +157,13 @@ class TestContourMerger:
         all_contours = [outer, inner1, inner2, bar]
 
         # Bridge would be around center X (50) with width 20 -> bridge_left=40, bridge_right=60
+        # Horizontal bars with same winding as outer are "structural" and NOT obstructions
+        # They get split along with everything else for proper stencil cutting
         result = has_spanning_obstruction(
             outer, inners, all_contours, bridge_left_x=40.0, bridge_right_x=60.0
         )
 
-        assert result is True, "Should detect the horizontal bar as obstruction"
+        assert result is False, "Structural bars (same winding as outer) should not be obstructions"
 
     def test_has_spanning_obstruction_no_obstruction(self) -> None:
         """Test that has_spanning_obstruction returns False when path is clear."""
@@ -203,8 +205,8 @@ class TestContourMerger:
 
         assert result is False, "Should not detect obstruction when path is clear"
 
-    def test_merge_multi_island_vertical_with_obstruction_falls_back(self) -> None:
-        """Test that merge_multi_island_vertical falls back when obstruction is detected."""
+    def test_merge_multi_island_vertical_splits_structural_bar(self) -> None:
+        """Test that merge_multi_island_vertical splits structural bars along with everything else."""
         outer = Contour(
             points=[
                 Point(0.0, 0.0),
@@ -234,7 +236,7 @@ class TestContourMerger:
             direction=WindingDirection.COUNTER_CLOCKWISE,
         )
 
-        # Horizontal bar in gap
+        # Horizontal bar in gap - will be split into LEFT and RIGHT pieces
         bar = Contour(
             points=[
                 Point(30.0, 95.0),
@@ -252,9 +254,10 @@ class TestContourMerger:
             outer, inners, bridge_width=20.0, all_contours=all_contours
         )
 
-        # Should fall back to returning original contours
-        assert len(result) == 3, f"Should return [outer, inner1, inner2], got {len(result)}"
-        assert result[0] == outer
+        # Should create LEFT and RIGHT pieces for outer, inners, and bar
+        # Minimum: 2 outer pieces + 4 inner pieces = 6, plus bar pieces
+        assert len(result) >= 6, f"Should create spanning bridge pieces, got {len(result)}"
+        assert result[0] != outer, "Should not return original outer unchanged"
 
 
 class TestGlyphTransformer:

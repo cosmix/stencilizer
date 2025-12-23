@@ -5,15 +5,16 @@ This module handles glyphs with multiple horizontally-arranged islands
 """
 
 from stencilizer.core.geometry import (
+    compute_winding_direction,
+    detect_traversal_direction,
     find_all_edge_crossings,
     find_edge_crossing,
     signed_area,
 )
 from stencilizer.core.horizontal_bridge import (
     build_inner_portion_horizontal,
-    build_outer_portion_horizontal,
 )
-from stencilizer.domain import Contour, WindingDirection
+from stencilizer.domain import Contour, Point, PointType, WindingDirection
 
 
 def classify_obstruction_horizontal(
@@ -103,11 +104,184 @@ def has_spanning_obstruction_horizontal(
     return False
 
 
+def build_outer_portion_multi_island_horizontal(
+    outer: Contour,
+    bridge_y: float,
+    is_top: bool,
+) -> Contour | None:
+    """Build outer portion for multi-island horizontal bridge.
+
+    Unlike the single-island version, this includes ALL parts of the outer
+    contour above/below the bridge line (including stems between islands).
+
+    Args:
+        outer: The outer contour
+        bridge_y: Y position of the bridge line
+        is_top: If True, build the TOP portion; otherwise build BOTTOM
+
+    Returns:
+        The portion of outer above/below bridge_y, or None if failed
+    """
+    try:
+        outer_crossings = find_all_edge_crossings(outer, bridge_y, False)
+        if len(outer_crossings) < 2:
+            return None
+
+        # Sort crossings by X position
+        sorted_crossings = sorted(outer_crossings, key=lambda c: c[2])
+
+        outer_points = outer.points
+        n_outer = len(outer_points)
+
+        def on_correct_side(y: float) -> bool:
+            if is_top:
+                return y >= bridge_y
+            else:
+                return y <= bridge_y
+
+        def intersect_bridge(p1: Point, p2: Point) -> tuple[float, float]:
+            if abs(p2.y - p1.y) < 0.001:
+                return ((p1.x + p2.x) / 2, bridge_y)
+            t = (bridge_y - p1.y) / (p2.y - p1.y)
+            x = p1.x + t * (p2.x - p1.x)
+            return (x, bridge_y)
+
+        # For TOP: start from rightmost crossing, traverse to collect all points above bridge_y
+        # For BOTTOM: start from leftmost crossing, traverse to collect all points below bridge_y
+        if is_top:
+            # Start at rightmost crossing, go CCW (backward) to leftmost
+            start_crossing = sorted_crossings[-1]
+            end_crossing = sorted_crossings[0]
+        else:
+            # Start at leftmost crossing, go CW (forward) to rightmost
+            start_crossing = sorted_crossings[0]
+            end_crossing = sorted_crossings[-1]
+
+        # Determine traversal direction
+        outer_dir = detect_traversal_direction(
+            outer_points, start_crossing[0], end_crossing[0],
+            bridge_y, want_less_than=not is_top, is_x=False
+        )
+
+        # Build traversal list
+        traverse_points: list[Point] = []
+        if outer_dir == -1:
+            idx = start_crossing[0]
+            target = end_crossing[0]
+            count = 0
+            while idx != target and count < n_outer:
+                traverse_points.append(outer_points[idx])
+                idx = (idx - 1) % n_outer
+                count += 1
+        else:
+            idx = (start_crossing[0] + 1) % n_outer
+            target = (end_crossing[0] + 1) % n_outer
+            count = 0
+            while idx != target and count < n_outer:
+                traverse_points.append(outer_points[idx])
+                idx = (idx + 1) % n_outer
+                count += 1
+
+        # Collect all segments on the correct side
+        segments: list[list[Point]] = []
+        current_segment: list[Point] = []
+
+        start_pt = Point(start_crossing[2], bridge_y, PointType.ON_CURVE)
+        current_segment = [start_pt]
+        was_on_correct = True
+        last_point = start_pt
+
+        for p in traverse_points:
+            curr_on_correct = on_correct_side(p.y)
+
+            if curr_on_correct:
+                if not was_on_correct:
+                    ix, iy = intersect_bridge(last_point, p)
+                    current_segment = [Point(ix, iy, PointType.ON_CURVE)]
+                current_segment.append(Point(p.x, p.y, p.point_type))
+            else:
+                if was_on_correct and current_segment:
+                    ix, iy = intersect_bridge(last_point, p)
+                    current_segment.append(Point(ix, iy, PointType.ON_CURVE))
+                    segments.append(current_segment)
+                    current_segment = []
+
+            was_on_correct = curr_on_correct
+            last_point = p
+
+        # Handle end
+        end_pt = Point(end_crossing[2], bridge_y, PointType.ON_CURVE)
+        if was_on_correct and current_segment:
+            current_segment.append(end_pt)
+            segments.append(current_segment)
+        elif not was_on_correct:
+            ix, iy = intersect_bridge(last_point, end_pt)
+            if current_segment:
+                current_segment.append(Point(ix, iy, PointType.ON_CURVE))
+                segments.append(current_segment)
+
+        if not segments:
+            return None
+
+        # Sort segments by X position
+        if is_top:
+            segments.sort(key=lambda seg: max(pt.x for pt in seg), reverse=True)
+        else:
+            segments.sort(key=lambda seg: min(pt.x for pt in seg))
+
+        # Build final contour by connecting segments along bridge line
+        points: list[Point] = []
+        for i, seg in enumerate(segments):
+            if i > 0:
+                prev_end = points[-1]
+                seg_start = seg[0]
+                if abs(prev_end.x - seg_start.x) > 1:
+                    # Add horizontal connection along bridge line
+                    if abs(prev_end.y - bridge_y) > 1:
+                        points.append(Point(prev_end.x, bridge_y, PointType.ON_CURVE))
+                    points.append(Point(seg_start.x, bridge_y, PointType.ON_CURVE))
+            points.extend(seg)
+
+        # Close the contour
+        if points and len(points) > 2:
+            last_pt = points[-1]
+            first_pt = points[0]
+            if abs(last_pt.x - first_pt.x) > 1 or abs(last_pt.y - first_pt.y) > 1:
+                if abs(last_pt.y - bridge_y) > 1:
+                    points.append(Point(last_pt.x, bridge_y, PointType.ON_CURVE))
+                if abs(first_pt.y - bridge_y) > 1 and abs(first_pt.x - points[-1].x) > 1:
+                    points.append(Point(first_pt.x, bridge_y, PointType.ON_CURVE))
+
+        # Remove duplicate consecutive points
+        cleaned_points: list[Point] = []
+        for p in points:
+            if not cleaned_points or (
+                abs(p.x - cleaned_points[-1].x) > 0.5 or
+                abs(p.y - cleaned_points[-1].y) > 0.5
+            ):
+                cleaned_points.append(p)
+
+        if len(cleaned_points) < 3:
+            return None
+
+        # Enforce CLOCKWISE for outer contours
+        direction = compute_winding_direction(cleaned_points)
+        if direction != WindingDirection.CLOCKWISE:
+            cleaned_points = list(reversed(cleaned_points))
+            direction = WindingDirection.CLOCKWISE
+
+        return Contour(points=cleaned_points, direction=direction)
+
+    except Exception:
+        return None
+
+
 def merge_multi_island_horizontal(
     outer: Contour,
     inners: list[Contour],
     bridge_width: float,
     all_contours: list[Contour] | None = None,
+    processed_nested: list[Contour] | None = None,
 ) -> list[Contour]:
     """Merge outer with multiple inner contours using a single horizontal cut.
 
@@ -208,13 +382,9 @@ def merge_multi_island_horizontal(
         # Build TOP piece
         result = []
 
-        top_outer = build_outer_portion_horizontal(
-            outer,
-            bridge_top,
-            find_all_edge_crossings(outer, bridge_top, False),
-            all_inner_min_x,
-            all_inner_max_x,
-            is_top=True,
+        # Use the multi-island version that includes stems between islands
+        top_outer = build_outer_portion_multi_island_horizontal(
+            outer, bridge_top, is_top=True
         )
         if top_outer:
             result.append(top_outer)
@@ -229,13 +399,8 @@ def merge_multi_island_horizontal(
                 result.append(top_inner)
 
         # Build BOTTOM piece
-        bot_outer = build_outer_portion_horizontal(
-            outer,
-            bridge_bottom,
-            find_all_edge_crossings(outer, bridge_bottom, False),
-            all_inner_min_x,
-            all_inner_max_x,
-            is_top=False,
+        bot_outer = build_outer_portion_multi_island_horizontal(
+            outer, bridge_bottom, is_top=False
         )
         if bot_outer:
             result.append(bot_outer)
@@ -268,11 +433,74 @@ def merge_multi_island_horizontal(
                 ):
                     continue
 
+                # Skip grandchildren: contours that are inside ANOTHER filled contour
+                # that's also inside any of the holes. They should be processed with their direct parent.
+                is_grandchild = False
+                for other in all_contours:
+                    if other is contour or other is outer or other in inners:
+                        continue
+                    other_area = signed_area(other.points)
+                    if other_area < 0:  # CW = filled (potential parent)
+                        other_bbox = other.bounding_box()
+                        # Check if contour's center is inside this other filled contour
+                        if (other_bbox[0] < c_center_x < other_bbox[2] and
+                            other_bbox[1] < c_center_y < other_bbox[3]):
+                            # This other filled contour must also be inside one of the holes
+                            other_center_x = (other_bbox[0] + other_bbox[2]) / 2
+                            other_center_y = (other_bbox[1] + other_bbox[3]) / 2
+                            for inner in inners:
+                                inner_bbox = inner.bounding_box()
+                                if (inner_bbox[0] < other_center_x < inner_bbox[2] and
+                                    inner_bbox[1] < other_center_y < inner_bbox[3]):
+                                    is_grandchild = True
+                                    break
+                            if is_grandchild:
+                                break
+                if is_grandchild:
+                    continue
+
+                # Check if this is a filled contour (CW) ENTIRELY INSIDE any inner hole.
+                # Such contours are self-contained geometry that should be preserved.
+                is_filled_contour = signed_area(contour.points) < 0  # CW = filled
+                entirely_inside_any_hole = False
+                for inner in inners:
+                    inner_bbox = inner.bounding_box()
+                    if (c_bbox[0] >= inner_bbox[0] and c_bbox[2] <= inner_bbox[2] and
+                        c_bbox[1] >= inner_bbox[1] and c_bbox[3] <= inner_bbox[3]):
+                        entirely_inside_any_hole = True
+                        break
+
+                if is_filled_contour and entirely_inside_any_hole:
+                    # Check if this nested outer has its own holes (like P in ℗ or R in ®).
+                    # If so, skip it here - it will be processed in nested_outers section.
+                    has_own_holes = False
+                    if all_contours:
+                        for other in all_contours:
+                            if other is contour or other is outer or other in inners:
+                                continue
+                            other_area = signed_area(other.points)
+                            if other_area > 0:  # CCW = hole
+                                other_bbox = other.bounding_box()
+                                # Check if this hole is inside the filled contour
+                                if (c_bbox[0] < other_bbox[0] and c_bbox[2] > other_bbox[2] and
+                                    c_bbox[1] < other_bbox[1] and c_bbox[3] > other_bbox[3]):
+                                    has_own_holes = True
+                                    break
+
+                    if not has_own_holes:
+                        # Preserve simple self-contained geometry (no children)
+                        result.append(contour)
+                        if processed_nested is not None:
+                            processed_nested.append(contour)
+                    continue
+
                 # Check if this is a structural element (like a vertical bar)
                 # Structural elements should NOT be split - add unchanged
                 obs_type = classify_obstruction_horizontal(contour, outer, all_inner_min_x, all_inner_max_x)
                 if obs_type == "structural":
                     result.append(contour)
+                    if processed_nested is not None:
+                        processed_nested.append(contour)
                     continue
 
                 top_crossings = find_all_edge_crossings(contour, bridge_top, False)

@@ -82,7 +82,6 @@ def create_vertical_bridge_contours(
     if all_contours:
         processed_set = {id(outer), id(inner)}
         inner_bbox = inner.bounding_box()
-        outer_area = signed_area(outer.points)
 
         for contour in all_contours:
             if id(contour) in processed_set:
@@ -98,19 +97,61 @@ def create_vertical_bridge_contours(
                     inner_bbox[1] < c_center_y < inner_bbox[3]):
                 continue
 
-            # Check if this is a structural element (like Theta's bar)
-            # Structural elements have same winding as outer and span across the bridge
-            contour_area = signed_area(contour.points)
-            same_winding = (contour_area < 0) == (outer_area < 0)
-            if same_winding:
-                # Check if it spans across the bridge gap
-                spans_bridge = c_bbox[0] < bridge_left and c_bbox[2] > bridge_right
-                if spans_bridge:
-                    # This is a structural element - add unchanged, don't split
+            # Skip grandchildren: contours that are inside ANOTHER filled contour
+            # that's also inside the hole. They should be processed with their direct parent.
+            is_grandchild = False
+            for other in all_contours:
+                if other is contour or other is inner or other is outer:
+                    continue
+                other_area = signed_area(other.points)
+                if other_area < 0:  # CW = filled (potential parent)
+                    other_bbox = other.bounding_box()
+                    # Check if contour's center is inside this other filled contour
+                    if (other_bbox[0] < c_center_x < other_bbox[2] and
+                        other_bbox[1] < c_center_y < other_bbox[3]):
+                        # This other filled contour must also be inside the hole
+                        other_center_x = (other_bbox[0] + other_bbox[2]) / 2
+                        other_center_y = (other_bbox[1] + other_bbox[3]) / 2
+                        if (inner_bbox[0] < other_center_x < inner_bbox[2] and
+                            inner_bbox[1] < other_center_y < inner_bbox[3]):
+                            is_grandchild = True
+                            break
+            if is_grandchild:
+                continue
+
+            # Check if this is a filled contour (CW) ENTIRELY INSIDE the hole.
+            # Such contours are self-contained geometry (like Theta's bar, or any
+            # decorative element inside a hole). They should NEVER be split by
+            # bridges - the bridge connects outer to inner, not nested elements.
+            is_filled_contour = signed_area(contour.points) < 0  # CW = filled
+            entirely_inside_hole = (
+                c_bbox[0] >= inner_bbox[0] and c_bbox[2] <= inner_bbox[2] and
+                c_bbox[1] >= inner_bbox[1] and c_bbox[3] <= inner_bbox[3]
+            )
+
+            if is_filled_contour and entirely_inside_hole:
+                # Check if this nested outer has its own holes (like P in ℗ or R in ®).
+                # If so, skip it here - it will be processed in nested_outers section.
+                has_own_holes = False
+                if all_contours:
+                    for other in all_contours:
+                        if other is contour or other is inner or other is outer:
+                            continue
+                        other_area = signed_area(other.points)
+                        if other_area > 0:  # CCW = hole
+                            other_bbox = other.bounding_box()
+                            # Check if this hole is inside the filled contour
+                            if (c_bbox[0] < other_bbox[0] and c_bbox[2] > other_bbox[2] and
+                                c_bbox[1] < other_bbox[1] and c_bbox[3] > other_bbox[3]):
+                                has_own_holes = True
+                                break
+
+                if not has_own_holes:
+                    # Preserve simple self-contained geometry (no children)
                     result.append(contour)
                     if processed_nested is not None:
                         processed_nested.append(contour)
-                    continue
+                continue
 
             # Check if contour crosses the bridge lines
             left_crossings = find_all_edge_crossings(contour, bridge_left, True)
@@ -191,8 +232,12 @@ def build_outer_portion_vertical(
 ) -> Contour | None:
     """Build outer portion for vertical bridge (CW contour).
 
-    For LEFT piece: collect segments with X <= bridge_x
-    For RIGHT piece: collect segments with X >= bridge_x
+    For LEFT piece: collect ALL segments with X <= bridge_x
+    For RIGHT piece: collect ALL segments with X >= bridge_x
+
+    This traverses the ENTIRE contour to collect all segments on the correct
+    side, then connects them along the bridge line. This handles complex
+    shapes like @ that have multiple disconnected segments on each side.
     """
     try:
         outer_above = [c for c in outer_crossings if c[2] > inner_max_y]
@@ -200,9 +245,6 @@ def build_outer_portion_vertical(
 
         if not outer_above or not outer_below:
             return None
-
-        outer_top = max(outer_above, key=lambda c: c[2])
-        outer_bot = min(outer_below, key=lambda c: c[2])
 
         outer_points = outer.points
         n_outer = len(outer_points)
@@ -220,57 +262,29 @@ def build_outer_portion_vertical(
             y = p1.y + t * (p2.y - p1.y)
             return (bridge_x, y)
 
-        # Collect all segments on the correct side
+        # Traverse the ENTIRE contour to collect ALL segments on the correct side
         segments: list[list[Point]] = []
         current_segment: list[Point] = []
+        was_on_correct = on_correct_side(outer_points[0].x)
+        last_point = outer_points[0]
 
-        if is_left:
-            outer_start = outer_bot
-            outer_end = outer_top
-        else:
-            outer_start = outer_top
-            outer_end = outer_bot
+        # Start from the first point
+        if was_on_correct:
+            current_segment = [Point(last_point.x, last_point.y, last_point.point_type)]
 
-        outer_dir = detect_traversal_direction(
-            outer_points, outer_start[0], outer_end[0],
-            bridge_x, want_less_than=is_left, is_x=True
-        )
-
-        # Build traversal list
-        traverse_points: list[Point] = []
-        if outer_dir == -1:
-            idx = outer_start[0]
-            target = outer_end[0]
-            count = 0
-            while idx != target and count < n_outer:
-                traverse_points.append(outer_points[idx])
-                idx = (idx - 1) % n_outer
-                count += 1
-        else:
-            idx = (outer_start[0] + 1) % n_outer
-            target = (outer_end[0] + 1) % n_outer
-            count = 0
-            while idx != target and count < n_outer:
-                traverse_points.append(outer_points[idx])
-                idx = (idx + 1) % n_outer
-                count += 1
-
-        # Add start point on bridge line
-        start_pt = Point(bridge_x, outer_start[2], PointType.ON_CURVE)
-        current_segment = [start_pt]
-        was_on_correct = True
-        last_point = start_pt
-
-        for p in traverse_points:
+        for i in range(1, n_outer):
+            p = outer_points[i]
             curr_on_correct = on_correct_side(p.x)
 
             if curr_on_correct:
                 if not was_on_correct:
+                    # Crossed from wrong side to correct side
                     ix, iy = intersect_bridge(last_point, p)
                     current_segment = [Point(ix, iy, PointType.ON_CURVE)]
                 current_segment.append(Point(p.x, p.y, p.point_type))
             else:
                 if was_on_correct and current_segment:
+                    # Crossed from correct side to wrong side
                     ix, iy = intersect_bridge(last_point, p)
                     current_segment.append(Point(ix, iy, PointType.ON_CURVE))
                     segments.append(current_segment)
@@ -279,29 +293,74 @@ def build_outer_portion_vertical(
             was_on_correct = curr_on_correct
             last_point = p
 
-        # Handle end
-        end_pt = Point(bridge_x, outer_end[2], PointType.ON_CURVE)
-        if was_on_correct and current_segment:
-            current_segment.append(end_pt)
+        # Handle wraparound: check edge from last point to first point
+        first_on_correct = on_correct_side(outer_points[0].x)
+        if was_on_correct and not first_on_correct:
+            # Last segment needs to be closed
+            ix, iy = intersect_bridge(last_point, outer_points[0])
+            current_segment.append(Point(ix, iy, PointType.ON_CURVE))
             segments.append(current_segment)
-        elif not was_on_correct:
-            ix, iy = intersect_bridge(last_point, Point(bridge_x, outer_end[2], PointType.ON_CURVE))
-            if current_segment:
-                current_segment.append(Point(ix, iy, PointType.ON_CURVE))
-                segments.append(current_segment)
+        elif was_on_correct and first_on_correct and current_segment:
+            # Merge with first segment if both are on correct side
+            if segments and segments[0][0].x == bridge_x:
+                # First segment starts with a crossing - extend it
+                segments[0] = current_segment + segments[0]
+            else:
+                # First segment starts with an actual point - merge
+                segments[0] = current_segment + segments[0]
+        elif was_on_correct and current_segment:
+            segments.append(current_segment)
+        elif not was_on_correct and first_on_correct:
+            # Crossing into first segment
+            ix, iy = intersect_bridge(last_point, outer_points[0])
+            if segments:
+                segments[0].insert(0, Point(ix, iy, PointType.ON_CURVE))
 
         if not segments:
             return None
 
-        # Build final contour by connecting segments along bridge line
+        # Sort segments by Y position for proper connection
+        # For LEFT: connect from bottom to top along the bridge line
+        # For RIGHT: connect from top to bottom along the bridge line
         if is_left:
             segments.sort(key=lambda seg: min(pt.y for pt in seg))
         else:
             segments.sort(key=lambda seg: max(pt.y for pt in seg), reverse=True)
 
+        # Build final contour by connecting segments along bridge line
+        # Each segment's endpoints on bridge_x need connecting edges to form closed contour
         points: list[Point] = []
-        for seg in segments:
+        for i, seg in enumerate(segments):
+            if i > 0:
+                # Add connecting edge along bridge line from previous segment to this one
+                prev_end = points[-1]
+                seg_start = seg[0]
+                # Both should be on bridge_x - add vertical edge
+                if abs(prev_end.x - bridge_x) < 1 and abs(seg_start.x - bridge_x) < 1:
+                    # Already on bridge line - just add the segment
+                    pass
+                else:
+                    # Need to connect via bridge line if gap exists
+                    if abs(prev_end.y - seg_start.y) > 1:
+                        # Add intermediate point on bridge line
+                        points.append(Point(bridge_x, prev_end.y, PointType.ON_CURVE))
+                        points.append(Point(bridge_x, seg_start.y, PointType.ON_CURVE))
             points.extend(seg)
+
+        # Close the contour by connecting last segment back to first along bridge line
+        if points and segments:
+            last_pt = points[-1]
+            first_pt = points[0]
+            if abs(last_pt.x - bridge_x) < 1 and abs(first_pt.x - bridge_x) < 1:
+                # Both on bridge - add closing edge if they're not adjacent
+                if abs(last_pt.y - first_pt.y) > 1:
+                    pass  # Will naturally close
+            elif abs(last_pt.y - first_pt.y) > 1 or abs(last_pt.x - first_pt.x) > 1:
+                # Need to close via bridge line
+                if abs(last_pt.x - bridge_x) > 1:
+                    points.append(Point(bridge_x, last_pt.y, PointType.ON_CURVE))
+                if abs(first_pt.x - bridge_x) > 1:
+                    points.append(Point(bridge_x, first_pt.y, PointType.ON_CURVE))
 
         # Remove duplicate consecutive points
         cleaned_points: list[Point] = []
@@ -332,24 +391,26 @@ def build_inner_portion_vertical(
 ) -> Contour | None:
     """Build inner portion for vertical bridge.
 
+    For LEFT piece: collect ALL segments with X <= bridge_x
+    For RIGHT piece: collect ALL segments with X >= bridge_x
+
+    This traverses the ENTIRE contour to collect all segments on the correct
+    side, then connects them along the bridge line. This handles complex
+    shapes like the R-defining contour in ® that have multiple disconnected
+    segments on each side.
+
     Args:
         inner: The contour to split
         bridge_x: X position of the bridge line
         inner_crossings: All crossings of the contour with the bridge line
         is_left: If True, return the left portion; otherwise right portion
         target_winding: Desired winding direction. If None, defaults to CCW (hole).
-
-    The inner must be traced in the OPPOSITE direction from outer to be a hole.
     """
     if target_winding is None:
         target_winding = WindingDirection.COUNTER_CLOCKWISE
     try:
         if len(inner_crossings) < 2:
             return None
-
-        sorted_crossings = sorted(inner_crossings, key=lambda c: c[2])
-        inner_bot = sorted_crossings[0]
-        inner_top = sorted_crossings[-1]
 
         inner_points = inner.points
         n_inner = len(inner_points)
@@ -367,57 +428,29 @@ def build_inner_portion_vertical(
             y = p1.y + t * (p2.y - p1.y)
             return (bridge_x, y)
 
-        # REVERSED from outer: inner traced opposite direction to create hole
-        if is_left:
-            inner_start = inner_top
-            inner_end = inner_bot
-        else:
-            inner_start = inner_bot
-            inner_end = inner_top
-
-        inner_dir = detect_traversal_direction(
-            inner_points, inner_start[0], inner_end[0],
-            bridge_x, want_less_than=is_left, is_x=True
-        )
-
-        # Build traversal list
-        traverse_points: list[Point] = []
-        if inner_dir == -1:
-            idx = inner_start[0]
-            target = inner_end[0]
-            count = 0
-            while idx != target and count < n_inner:
-                traverse_points.append(inner_points[idx])
-                idx = (idx - 1) % n_inner
-                count += 1
-        else:
-            idx = (inner_start[0] + 1) % n_inner
-            target = (inner_end[0] + 1) % n_inner
-            count = 0
-            while idx != target and count < n_inner:
-                traverse_points.append(inner_points[idx])
-                idx = (idx + 1) % n_inner
-                count += 1
-
-        # Collect all segments on the correct side
+        # Traverse the ENTIRE contour to collect ALL segments on the correct side
         segments: list[list[Point]] = []
         current_segment: list[Point] = []
+        was_on_correct = on_correct_side(inner_points[0].x)
+        last_point = inner_points[0]
 
-        start_pt = Point(bridge_x, inner_start[2], PointType.ON_CURVE)
-        current_segment = [start_pt]
-        was_on_correct = True
-        last_point = start_pt
+        # Start from the first point
+        if was_on_correct:
+            current_segment = [Point(last_point.x, last_point.y, last_point.point_type)]
 
-        for p in traverse_points:
+        for i in range(1, n_inner):
+            p = inner_points[i]
             curr_on_correct = on_correct_side(p.x)
 
             if curr_on_correct:
                 if not was_on_correct:
+                    # Crossed from wrong side to correct side
                     ix, iy = intersect_bridge(last_point, p)
                     current_segment = [Point(ix, iy, PointType.ON_CURVE)]
                 current_segment.append(Point(p.x, p.y, p.point_type))
             else:
                 if was_on_correct and current_segment:
+                    # Crossed from correct side to wrong side
                     ix, iy = intersect_bridge(last_point, p)
                     current_segment.append(Point(ix, iy, PointType.ON_CURVE))
                     segments.append(current_segment)
@@ -426,29 +459,71 @@ def build_inner_portion_vertical(
             was_on_correct = curr_on_correct
             last_point = p
 
-        # Handle end
-        end_pt = Point(bridge_x, inner_end[2], PointType.ON_CURVE)
-        if was_on_correct and current_segment:
-            current_segment.append(end_pt)
+        # Handle wraparound: check edge from last point to first point
+        first_on_correct = on_correct_side(inner_points[0].x)
+        if was_on_correct and not first_on_correct:
+            # Last segment needs to be closed
+            ix, iy = intersect_bridge(last_point, inner_points[0])
+            current_segment.append(Point(ix, iy, PointType.ON_CURVE))
             segments.append(current_segment)
-        elif not was_on_correct:
-            ix, iy = intersect_bridge(last_point, Point(bridge_x, inner_end[2], PointType.ON_CURVE))
-            if current_segment:
-                current_segment.append(Point(ix, iy, PointType.ON_CURVE))
-                segments.append(current_segment)
+        elif was_on_correct and first_on_correct and current_segment:
+            # Merge with first segment if both are on correct side
+            if segments and segments[0][0].x == bridge_x:
+                segments[0] = current_segment + segments[0]
+            else:
+                segments[0] = current_segment + segments[0]
+        elif was_on_correct and current_segment:
+            segments.append(current_segment)
+        elif not was_on_correct and first_on_correct:
+            # Crossing into first segment
+            ix, iy = intersect_bridge(last_point, inner_points[0])
+            if segments:
+                segments[0].insert(0, Point(ix, iy, PointType.ON_CURVE))
 
         if not segments:
             return None
 
-        # Build final contour
+        # Sort segments by Y position for proper connection
+        # For inner (hole), trace in opposite direction from outer
         if is_left:
             segments.sort(key=lambda seg: max(pt.y for pt in seg), reverse=True)
         else:
             segments.sort(key=lambda seg: min(pt.y for pt in seg))
 
+        # Build final contour by connecting segments along bridge line
+        # Each segment's endpoints on bridge_x need connecting edges to form closed contour
         points: list[Point] = []
-        for seg in segments:
+        for i, seg in enumerate(segments):
+            if i > 0:
+                # Add connecting edge along bridge line from previous segment to this one
+                prev_end = points[-1]
+                seg_start = seg[0]
+                # Both should be on bridge_x - add vertical edge
+                if abs(prev_end.x - bridge_x) < 1 and abs(seg_start.x - bridge_x) < 1:
+                    # Already on bridge line - just add the segment
+                    pass
+                else:
+                    # Need to connect via bridge line if gap exists
+                    if abs(prev_end.y - seg_start.y) > 1:
+                        # Add intermediate point on bridge line
+                        points.append(Point(bridge_x, prev_end.y, PointType.ON_CURVE))
+                        points.append(Point(bridge_x, seg_start.y, PointType.ON_CURVE))
             points.extend(seg)
+
+        # Close the contour by connecting last segment back to first along bridge line
+        if points and segments:
+            last_pt = points[-1]
+            first_pt = points[0]
+            if abs(last_pt.x - bridge_x) < 1 and abs(first_pt.x - bridge_x) < 1:
+                # Both on bridge - add closing edge if they're not adjacent
+                if abs(last_pt.y - first_pt.y) > 1:
+                    pass  # Will naturally close
+            elif abs(last_pt.y - first_pt.y) > 1 or abs(last_pt.x - first_pt.x) > 1:
+                # Need to close via bridge line
+                if abs(last_pt.x - bridge_x) > 1:
+                    points.append(Point(bridge_x, last_pt.y, PointType.ON_CURVE))
+                if abs(first_pt.x - bridge_x) > 1:
+                    points.append(Point(bridge_x, first_pt.y, PointType.ON_CURVE))
 
         # Remove duplicate consecutive points
         cleaned_points: list[Point] = []

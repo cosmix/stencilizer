@@ -107,15 +107,131 @@ def has_spanning_obstruction(
             bbox = contour.bounding_box()
             if bbox[0] <= bridge_right_x and bbox[2] >= bridge_left_x:
                 if bbox[1] <= gap_bottom and bbox[3] >= gap_top:
-                    # Classify the obstruction
-                    obstruction_type = classify_obstruction(contour, outer, gap_bottom, gap_top)
+                    # Classify the obstruction - pass bridge coordinates for better detection
+                    obstruction_type = classify_obstruction(
+                        contour, outer, gap_bottom, gap_top,
+                        bridge_left=bridge_left_x, bridge_right=bridge_right_x
+                    )
                     if obstruction_type != "structural":
                         return True
                 if bbox[1] >= gap_bottom and bbox[3] <= gap_top:
                     # Classify the obstruction
-                    obstruction_type = classify_obstruction(contour, outer, gap_bottom, gap_top)
+                    obstruction_type = classify_obstruction(
+                        contour, outer, gap_bottom, gap_top,
+                        bridge_left=bridge_left_x, bridge_right=bridge_right_x
+                    )
                     if obstruction_type != "structural":
                         return True
+
+    return False
+
+
+def has_horizontal_bar_gap(
+    inners: list[Contour],
+    outer: Contour | None = None,
+    min_gap: float = 100,
+    min_bar_aspect: float = 2.0,
+) -> bool:
+    """Check if there's a horizontal bar gap between vertically-stacked islands.
+
+    When two holes have a Y gap between them AND the gap forms a true horizontal
+    bar (wider than tall), no bridge is needed because the bar already connects
+    the left and right halves.
+
+    This distinguishes true horizontal bars (like U+0472 Theta) from:
+    - Vertical connectors (like 'g' which has a tall narrow connector)
+    - Waists (like '8' which needs spanning bridges)
+
+    Args:
+        inners: List of inner contours (islands/holes)
+        outer: The outer contour (used to check for bar geometry)
+        min_gap: Minimum Y gap size to be considered a structural bar
+        min_bar_aspect: Minimum width/height aspect ratio for a true bar (default 2.0)
+
+    Returns:
+        True if there's a horizontal bar gap between islands
+    """
+    if len(inners) < 2:
+        return False
+
+    # Sort by Y (bottom to top)
+    sorted_inners = sorted(inners, key=lambda c: c.bounding_box()[1])
+
+    for i in range(len(sorted_inners) - 1):
+        lower_bbox = sorted_inners[i].bounding_box()
+        upper_bbox = sorted_inners[i + 1].bounding_box()
+
+        # Check if there's a Y gap (no overlap)
+        gap_height = upper_bbox[1] - lower_bbox[3]  # upper_min_y - lower_max_y
+
+        if gap_height < min_gap:
+            continue
+
+        # Check if they overlap in X (so the gap could form a bar)
+        x_overlap = min(lower_bbox[2], upper_bbox[2]) - max(lower_bbox[0], upper_bbox[0])
+
+        if x_overlap <= 0:
+            continue
+
+        # Check aspect ratio: a horizontal bar should be wider than tall
+        # - g has aspect ~0.56 (taller than wide) - vertical connector, NOT a bar
+        # - 8 has aspect ~1.44 (roughly square) - waist, needs spanning bridges
+        # - U+0472 has aspect ~3.31 (much wider than tall) - TRUE horizontal bar
+        gap_aspect = x_overlap / gap_height
+        if gap_aspect < min_bar_aspect:
+            # Gap is not wide enough to be a horizontal bar
+            continue
+
+        # The gap exists with proper aspect. Check if outer spans across.
+        if outer is None:
+            # Without outer, assume it's a bar (backward compatibility)
+            return True
+
+        gap_min_y = lower_bbox[3]
+        gap_max_y = upper_bbox[1]
+        holes_left_x = min(lower_bbox[0], upper_bbox[0])
+        holes_right_x = max(lower_bbox[2], upper_bbox[2])
+
+        # Check if outer has points spanning across the gap on BOTH sides
+        # Also track X positions at different Y levels to detect diagonal strokes
+        left_points_in_gap: list[tuple[float, float]] = []  # (x, y) for left side
+        right_points_in_gap: list[tuple[float, float]] = []  # (x, y) for right side
+        for p in outer.points:
+            if gap_min_y <= p.y <= gap_max_y:
+                if p.x < holes_left_x:
+                    left_points_in_gap.append((p.x, p.y))
+                if p.x > holes_right_x:
+                    right_points_in_gap.append((p.x, p.y))
+
+        # Only a bar if outer spans from left to right across the gap
+        if not left_points_in_gap or not right_points_in_gap:
+            continue
+
+        # Check for diagonal stroke: if X position varies significantly with Y,
+        # it's a diagonal stroke (like Ø), not a horizontal bar (like Θ)
+        # A horizontal bar has consistent X edges; a diagonal has X that changes with Y
+        #
+        # Key insight: A circle's curve has SOME X variation, but less than the gap height.
+        # A diagonal stroke has X variation roughly equal to or greater than Y span.
+        # Use ratio of X_variation / gap_height to distinguish.
+        def is_diagonal_stroke(points: list[tuple[float, float]], gap_h: float) -> bool:
+            if len(points) < 2:
+                return False
+            x_values = [p[0] for p in points]
+            x_range = max(x_values) - min(x_values)
+            # A diagonal stroke has X variation comparable to Y span (ratio > 0.5)
+            # A circle's curve has much less X variation relative to gap height (ratio < 0.3)
+            # Use 0.4 as threshold
+            if gap_h <= 0:
+                return False
+            return (x_range / gap_h) > 0.4
+
+        # If either edge shows diagonal characteristics, it's not a horizontal bar
+        if is_diagonal_stroke(left_points_in_gap, gap_height) or is_diagonal_stroke(right_points_in_gap, gap_height):
+            continue
+
+        # It's a true horizontal bar
+        return True
 
     return False
 
@@ -125,6 +241,7 @@ def merge_multi_island_vertical(
     inners: list[Contour],
     bridge_width: float,
     all_contours: list[Contour] | None = None,
+    processed_nested: list[Contour] | None = None,
 ) -> list[Contour]:
     """Merge outer with multiple inner contours using a single vertical cut.
 
@@ -215,6 +332,9 @@ def merge_multi_island_vertical(
 
         # Build LEFT piece
         result = []
+        left_inners_built = 0
+        right_inners_built = 0
+        num_inners = len(inner_crossings)
 
         left_outer = build_outer_portion_vertical(
             outer,
@@ -235,6 +355,7 @@ def merge_multi_island_vertical(
             )
             if left_inner:
                 result.append(left_inner)
+                left_inners_built += 1
 
         # Build RIGHT piece
         right_outer = build_outer_portion_vertical(
@@ -256,6 +377,14 @@ def merge_multi_island_vertical(
             )
             if right_inner:
                 result.append(right_inner)
+                right_inners_built += 1
+
+        # Verify ALL core portions were built - if any inner failed, fall back
+        # We need: left_outer, right_outer, and both left+right for EVERY inner
+        if not left_outer or not right_outer:
+            return [outer, *inners]
+        if left_inners_built != num_inners or right_inners_built != num_inners:
+            return [outer, *inners]
 
         # Also split any NESTED contours that cross the bridge lines
         if all_contours:
@@ -276,14 +405,83 @@ def merge_multi_island_vertical(
                 ):
                     continue
 
-                # Check if this is a structural element (like Theta's bar)
-                # Structural elements should NOT be split - add unchanged
-                obs_type = classify_obstruction(
-                    contour, outer, all_inner_min_y, all_inner_max_y,
-                    bridge_left=bridge_left, bridge_right=bridge_right
-                )
-                if obs_type == "structural":
+                # Skip grandchildren: contours that are inside ANOTHER filled contour
+                # that's also inside any of the holes. They should be processed with their direct parent.
+                is_grandchild = False
+                for other in all_contours:
+                    if other is contour or other is outer or other in inners:
+                        continue
+                    other_area = signed_area(other.points)
+                    if other_area < 0:  # CW = filled (potential parent)
+                        other_bbox = other.bounding_box()
+                        # Check if contour's center is inside this other filled contour
+                        if (other_bbox[0] < c_center_x < other_bbox[2] and
+                            other_bbox[1] < c_center_y < other_bbox[3]):
+                            # This other filled contour must also be inside one of the holes
+                            other_center_x = (other_bbox[0] + other_bbox[2]) / 2
+                            other_center_y = (other_bbox[1] + other_bbox[3]) / 2
+                            for inner in inners:
+                                inner_bbox = inner.bounding_box()
+                                if (inner_bbox[0] < other_center_x < inner_bbox[2] and
+                                    inner_bbox[1] < other_center_y < inner_bbox[3]):
+                                    is_grandchild = True
+                                    break
+                            if is_grandchild:
+                                break
+                if is_grandchild:
+                    continue
+
+                # Check if this is a filled contour (CW) ENTIRELY INSIDE any inner hole.
+                # Such contours are self-contained geometry that should be preserved.
+                is_filled_contour = signed_area(contour.points) < 0  # CW = filled
+                entirely_inside_any_hole = False
+                for inner in inners:
+                    inner_bbox = inner.bounding_box()
+                    if (c_bbox[0] >= inner_bbox[0] and c_bbox[2] <= inner_bbox[2] and
+                        c_bbox[1] >= inner_bbox[1] and c_bbox[3] <= inner_bbox[3]):
+                        entirely_inside_any_hole = True
+                        break
+
+                if is_filled_contour and entirely_inside_any_hole:
+                    # Check if this nested outer has its own holes (like P in ℗ or R in ®).
+                    # If so, skip it here - it will be processed in nested_outers section.
+                    has_own_holes = False
+                    if all_contours:
+                        for other in all_contours:
+                            if other is contour or other is outer or other in inners:
+                                continue
+                            other_area = signed_area(other.points)
+                            if other_area > 0:  # CCW = hole
+                                other_bbox = other.bounding_box()
+                                # Check if this hole is inside the filled contour
+                                if (c_bbox[0] < other_bbox[0] and c_bbox[2] > other_bbox[2] and
+                                    c_bbox[1] < other_bbox[1] and c_bbox[3] > other_bbox[3]):
+                                    has_own_holes = True
+                                    break
+
+                    if not has_own_holes:
+                        # Preserve simple self-contained geometry (no children)
+                        result.append(contour)
+                        if processed_nested is not None:
+                            processed_nested.append(contour)
+                    continue
+
+                # Also check if this is a structural element in the GAP between islands
+                # (like a horizontal bar connecting left and right halves)
+                spans_bridge_horizontally = c_bbox[0] < bridge_left and c_bbox[2] > bridge_right
+                in_gap_between_islands = True
+                for inner in inners:
+                    inner_bbox = inner.bounding_box()
+                    if (inner_bbox[0] < c_center_x < inner_bbox[2] and
+                        inner_bbox[1] < c_center_y < inner_bbox[3]):
+                        in_gap_between_islands = False
+                        break
+
+                if is_filled_contour and spans_bridge_horizontally and in_gap_between_islands:
+                    # Structural element in gap between islands - preserve unchanged
                     result.append(contour)
+                    if processed_nested is not None:
+                        processed_nested.append(contour)
                     continue
 
                 left_crossings = find_all_edge_crossings(contour, bridge_left, True)
