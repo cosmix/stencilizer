@@ -55,7 +55,7 @@ def create_horizontal_bridge_contours(
     result = []
 
     # Build TOP piece: outer portion + inner portion (as separate hole)
-    top_outer = build_outer_portion_horizontal(
+    top_outer, top_internal_holes = build_outer_portion_horizontal(
         outer, bridge_top, outer_top_crossings, inner_min_x, inner_max_x, is_top=True
     )
     top_inner = build_inner_portion_horizontal(
@@ -63,11 +63,12 @@ def create_horizontal_bridge_contours(
     )
     if top_outer:
         result.append(top_outer)
+    result.extend(top_internal_holes)  # Add any internal holes (e.g., ezh counter)
     if top_inner:
         result.append(top_inner)
 
     # Build BOTTOM piece: outer portion + inner portion (as separate hole)
-    bot_outer = build_outer_portion_horizontal(
+    bot_outer, bot_internal_holes = build_outer_portion_horizontal(
         outer, bridge_bottom, outer_bot_crossings, inner_min_x, inner_max_x, is_top=False
     )
     bot_inner = build_inner_portion_horizontal(
@@ -75,6 +76,7 @@ def create_horizontal_bridge_contours(
     )
     if bot_outer:
         result.append(bot_outer)
+    result.extend(bot_internal_holes)  # Add any internal holes
     if bot_inner:
         result.append(bot_inner)
 
@@ -225,18 +227,24 @@ def build_outer_portion_horizontal(
     inner_min_x: float,
     inner_max_x: float,
     is_top: bool,
-) -> Contour | None:
+) -> tuple[Contour | None, list[Contour]]:
     """Build outer portion for horizontal bridge (CW contour).
 
     For TOP piece: trace from left to right along top side (CW)
     For BOTTOM piece: trace from right to left along bottom side (CW)
+
+    Returns:
+        Tuple of (main_outer_contour, list_of_internal_hole_contours)
+        Internal holes are CCW contours for areas that are enclosed within the outer
+        but should remain as holes (e.g., counters in glyphs like ezh).
     """
+    internal_holes: list[Contour] = []
     try:
         outer_left = [c for c in outer_crossings if c[2] < inner_min_x]
         outer_right = [c for c in outer_crossings if c[2] > inner_max_x]
 
         if not outer_left or not outer_right:
-            return None
+            return (None, [])
 
         outer_left_pt = min(outer_left, key=lambda c: c[2])
         outer_right_pt = max(outer_right, key=lambda c: c[2])
@@ -257,56 +265,29 @@ def build_outer_portion_horizontal(
             x = p1.x + t * (p2.x - p1.x)
             return (x, bridge_y)
 
-        if is_top:
-            outer_start = outer_left_pt
-            outer_end = outer_right_pt
-        else:
-            outer_start = outer_right_pt
-            outer_end = outer_left_pt
-
-        outer_dir = detect_traversal_direction(
-            outer_points, outer_start[0], outer_end[0],
-            bridge_y, want_less_than=not is_top, is_x=False
-        )
-
-        # Build traversal list
-        traverse_points: list[Point] = []
-        if outer_dir == -1:
-            idx = outer_start[0]
-            target = outer_end[0]
-            count = 0
-            while idx != target and count < n_outer:
-                traverse_points.append(outer_points[idx])
-                idx = (idx - 1) % n_outer
-                count += 1
-        else:
-            idx = (outer_start[0] + 1) % n_outer
-            target = (outer_end[0] + 1) % n_outer
-            count = 0
-            while idx != target and count < n_outer:
-                traverse_points.append(outer_points[idx])
-                idx = (idx + 1) % n_outer
-                count += 1
-
-        # Collect all segments on the correct side
+        # Traverse the ENTIRE contour to collect ALL segments on the correct side
+        # This ensures we capture internal counters like the ezh in uni02A4
         segments: list[list[Point]] = []
         current_segment: list[Point] = []
+        was_on_correct = on_correct_side(outer_points[0].y)
+        last_point = outer_points[0]
 
-        start_pt = Point(outer_start[2], bridge_y, PointType.ON_CURVE)
-        current_segment = [start_pt]
-        was_on_correct = True
-        last_point = start_pt
+        if was_on_correct:
+            current_segment = [Point(last_point.x, last_point.y, last_point.point_type)]
 
-        for p in traverse_points:
+        for i in range(1, n_outer):
+            p = outer_points[i]
             curr_on_correct = on_correct_side(p.y)
 
             if curr_on_correct:
                 if not was_on_correct:
+                    # Crossing from wrong side to correct side
                     ix, iy = intersect_bridge(last_point, p)
                     current_segment = [Point(ix, iy, PointType.ON_CURVE)]
                 current_segment.append(Point(p.x, p.y, p.point_type))
             else:
                 if was_on_correct and current_segment:
+                    # Crossing from correct side to wrong side
                     ix, iy = intersect_bridge(last_point, p)
                     current_segment.append(Point(ix, iy, PointType.ON_CURVE))
                     segments.append(current_segment)
@@ -315,29 +296,92 @@ def build_outer_portion_horizontal(
             was_on_correct = curr_on_correct
             last_point = p
 
-        # Handle end
-        end_pt = Point(outer_end[2], bridge_y, PointType.ON_CURVE)
-        if was_on_correct and current_segment:
-            current_segment.append(end_pt)
+        # Handle wraparound: check edge from last point to first point
+        first_on_correct = on_correct_side(outer_points[0].y)
+        if was_on_correct and not first_on_correct:
+            # Close current segment at crossing
+            ix, iy = intersect_bridge(last_point, outer_points[0])
+            current_segment.append(Point(ix, iy, PointType.ON_CURVE))
             segments.append(current_segment)
-        elif not was_on_correct:
-            ix, iy = intersect_bridge(last_point, Point(outer_end[2], bridge_y, PointType.ON_CURVE))
-            if current_segment:
-                current_segment.append(Point(ix, iy, PointType.ON_CURVE))
+        elif was_on_correct and first_on_correct and current_segment:
+            # Merge with first segment if it exists
+            if segments:
+                segments[0] = current_segment + segments[0]
+            else:
                 segments.append(current_segment)
+        elif was_on_correct and current_segment:
+            segments.append(current_segment)
+        elif not was_on_correct and first_on_correct:
+            # Crossing into first segment
+            ix, iy = intersect_bridge(last_point, outer_points[0])
+            if segments:
+                segments[0].insert(0, Point(ix, iy, PointType.ON_CURVE))
 
         if not segments:
-            return None
+            return (None, [])
 
-        # Build final contour by connecting segments along bridge line
+        # Sort segments by X position
         if is_top:
             segments.sort(key=lambda seg: min(pt.x for pt in seg))
         else:
             segments.sort(key=lambda seg: max(pt.x for pt in seg), reverse=True)
 
+        # Detect internal counter segments: segments whose X range is inside another segment's X range
+        # These should NOT be connected to the main outer - they represent holes
+        def get_x_range(seg: list[Point]) -> tuple[float, float]:
+            xs = [p.x for p in seg]
+            return (min(xs), max(xs))
+
+        seg_ranges = [get_x_range(seg) for seg in segments]
+        internal_indices: set[int] = set()
+
+        for i in range(len(segments)):
+            for j in range(len(segments)):
+                if i == j:
+                    continue
+                # Check if segment i is inside segment j
+                if seg_ranges[i][0] > seg_ranges[j][0] and seg_ranges[i][1] < seg_ranges[j][1]:
+                    internal_indices.add(i)
+                    break
+
+        # Build CCW hole contours for internal segments
+        for idx in internal_indices:
+            seg = segments[idx]
+            if len(seg) >= 2:
+                # Close the segment along the bridge line
+                hole_points = list(seg)
+                # Add closing edge along bridge line
+                first_pt = hole_points[0]
+                last_pt = hole_points[-1]
+                if abs(first_pt.y - bridge_y) < 1 and abs(last_pt.y - bridge_y) < 1:
+                    # Both endpoints on bridge - this forms a closed loop
+                    pass
+                else:
+                    # Add bridge line points to close
+                    if abs(last_pt.y - bridge_y) > 1:
+                        hole_points.append(Point(last_pt.x, bridge_y, PointType.ON_CURVE))
+                    if abs(first_pt.y - bridge_y) > 1:
+                        hole_points.append(Point(first_pt.x, bridge_y, PointType.ON_CURVE))
+
+                if len(hole_points) >= 3:
+                    # Enforce CCW for holes
+                    hole_dir = compute_winding_direction(hole_points)
+                    if hole_dir != WindingDirection.COUNTER_CLOCKWISE:
+                        hole_points = list(reversed(hole_points))
+                    internal_holes.append(Contour(
+                        points=hole_points,
+                        direction=WindingDirection.COUNTER_CLOCKWISE
+                    ))
+
+        # Build main outer from non-internal segments only
+        main_segments = [seg for i, seg in enumerate(segments) if i not in internal_indices]
+
+        if not main_segments:
+            main_segments = segments  # Fallback if all are internal
+
         # Each segment's endpoints on bridge_y need connecting edges to form closed contour
         points: list[Point] = []
-        for i, seg in enumerate(segments):
+        for i, seg in enumerate(main_segments):
             if i > 0:
                 # Add connecting edge along bridge line from previous segment to this one
                 prev_end = points[-1]
@@ -355,7 +399,7 @@ def build_outer_portion_horizontal(
             points.extend(seg)
 
         # Close the contour by connecting last segment back to first along bridge line
-        if points and segments:
+        if points and main_segments:
             last_pt = points[-1]
             first_pt = points[0]
             if abs(last_pt.y - bridge_y) < 1 and abs(first_pt.y - bridge_y) < 1:
@@ -376,17 +420,66 @@ def build_outer_portion_horizontal(
                 cleaned_points.append(p)
 
         if len(cleaned_points) < 3:
-            return None
+            return (None, internal_holes)
 
         # Enforce CLOCKWISE for outer contours
         direction = compute_winding_direction(cleaned_points)
         if direction != WindingDirection.CLOCKWISE:
             cleaned_points = list(reversed(cleaned_points))
             direction = WindingDirection.CLOCKWISE
-        return Contour(points=cleaned_points, direction=direction)
+        return (Contour(points=cleaned_points, direction=direction), internal_holes)
 
     except Exception:
+        return (None, [])
+
+
+def _build_contour_from_segments_horizontal(
+    segments: list[list[Point]],
+    bridge_y: float,
+) -> list[Point] | None:
+    """Build a contour from segments by connecting them along the bridge line.
+
+    Returns the raw points list (not cleaned or winding-enforced).
+    """
+    if not segments:
         return None
+
+    points: list[Point] = []
+    for i, seg in enumerate(segments):
+        if i > 0:
+            prev_end = points[-1]
+            seg_start = seg[0]
+            if abs(prev_end.y - bridge_y) < 1 and abs(seg_start.y - bridge_y) < 1:
+                pass  # Already on bridge line
+            else:
+                if abs(prev_end.x - seg_start.x) > 1:
+                    points.append(Point(prev_end.x, bridge_y, PointType.ON_CURVE))
+                    points.append(Point(seg_start.x, bridge_y, PointType.ON_CURVE))
+        points.extend(seg)
+
+    # Close the contour
+    if points and segments:
+        last_pt = points[-1]
+        first_pt = points[0]
+        if abs(last_pt.y - bridge_y) < 1 and abs(first_pt.y - bridge_y) < 1:
+            if abs(last_pt.x - first_pt.x) > 1:
+                pass  # Will naturally close
+        elif abs(last_pt.x - first_pt.x) > 1 or abs(last_pt.y - first_pt.y) > 1:
+            if abs(last_pt.y - bridge_y) > 1:
+                points.append(Point(last_pt.x, bridge_y, PointType.ON_CURVE))
+            if abs(first_pt.y - bridge_y) > 1:
+                points.append(Point(first_pt.x, bridge_y, PointType.ON_CURVE))
+
+    return points
+
+
+def _clean_points(points: list[Point]) -> list[Point]:
+    """Remove duplicate consecutive points."""
+    cleaned: list[Point] = []
+    for p in points:
+        if not cleaned or (abs(p.x - cleaned[-1].x) > 0.5 or abs(p.y - cleaned[-1].y) > 0.5):
+            cleaned.append(p)
+    return cleaned
 
 
 def build_inner_portion_horizontal(
@@ -404,6 +497,10 @@ def build_inner_portion_horizontal(
     This traverses the ENTIRE contour to collect all segments on the correct
     side, then connects them along the bridge line. This handles complex
     shapes like R that have multiple disconnected segments on each side.
+
+    Uses a multi-ordering strategy: tries different segment orderings and picks
+    the one that naturally produces the correct winding direction (without
+    needing reversal), as this indicates geometrically correct construction.
 
     Args:
         inner: The contour to split
@@ -491,63 +588,73 @@ def build_inner_portion_horizontal(
         if not segments:
             return None
 
-        # Sort segments by X position for proper connection
-        # For inner (hole), trace in opposite direction from outer
-        if is_top:
-            segments.sort(key=lambda seg: max(pt.x for pt in seg), reverse=True)
-        else:
-            segments.sort(key=lambda seg: min(pt.x for pt in seg))
+        # For single segment, no ordering ambiguity
+        if len(segments) == 1:
+            points = _build_contour_from_segments_horizontal(segments, bridge_y)
+            if not points:
+                return None
+            cleaned_points = _clean_points(points)
+            if len(cleaned_points) < 3:
+                return None
+            direction = compute_winding_direction(cleaned_points)
+            if direction != target_winding:
+                cleaned_points = list(reversed(cleaned_points))
+                direction = target_winding
+            return Contour(points=cleaned_points, direction=direction)
 
-        # Build final contour by connecting segments along bridge line
-        # Each segment's endpoints on bridge_y need connecting edges to form closed contour
-        points: list[Point] = []
-        for i, seg in enumerate(segments):
-            if i > 0:
-                # Add connecting edge along bridge line from previous segment to this one
-                prev_end = points[-1]
-                seg_start = seg[0]
-                # Both should be on bridge_y - add horizontal edge
-                if abs(prev_end.y - bridge_y) < 1 and abs(seg_start.y - bridge_y) < 1:
-                    # Already on bridge line - just add the segment
-                    pass
-                else:
-                    # Need to connect via bridge line if gap exists
-                    if abs(prev_end.x - seg_start.x) > 1:
-                        # Add intermediate point on bridge line
-                        points.append(Point(prev_end.x, bridge_y, PointType.ON_CURVE))
-                        points.append(Point(seg_start.x, bridge_y, PointType.ON_CURVE))
-            points.extend(seg)
+        # Multi-segment case: try different orderings and pick the one that
+        # NATURALLY produces correct winding (indicates geometrically correct)
+        orderings_to_try = [
+            # Original traversal order (segments as collected)
+            segments[:],
+            # Reversed traversal order
+            segments[::-1],
+            # Left-to-right sorted
+            sorted(segments, key=lambda seg: min(pt.x for pt in seg)),
+            # Right-to-left sorted
+            sorted(segments, key=lambda seg: max(pt.x for pt in seg), reverse=True),
+        ]
 
-        # Close the contour by connecting last segment back to first along bridge line
-        if points and segments:
-            last_pt = points[-1]
-            first_pt = points[0]
-            if abs(last_pt.y - bridge_y) < 1 and abs(first_pt.y - bridge_y) < 1:
-                # Both on bridge - add closing edge if they're not adjacent
-                if abs(last_pt.x - first_pt.x) > 1:
-                    pass  # Will naturally close
-            elif abs(last_pt.x - first_pt.x) > 1 or abs(last_pt.y - first_pt.y) > 1:
-                # Need to close via bridge line
-                if abs(last_pt.y - bridge_y) > 1:
-                    points.append(Point(last_pt.x, bridge_y, PointType.ON_CURVE))
-                if abs(first_pt.y - bridge_y) > 1:
-                    points.append(Point(first_pt.x, bridge_y, PointType.ON_CURVE))
+        best_result: list[Point] | None = None
+        best_needed_reversal = True
+        best_area = 0.0
 
-        # Remove duplicate consecutive points
-        cleaned_points: list[Point] = []
-        for p in points:
-            if not cleaned_points or (abs(p.x - cleaned_points[-1].x) > 0.5 or abs(p.y - cleaned_points[-1].y) > 0.5):
-                cleaned_points.append(p)
+        for ordered_segments in orderings_to_try:
+            points = _build_contour_from_segments_horizontal(ordered_segments, bridge_y)
+            if not points:
+                continue
+            cleaned = _clean_points(points)
+            if len(cleaned) < 3:
+                continue
 
-        if len(cleaned_points) < 3:
+            direction = compute_winding_direction(cleaned)
+            needed_reversal = (direction != target_winding)
+            area = abs(signed_area(cleaned))
+
+            # Prefer orderings that naturally produce correct winding
+            # Among those, prefer larger area (indicates non-self-intersecting)
+            if best_result is None:
+                best_result = cleaned
+                best_needed_reversal = needed_reversal
+                best_area = area
+            elif not needed_reversal and best_needed_reversal:
+                # This ordering naturally has correct winding - prefer it
+                best_result = cleaned
+                best_needed_reversal = needed_reversal
+                best_area = area
+            elif needed_reversal == best_needed_reversal and area > best_area:
+                # Same reversal status but larger area
+                best_result = cleaned
+                best_area = area
+
+        if best_result is None:
             return None
 
-        # Enforce target winding direction
-        direction = compute_winding_direction(cleaned_points)
-        if direction != target_winding:
-            cleaned_points = list(reversed(cleaned_points))
-            direction = target_winding
-        return Contour(points=cleaned_points, direction=direction)
+        # Apply reversal if needed
+        if best_needed_reversal:
+            best_result = list(reversed(best_result))
+
+        return Contour(points=best_result, direction=target_winding)
 
     except Exception:
         return None

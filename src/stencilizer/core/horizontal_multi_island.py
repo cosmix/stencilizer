@@ -345,39 +345,13 @@ def merge_multi_island_horizontal(
         if not all([outer_top_left, outer_top_right, outer_bot_left, outer_bot_right]):
             return [outer, *inners]
 
-        # Find crossings for each inner
-        inner_crossings = []
+        # Verify each in-range inner has at least 2 crossings at each bridge line
         for inner in inners_sorted:
-            inner_bbox = inner.bounding_box()
-            inner_mid_x = (inner_bbox[0] + inner_bbox[2]) / 2
+            top_crossings = find_all_edge_crossings(inner, bridge_top, False)
+            bot_crossings = find_all_edge_crossings(inner, bridge_bottom, False)
 
-            top_left = find_edge_crossing(
-                inner, bridge_top, False, constraint_max=inner_mid_x, pick_extreme=True
-            )
-            top_right = find_edge_crossing(
-                inner, bridge_top, False, constraint_min=inner_mid_x, pick_extreme=True
-            )
-            bot_left = find_edge_crossing(
-                inner, bridge_bottom, False, constraint_max=inner_mid_x, pick_extreme=True
-            )
-            bot_right = find_edge_crossing(
-                inner, bridge_bottom, False, constraint_min=inner_mid_x, pick_extreme=True
-            )
-
-            if not all([top_left, top_right, bot_left, bot_right]):
+            if len(top_crossings) < 2 or len(bot_crossings) < 2:
                 return [outer, *inners]
-
-            inner_crossings.append(
-                {
-                    "inner": inner,
-                    "top_left": top_left,
-                    "top_right": top_right,
-                    "bot_left": bot_left,
-                    "bot_right": bot_right,
-                    "min_x": inner_bbox[0],
-                    "max_x": inner_bbox[2],
-                }
-            )
 
         # Build TOP piece
         result = []
@@ -389,8 +363,7 @@ def merge_multi_island_horizontal(
         if top_outer:
             result.append(top_outer)
 
-        for crossing_data in inner_crossings:
-            inner = crossing_data["inner"]
+        for inner in inners_sorted:
             inner_top_crossings = find_all_edge_crossings(inner, bridge_top, False)
             top_inner = build_inner_portion_horizontal(
                 inner, bridge_top, inner_top_crossings, is_top=True
@@ -405,8 +378,7 @@ def merge_multi_island_horizontal(
         if bot_outer:
             result.append(bot_outer)
 
-        for crossing_data in inner_crossings:
-            inner = crossing_data["inner"]
+        for inner in inners_sorted:
             inner_bot_crossings = find_all_edge_crossings(inner, bridge_bottom, False)
             bot_inner = build_inner_portion_horizontal(
                 inner, bridge_bottom, inner_bot_crossings, is_top=False

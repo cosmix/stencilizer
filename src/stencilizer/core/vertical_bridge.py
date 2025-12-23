@@ -382,6 +382,55 @@ def build_outer_portion_vertical(
         return None
 
 
+def _build_contour_from_segments_vertical(
+    segments: list[list[Point]],
+    bridge_x: float,
+) -> list[Point] | None:
+    """Build a contour from segments by connecting them along the bridge line.
+
+    Returns the raw points list (not cleaned or winding-enforced).
+    """
+    if not segments:
+        return None
+
+    points: list[Point] = []
+    for i, seg in enumerate(segments):
+        if i > 0:
+            prev_end = points[-1]
+            seg_start = seg[0]
+            if abs(prev_end.x - bridge_x) < 1 and abs(seg_start.x - bridge_x) < 1:
+                pass  # Already on bridge line
+            else:
+                if abs(prev_end.y - seg_start.y) > 1:
+                    points.append(Point(bridge_x, prev_end.y, PointType.ON_CURVE))
+                    points.append(Point(bridge_x, seg_start.y, PointType.ON_CURVE))
+        points.extend(seg)
+
+    # Close the contour
+    if points and segments:
+        last_pt = points[-1]
+        first_pt = points[0]
+        if abs(last_pt.x - bridge_x) < 1 and abs(first_pt.x - bridge_x) < 1:
+            if abs(last_pt.y - first_pt.y) > 1:
+                pass  # Will naturally close
+        elif abs(last_pt.y - first_pt.y) > 1 or abs(last_pt.x - first_pt.x) > 1:
+            if abs(last_pt.x - bridge_x) > 1:
+                points.append(Point(bridge_x, last_pt.y, PointType.ON_CURVE))
+            if abs(first_pt.x - bridge_x) > 1:
+                points.append(Point(bridge_x, first_pt.y, PointType.ON_CURVE))
+
+    return points
+
+
+def _clean_points_vertical(points: list[Point]) -> list[Point]:
+    """Remove duplicate consecutive points."""
+    cleaned: list[Point] = []
+    for p in points:
+        if not cleaned or (abs(p.x - cleaned[-1].x) > 0.5 or abs(p.y - cleaned[-1].y) > 0.5):
+            cleaned.append(p)
+    return cleaned
+
+
 def build_inner_portion_vertical(
     inner: Contour,
     bridge_x: float,
@@ -398,6 +447,10 @@ def build_inner_portion_vertical(
     side, then connects them along the bridge line. This handles complex
     shapes like the R-defining contour in ® that have multiple disconnected
     segments on each side.
+
+    Uses a multi-ordering strategy: tries different segment orderings and picks
+    the one that naturally produces the correct winding direction (without
+    needing reversal), as this indicates geometrically correct construction.
 
     Args:
         inner: The contour to split
@@ -483,63 +536,73 @@ def build_inner_portion_vertical(
         if not segments:
             return None
 
-        # Sort segments by Y position for proper connection
-        # For inner (hole), trace in opposite direction from outer
-        if is_left:
-            segments.sort(key=lambda seg: max(pt.y for pt in seg), reverse=True)
-        else:
-            segments.sort(key=lambda seg: min(pt.y for pt in seg))
+        # For single segment, no ordering ambiguity
+        if len(segments) == 1:
+            points = _build_contour_from_segments_vertical(segments, bridge_x)
+            if not points:
+                return None
+            cleaned_points = _clean_points_vertical(points)
+            if len(cleaned_points) < 3:
+                return None
+            direction = compute_winding_direction(cleaned_points)
+            if direction != target_winding:
+                cleaned_points = list(reversed(cleaned_points))
+                direction = target_winding
+            return Contour(points=cleaned_points, direction=direction)
 
-        # Build final contour by connecting segments along bridge line
-        # Each segment's endpoints on bridge_x need connecting edges to form closed contour
-        points: list[Point] = []
-        for i, seg in enumerate(segments):
-            if i > 0:
-                # Add connecting edge along bridge line from previous segment to this one
-                prev_end = points[-1]
-                seg_start = seg[0]
-                # Both should be on bridge_x - add vertical edge
-                if abs(prev_end.x - bridge_x) < 1 and abs(seg_start.x - bridge_x) < 1:
-                    # Already on bridge line - just add the segment
-                    pass
-                else:
-                    # Need to connect via bridge line if gap exists
-                    if abs(prev_end.y - seg_start.y) > 1:
-                        # Add intermediate point on bridge line
-                        points.append(Point(bridge_x, prev_end.y, PointType.ON_CURVE))
-                        points.append(Point(bridge_x, seg_start.y, PointType.ON_CURVE))
-            points.extend(seg)
+        # Multi-segment case: try different orderings and pick the one that
+        # NATURALLY produces correct winding (indicates geometrically correct)
+        orderings_to_try = [
+            # Original traversal order (segments as collected)
+            segments[:],
+            # Reversed traversal order
+            segments[::-1],
+            # Bottom-to-top sorted
+            sorted(segments, key=lambda seg: min(pt.y for pt in seg)),
+            # Top-to-bottom sorted
+            sorted(segments, key=lambda seg: max(pt.y for pt in seg), reverse=True),
+        ]
 
-        # Close the contour by connecting last segment back to first along bridge line
-        if points and segments:
-            last_pt = points[-1]
-            first_pt = points[0]
-            if abs(last_pt.x - bridge_x) < 1 and abs(first_pt.x - bridge_x) < 1:
-                # Both on bridge - add closing edge if they're not adjacent
-                if abs(last_pt.y - first_pt.y) > 1:
-                    pass  # Will naturally close
-            elif abs(last_pt.y - first_pt.y) > 1 or abs(last_pt.x - first_pt.x) > 1:
-                # Need to close via bridge line
-                if abs(last_pt.x - bridge_x) > 1:
-                    points.append(Point(bridge_x, last_pt.y, PointType.ON_CURVE))
-                if abs(first_pt.x - bridge_x) > 1:
-                    points.append(Point(bridge_x, first_pt.y, PointType.ON_CURVE))
+        best_result: list[Point] | None = None
+        best_needed_reversal = True
+        best_area = 0.0
 
-        # Remove duplicate consecutive points
-        cleaned_points: list[Point] = []
-        for p in points:
-            if not cleaned_points or (abs(p.x - cleaned_points[-1].x) > 0.5 or abs(p.y - cleaned_points[-1].y) > 0.5):
-                cleaned_points.append(p)
+        for ordered_segments in orderings_to_try:
+            points = _build_contour_from_segments_vertical(ordered_segments, bridge_x)
+            if not points:
+                continue
+            cleaned = _clean_points_vertical(points)
+            if len(cleaned) < 3:
+                continue
 
-        if len(cleaned_points) < 3:
+            direction = compute_winding_direction(cleaned)
+            needed_reversal = (direction != target_winding)
+            area = abs(signed_area(cleaned))
+
+            # Prefer orderings that naturally produce correct winding
+            # Among those, prefer larger area (indicates non-self-intersecting)
+            if best_result is None:
+                best_result = cleaned
+                best_needed_reversal = needed_reversal
+                best_area = area
+            elif not needed_reversal and best_needed_reversal:
+                # This ordering naturally has correct winding - prefer it
+                best_result = cleaned
+                best_needed_reversal = needed_reversal
+                best_area = area
+            elif needed_reversal == best_needed_reversal and area > best_area:
+                # Same reversal status but larger area
+                best_result = cleaned
+                best_area = area
+
+        if best_result is None:
             return None
 
-        # Enforce target winding direction
-        direction = compute_winding_direction(cleaned_points)
-        if direction != target_winding:
-            cleaned_points = list(reversed(cleaned_points))
-            direction = target_winding
-        return Contour(points=cleaned_points, direction=direction)
+        # Apply reversal if needed
+        if best_needed_reversal:
+            best_result = list(reversed(best_result))
+
+        return Contour(points=best_result, direction=target_winding)
 
     except Exception:
         return None
