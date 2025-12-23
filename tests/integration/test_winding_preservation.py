@@ -14,7 +14,6 @@ from stencilizer.core.analyzer import GlyphAnalyzer
 from stencilizer.core.bridge import BridgeGenerator, BridgePlacer
 from stencilizer.core.geometry import signed_area
 from stencilizer.core.surgery import GlyphTransformer
-from stencilizer.domain import WindingDirection
 from stencilizer.io import FontReader
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
@@ -105,7 +104,7 @@ class TestRegisteredSymbol:
         # 2. Inner circle/ring hole (CCW)
         # 3. R shape (CW)
         # 4. R's counter (CCW)
-        outers, holes = verify_winding_consistency(glyph.contours)
+        _, holes = verify_winding_consistency(glyph.contours)
 
         assert len(glyph.contours) >= 3, f"® should have at least 3 contours, got {len(glyph.contours)}"
         assert holes >= 1, f"® should have at least 1 hole contour, got {holes}"
@@ -144,11 +143,11 @@ class TestCopyrightSymbol:
         if glyph is None:
             pytest.skip("© glyph not found in font")
 
-        original_outers, original_holes = verify_winding_consistency(glyph.contours)
+        _, original_holes = verify_winding_consistency(glyph.contours)
 
         transformed = transformer.transform(glyph, upm=lato_reader.units_per_em)
 
-        new_outers, new_holes = verify_winding_consistency(transformed.contours)
+        _, new_holes = verify_winding_consistency(transformed.contours)
 
         # Should still have holes
         assert new_holes >= 1, (
@@ -168,11 +167,11 @@ class TestSoundRecordingSymbol:
         if glyph is None:
             pytest.skip("℗ glyph not found in font")
 
-        original_outers, original_holes = verify_winding_consistency(glyph.contours)
+        _, original_holes = verify_winding_consistency(glyph.contours)
 
         transformed = transformer.transform(glyph, upm=lato_reader.units_per_em)
 
-        new_outers, new_holes = verify_winding_consistency(transformed.contours)
+        _, new_holes = verify_winding_consistency(transformed.contours)
 
         assert new_holes >= 1, (
             f"℗ should still have hole contours after transform. "
@@ -191,11 +190,11 @@ class TestAtSign:
         if glyph is None:
             pytest.skip("@ glyph not found in font")
 
-        original_outers, original_holes = verify_winding_consistency(glyph.contours)
+        _, original_holes = verify_winding_consistency(glyph.contours)
 
         transformed = transformer.transform(glyph, upm=lato_reader.units_per_em)
 
-        new_outers, new_holes = verify_winding_consistency(transformed.contours)
+        _, new_holes = verify_winding_consistency(transformed.contours)
 
         # @ should have holes (the inner letter area)
         if original_holes > 0:
@@ -216,11 +215,11 @@ class TestGreekPhi:
         if glyph is None:
             pytest.skip("φ glyph not found in font")
 
-        original_outers, original_holes = verify_winding_consistency(glyph.contours)
+        _, original_holes = verify_winding_consistency(glyph.contours)
 
         transformed = transformer.transform(glyph, upm=lato_reader.units_per_em)
 
-        new_outers, new_holes = verify_winding_consistency(transformed.contours)
+        _, new_holes = verify_winding_consistency(transformed.contours)
 
         # φ should preserve its loop holes
         if original_holes > 0:
@@ -241,11 +240,11 @@ class TestAmpersand:
         if glyph is None:
             pytest.skip("& glyph not found in font")
 
-        original_outers, original_holes = verify_winding_consistency(glyph.contours)
+        _, original_holes = verify_winding_consistency(glyph.contours)
 
         transformed = transformer.transform(glyph, upm=lato_reader.units_per_em)
 
-        new_outers, new_holes = verify_winding_consistency(transformed.contours)
+        _, new_holes = verify_winding_consistency(transformed.contours)
 
         if original_holes > 0:
             assert new_holes >= 1, (
@@ -265,11 +264,11 @@ class TestGermanEszett:
         if glyph is None:
             pytest.skip("ß glyph not found in font")
 
-        original_outers, original_holes = verify_winding_consistency(glyph.contours)
+        _, original_holes = verify_winding_consistency(glyph.contours)
 
         transformed = transformer.transform(glyph, upm=lato_reader.units_per_em)
 
-        new_outers, new_holes = verify_winding_consistency(transformed.contours)
+        _, new_holes = verify_winding_consistency(transformed.contours)
 
         if original_holes > 0:
             assert new_holes >= 1, (
@@ -289,11 +288,11 @@ class TestGreekTheta:
         if glyph is None:
             pytest.skip("Θ glyph not found in font")
 
-        original_outers, original_holes = verify_winding_consistency(glyph.contours)
+        _, _ = verify_winding_consistency(glyph.contours)
 
         transformed = transformer.transform(glyph, upm=lato_reader.units_per_em)
 
-        new_outers, new_holes = verify_winding_consistency(transformed.contours)
+        _, _ = verify_winding_consistency(transformed.contours)
 
         # Theta should be transformed (bridges added)
         assert len(transformed.contours) != len(glyph.contours) or transformed.contours != glyph.contours, (

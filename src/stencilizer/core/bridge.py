@@ -57,7 +57,7 @@ class BridgePlacer:
 
         for inner_point in sampled_points:
             # Find nearest point on outer contour
-            outer_point, _distance = nearest_point_on_contour(inner_point, outer)
+            outer_point, _ = nearest_point_on_contour(inner_point, outer)
 
             # Create bridge spec with estimated width (will be refined later)
             spec = BridgeSpec(
@@ -111,12 +111,12 @@ class BridgePlacer:
 
         return total_score
 
-    def _score_position(self, spec: BridgeSpec, _glyph: Glyph) -> float:
+    def _score_position(self, spec: BridgeSpec, glyph: Glyph) -> float:  # noqa: ARG002
         """Score based on position preference.
 
         Args:
             spec: Bridge specification
-            _glyph: Glyph containing the contours (unused but kept for API consistency)
+            glyph: Glyph containing the contours (unused but kept for API consistency)
 
         Returns:
             Position score between 0.0 and 1.0

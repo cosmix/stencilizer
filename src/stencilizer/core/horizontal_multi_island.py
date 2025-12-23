@@ -20,8 +20,6 @@ from stencilizer.domain import Contour, Point, PointType, WindingDirection
 def classify_obstruction_horizontal(
     contour: Contour,
     outer: Contour,
-    _gap_left: float,
-    _gap_right: float,
 ) -> str:
     """Classify obstruction type: 'structural', 'island', or 'unknown'.
 
@@ -31,8 +29,6 @@ def classify_obstruction_horizontal(
     Args:
         contour: The contour to classify
         outer: The outer contour of the glyph
-        _gap_left: Left X coordinate of the gap between islands (unused)
-        _gap_right: Right X coordinate of the gap between islands (unused)
 
     Returns:
         'structural' if it's a structural element (like a vertical bar)
@@ -92,12 +88,12 @@ def has_spanning_obstruction_horizontal(
             if bbox[1] <= bridge_top_y and bbox[3] >= bridge_bottom_y:
                 if bbox[0] <= gap_left and bbox[2] >= gap_right:
                     # Classify the obstruction
-                    obstruction_type = classify_obstruction_horizontal(contour, outer, gap_left, gap_right)
+                    obstruction_type = classify_obstruction_horizontal(contour, outer)
                     if obstruction_type != "structural":
                         return True
                 if bbox[0] >= gap_left and bbox[2] <= gap_right:
                     # Classify the obstruction
-                    obstruction_type = classify_obstruction_horizontal(contour, outer, gap_left, gap_right)
+                    obstruction_type = classify_obstruction_horizontal(contour, outer)
                     if obstruction_type != "structural":
                         return True
 
@@ -468,7 +464,7 @@ def merge_multi_island_horizontal(
 
                 # Check if this is a structural element (like a vertical bar)
                 # Structural elements should NOT be split - add unchanged
-                obs_type = classify_obstruction_horizontal(contour, outer, all_inner_min_x, all_inner_max_x)
+                obs_type = classify_obstruction_horizontal(contour, outer)
                 if obs_type == "structural":
                     result.append(contour)
                     if processed_nested is not None:

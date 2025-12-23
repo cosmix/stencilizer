@@ -56,7 +56,7 @@ class TestFontReader:
 
     @patch("stencilizer.io.reader.TTFont")
     @patch.object(Path, "exists", return_value=True)
-    def test_format_truetype(self, __mock_exists, mock_ttfont):
+    def test_format_truetype(self, _mock_exists, mock_ttfont):  # noqa: ARG002
         """Test format property for TrueType fonts."""
         mock_font = MagicMock()
         mock_font.__contains__ = Mock(side_effect=lambda x: x == "glyf")
@@ -69,7 +69,7 @@ class TestFontReader:
 
     @patch("stencilizer.io.reader.TTFont")
     @patch.object(Path, "exists", return_value=True)
-    def test_format_opentype(self, __mock_exists, mock_ttfont):
+    def test_format_opentype(self, _mock_exists, mock_ttfont):  # noqa: ARG002
         """Test format property for OpenType fonts."""
         mock_font = MagicMock()
         mock_font.__contains__ = Mock(side_effect=lambda x: x == "CFF ")
@@ -82,7 +82,7 @@ class TestFontReader:
 
     @patch("stencilizer.io.reader.TTFont")
     @patch.object(Path, "exists", return_value=True)
-    def test_units_per_em(self, __mock_exists, mock_ttfont):
+    def test_units_per_em(self, _mock_exists, mock_ttfont):  # noqa: ARG002
         """Test units_per_em property."""
         mock_font = MagicMock()
         mock_font.__getitem__ = Mock(return_value=MagicMock(unitsPerEm=1000))
@@ -95,7 +95,7 @@ class TestFontReader:
 
     @patch("stencilizer.io.reader.TTFont")
     @patch.object(Path, "exists", return_value=True)
-    def test_glyph_count(self, __mock_exists, mock_ttfont):
+    def test_glyph_count(self, _mock_exists, mock_ttfont):  # noqa: ARG002
         """Test glyph_count property."""
         mock_font = MagicMock()
         mock_font.__getitem__ = Mock(return_value=MagicMock(numGlyphs=256))
@@ -108,7 +108,7 @@ class TestFontReader:
 
     @patch("stencilizer.io.reader.TTFont")
     @patch.object(Path, "exists", return_value=True)
-    def test_context_manager(self, __mock_exists, mock_ttfont):
+    def test_context_manager(self, _mock_exists, mock_ttfont):  # noqa: ARG002
         """Test FontReader as context manager."""
         mock_font = MagicMock()
         mock_ttfont.return_value = mock_font

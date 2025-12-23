@@ -6,7 +6,6 @@ which splits glyphs into TOP/BOTTOM pieces.
 
 from stencilizer.core.geometry import (
     compute_winding_direction,
-    detect_traversal_direction,
     find_all_edge_crossings,
     signed_area,
 )
@@ -245,9 +244,6 @@ def build_outer_portion_horizontal(
 
         if not outer_left or not outer_right:
             return (None, [])
-
-        outer_left_pt = min(outer_left, key=lambda c: c[2])
-        outer_right_pt = max(outer_right, key=lambda c: c[2])
 
         outer_points = outer.points
         n_outer = len(outer_points)

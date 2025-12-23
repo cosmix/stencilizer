@@ -7,9 +7,7 @@ import pytest
 from fontTools.ttLib import TTFont
 
 from stencilizer.config import StencilizerSettings
-from stencilizer.core.geometry import signed_area
 from stencilizer.core.processor import FontProcessor
-from stencilizer.io import FontReader
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 LATO_BLACK_PATH = FIXTURES_DIR / "Lato-Black.ttf"
@@ -97,10 +95,10 @@ class TestEndToEndOutput:
             out_font.close()
 
             # Verify holes exist in output
-            assert out_hole > 0, f"'b' lost all holes! outer={out_outer}, hole={out_hole}"
+            assert out_hole is not None and out_hole > 0, f"'b' lost all holes! outer={out_outer}, hole={out_hole}"
 
             # Verify hole area didn't decrease too much
-            if orig_hole > 0:
+            if orig_hole is not None and orig_hole > 0:
                 ratio = out_hole / orig_hole
                 print(f"Hole ratio: {ratio:.2%}")
                 assert ratio >= 0.5, f"'b' lost too much hole area: {ratio:.2%}"
@@ -127,7 +125,7 @@ class TestEndToEndOutput:
 
             # Get glyph name for ®
             cmap = orig_font.getBestCmap()
-            glyph_name = cmap.get(ord("®"))
+            glyph_name = cmap.get(ord("®")) if cmap is not None else None
 
             if glyph_name:
                 orig_contours, orig_outer, orig_hole = analyze_glyph_from_font(orig_font, glyph_name)
@@ -136,7 +134,7 @@ class TestEndToEndOutput:
                 print(f"\nOriginal '®': {orig_contours} contours, outer={orig_outer:.0f}, hole={orig_hole:.0f}")
                 print(f"Output '®': {out_contours} contours, outer={out_outer:.0f}, hole={out_hole:.0f}")
 
-                if orig_hole > 0:
+                if orig_hole is not None and orig_hole > 0 and out_hole is not None:
                     ratio = out_hole / orig_hole
                     print(f"Hole ratio: {ratio:.2%}")
                     assert ratio >= 0.3, f"'®' lost too much hole area: {ratio:.2%}"
@@ -165,7 +163,6 @@ class TestEndToEndOutput:
             out_font = TTFont(str(output_path))
 
             glyph_names = orig_font.getGlyphOrder()
-            glyf_table = orig_font["glyf"]
 
             lost_holes = []
             preserved = 0
@@ -173,19 +170,19 @@ class TestEndToEndOutput:
 
             for name in glyph_names:
                 try:
-                    orig_contours, orig_outer, orig_hole = analyze_glyph_from_font(orig_font, name)
+                    _, _, orig_hole = analyze_glyph_from_font(orig_font, name)
                     if orig_hole is None or orig_hole == 0:
                         continue
 
                     total_with_holes += 1
-                    out_contours, out_outer, out_hole = analyze_glyph_from_font(out_font, name)
+                    _, _, out_hole = analyze_glyph_from_font(out_font, name)
 
                     if out_hole == 0:
                         lost_holes.append(f"{name}: had {orig_hole:.0f} hole area, now 0")
                     else:
                         preserved += 1
 
-                except Exception as e:
+                except Exception:
                     pass
 
             orig_font.close()

@@ -147,7 +147,7 @@ def stencilize(
             help="Minimal console output",
         ),
     ] = False,
-    _version: Annotated[
+    _version: Annotated[  # noqa: ARG001
         bool | None,
         typer.Option(
             "--version",
@@ -311,7 +311,7 @@ def stencilize(
                     )
 
                     def update_progress(
-                        completed: int, _total: int, _glyph_name: str, _success: bool
+                        completed: int, *_: object
                     ) -> None:
                         progress.update(task_id, completed=completed)
 

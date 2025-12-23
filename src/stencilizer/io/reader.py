@@ -112,7 +112,6 @@ class FontReader:
         if self._font is None:
             raise RuntimeError("Font not loaded. Call load() first.")
 
-        _glyph_set = self._font.getGlyphSet()
         glyph_order = self._font.getGlyphOrder()
 
         for glyph_name in glyph_order:
@@ -161,6 +160,6 @@ class FontReader:
         self.load()
         return self
 
-    def __exit__(self, _exc_type: object, _exc_val: object, _exc_tb: object) -> None:
+    def __exit__(self, *_: object) -> None:
         """Context manager exit."""
         self.close()

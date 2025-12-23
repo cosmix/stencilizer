@@ -87,11 +87,11 @@ class TestDiagnostic:
         if glyph is None:
             pytest.skip("® not found")
 
-        orig_outer, orig_hole = analyze_contours(glyph.contours, f"ORIGINAL ® ({glyph.name})")
+        _, orig_hole = analyze_contours(glyph.contours, f"ORIGINAL ® ({glyph.name})")
 
         transformed = transformer.transform(glyph, upm=reader.units_per_em)
 
-        new_outer, new_hole = analyze_contours(transformed.contours, "TRANSFORMED ®")
+        _, new_hole = analyze_contours(transformed.contours, "TRANSFORMED ®")
 
         # Hole area should not decrease dramatically
         hole_ratio = new_hole / orig_hole if orig_hole > 0 else 1.0
@@ -105,11 +105,11 @@ class TestDiagnostic:
         if glyph is None:
             pytest.skip("@ not found")
 
-        orig_outer, orig_hole = analyze_contours(glyph.contours, f"ORIGINAL @ ({glyph.name})")
+        _, orig_hole = analyze_contours(glyph.contours, f"ORIGINAL @ ({glyph.name})")
 
         transformed = transformer.transform(glyph, upm=reader.units_per_em)
 
-        new_outer, new_hole = analyze_contours(transformed.contours, "TRANSFORMED @")
+        _, new_hole = analyze_contours(transformed.contours, "TRANSFORMED @")
 
         hole_ratio = new_hole / orig_hole if orig_hole > 0 else 1.0
         print(f"\nHole area ratio: {hole_ratio:.2%}")
@@ -123,11 +123,11 @@ class TestDiagnostic:
         if glyph is None:
             pytest.skip("φ not found")
 
-        orig_outer, orig_hole = analyze_contours(glyph.contours, f"ORIGINAL φ ({glyph.name})")
+        _, orig_hole = analyze_contours(glyph.contours, f"ORIGINAL φ ({glyph.name})")
 
         transformed = transformer.transform(glyph, upm=reader.units_per_em)
 
-        new_outer, new_hole = analyze_contours(transformed.contours, "TRANSFORMED φ")
+        _, new_hole = analyze_contours(transformed.contours, "TRANSFORMED φ")
 
         hole_ratio = new_hole / orig_hole if orig_hole > 0 else 1.0
         print(f"\nHole area ratio: {hole_ratio:.2%}")
@@ -140,11 +140,11 @@ class TestDiagnostic:
         if glyph is None:
             pytest.skip("& not found")
 
-        orig_outer, orig_hole = analyze_contours(glyph.contours, f"ORIGINAL & ({glyph.name})")
+        _, orig_hole = analyze_contours(glyph.contours, f"ORIGINAL & ({glyph.name})")
 
         transformed = transformer.transform(glyph, upm=reader.units_per_em)
 
-        new_outer, new_hole = analyze_contours(transformed.contours, "TRANSFORMED &")
+        _, new_hole = analyze_contours(transformed.contours, "TRANSFORMED &")
 
         hole_ratio = new_hole / orig_hole if orig_hole > 0 else 1.0
         print(f"\nHole area ratio: {hole_ratio:.2%}")
@@ -162,7 +162,7 @@ class TestDiagnostic:
                 continue
 
             print(f"\n{'='*60}")
-            orig_outer, orig_hole = analyze_contours(glyph.contours, f"ORIGINAL {name}")
+            _, orig_hole = analyze_contours(glyph.contours, f"ORIGINAL {name}")
 
             if orig_hole == 0:
                 print(f"No holes in {name}, skipping")
@@ -170,7 +170,7 @@ class TestDiagnostic:
 
             transformed = transformer.transform(glyph, upm=reader.units_per_em)
 
-            new_outer, new_hole = analyze_contours(transformed.contours, f"TRANSFORMED {name}")
+            _, new_hole = analyze_contours(transformed.contours, f"TRANSFORMED {name}")
 
             hole_ratio = new_hole / orig_hole if orig_hole > 0 else 1.0
             print(f"\nHole area ratio for {name}: {hole_ratio:.2%}")
@@ -184,11 +184,11 @@ class TestDiagnostic:
         if glyph is None:
             pytest.skip("f not found")
 
-        orig_outer, orig_hole = analyze_contours(glyph.contours, f"ORIGINAL f ({glyph.name})")
+        _, orig_hole = analyze_contours(glyph.contours, f"ORIGINAL f ({glyph.name})")
 
         transformed = transformer.transform(glyph, upm=reader.units_per_em)
 
-        new_outer, new_hole = analyze_contours(transformed.contours, "TRANSFORMED f")
+        _, new_hole = analyze_contours(transformed.contours, "TRANSFORMED f")
 
         hole_ratio = new_hole / orig_hole if orig_hole > 0 else 1.0
         print(f"\nHole area ratio: {hole_ratio:.2%}")
@@ -199,11 +199,11 @@ class TestDiagnostic:
         if glyph is None:
             pytest.skip("b not found")
 
-        orig_outer, orig_hole = analyze_contours(glyph.contours, f"ORIGINAL b ({glyph.name})")
+        _, orig_hole = analyze_contours(glyph.contours, f"ORIGINAL b ({glyph.name})")
 
         transformed = transformer.transform(glyph, upm=reader.units_per_em)
 
-        new_outer, new_hole = analyze_contours(transformed.contours, "TRANSFORMED b")
+        _, new_hole = analyze_contours(transformed.contours, "TRANSFORMED b")
 
         hole_ratio = new_hole / orig_hole if orig_hole > 0 else 1.0
         print(f"\nHole area ratio: {hole_ratio:.2%}")
@@ -214,11 +214,11 @@ class TestDiagnostic:
         if glyph is None:
             pytest.skip("O not found")
 
-        orig_outer, orig_hole = analyze_contours(glyph.contours, f"ORIGINAL O ({glyph.name})")
+        _, orig_hole = analyze_contours(glyph.contours, f"ORIGINAL O ({glyph.name})")
 
         transformed = transformer.transform(glyph, upm=reader.units_per_em)
 
-        new_outer, new_hole = analyze_contours(transformed.contours, "TRANSFORMED O")
+        _, new_hole = analyze_contours(transformed.contours, "TRANSFORMED O")
 
         # For simple O, we should have 4 contours: 2 outer + 2 hole (left/right pieces)
         print(f"\nExpected: 4 contours (2 outer + 2 hole)")

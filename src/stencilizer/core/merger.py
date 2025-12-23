@@ -9,7 +9,6 @@ from stencilizer.core.geometry import (
     is_bridge_path_clear,
 )
 from stencilizer.core.horizontal_bridge import create_horizontal_bridge_contours
-from stencilizer.core.multi_island import merge_multi_island_vertical
 from stencilizer.core.vertical_bridge import create_vertical_bridge_contours
 from stencilizer.domain import Contour
 

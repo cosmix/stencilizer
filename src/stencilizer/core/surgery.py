@@ -80,10 +80,11 @@ class GlyphTransformer:
         if hierarchy.nested_outers and hierarchy.nesting_tree:
             def add_descendants(idx: int) -> None:
                 protected_indices.add(idx)
-                node = hierarchy.nesting_tree.get(idx)
-                if node:
-                    for child_idx in node.children:
-                        add_descendants(child_idx)
+                if hierarchy.nesting_tree is not None:
+                    node = hierarchy.nesting_tree.get(idx)
+                    if node:
+                        for child_idx in node.children:
+                            add_descendants(child_idx)
             for nested_outer_idx in hierarchy.nested_outers:
                 node = hierarchy.nesting_tree.get(nested_outer_idx)
                 # Only protect if this nested outer has children (holes inside it)
@@ -127,12 +128,6 @@ class GlyphTransformer:
             is_horizontally_arranged = False
             if len(island_indices_sorted) > 1:
                 bboxes = [glyph.contours[idx].bounding_box() for idx in island_indices_sorted]
-
-                # Calculate overall X and Y extents of all islands
-                all_min_x = min(b[0] for b in bboxes)
-                all_max_x = max(b[2] for b in bboxes)
-                all_min_y = min(b[1] for b in bboxes)
-                all_max_y = max(b[3] for b in bboxes)
 
                 # Calculate gap between islands in X and Y
                 # For X: sort by X and find gap between consecutive islands
@@ -369,8 +364,6 @@ class GlyphTransformer:
 
                 nested_outer = glyph.contours[nested_outer_idx]
                 nested_outer_bbox = nested_outer.bounding_box()
-                nested_center_x = (nested_outer_bbox[0] + nested_outer_bbox[2]) / 2
-                nested_center_y = (nested_outer_bbox[1] + nested_outer_bbox[3]) / 2
 
                 # Find the parent CCW hole this nested outer is inside
                 parent_idx = hierarchy.nesting_tree[nested_outer_idx].parent if hierarchy.nesting_tree else None
@@ -410,7 +403,7 @@ class GlyphTransformer:
 
                 if nested_children:
                     # Check if we need to split vertically first (to match outer gap)
-                    if bridge_gap_x_min is not None:
+                    if bridge_gap_x_min is not None and bridge_gap_x_max is not None:
                         # Split nested outer and children vertically to match gap
                         from .vertical_bridge import create_vertical_bridge_contours
                         gap_center_x = (bridge_gap_x_min + bridge_gap_x_max) / 2

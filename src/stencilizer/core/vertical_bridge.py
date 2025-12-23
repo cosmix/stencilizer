@@ -6,7 +6,6 @@ which splits glyphs into LEFT/RIGHT pieces.
 
 from stencilizer.core.geometry import (
     compute_winding_direction,
-    detect_traversal_direction,
     find_all_edge_crossings,
     signed_area,
 )
