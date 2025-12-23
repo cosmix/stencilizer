@@ -44,14 +44,14 @@ from stencilizer.core.geometry import (
     signed_area,
 )
 from stencilizer.core.processor import FontProcessor, process_glyph
-from stencilizer.core.surgery import BridgeHoleCreator, GlyphTransformer
+from stencilizer.core.surgery import ContourMerger, GlyphTransformer
 
 __all__ = [
     "BridgeGenerator",
-    # Surgery classes
-    "BridgeHoleCreator",
     # Bridge classes
     "BridgePlacer",
+    # Surgery classes
+    "ContourMerger",
     # Analyzer classes
     "ContourHierarchy",
     # Processor classes
