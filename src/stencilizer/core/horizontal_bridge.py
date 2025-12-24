@@ -150,9 +150,6 @@ def create_horizontal_bridge_contours(
                 if has_own_holes:
                     # Has children - skip it here, will be processed in nested_outers section
                     continue
-                # Childless nested outer (inverted island) - fall through to crossing check
-                # to see if it needs to be split. If it crosses the bridge, it will be split.
-                # If it doesn't cross, it will be preserved and handled in nested_outers section.
 
             # Check if contour crosses the bridge lines
             top_crossings = find_all_edge_crossings(contour, bridge_top, False)

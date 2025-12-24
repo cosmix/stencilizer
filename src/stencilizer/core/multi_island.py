@@ -510,9 +510,6 @@ def merge_multi_island_vertical(
                     if has_own_holes:
                         # Has children - skip it here, will be processed in nested_outers section
                         continue
-                    # Childless nested outer (inverted island) - fall through to crossing check
-                    # to see if it needs to be split. If it crosses the bridge, it will be split.
-                    # If it doesn't cross, it will be preserved and handled in nested_outers section.
 
                 # Also check if this is a structural element in the GAP between islands
                 # (like a horizontal bar connecting left and right halves)

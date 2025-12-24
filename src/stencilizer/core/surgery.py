@@ -31,6 +31,32 @@ if TYPE_CHECKING:
 __all__ = ["ContourMerger", "GlyphTransformer"]
 
 
+def _find_containing_hole(
+    nested_outer_bbox: tuple[float, float, float, float],
+    contours: list[Contour],
+) -> tuple[Contour | None, int | None]:
+    """Find the CCW hole contour that fully contains the nested outer bounding box.
+
+    Args:
+        nested_outer_bbox: Bounding box (min_x, min_y, max_x, max_y) of the nested outer
+        contours: List of contours to search
+
+    Returns:
+        Tuple of (containing_hole, containing_hole_idx) or (None, None) if not found
+    """
+    for i, contour in enumerate(contours):
+        # Look for CCW contours (holes) - positive signed area
+        if contour.signed_area() > 0:
+            c_bbox = contour.bounding_box()
+            # Check if nested outer is fully inside this hole
+            if (c_bbox[0] < nested_outer_bbox[0] and
+                c_bbox[2] > nested_outer_bbox[2] and
+                c_bbox[1] < nested_outer_bbox[1] and
+                c_bbox[3] > nested_outer_bbox[3]):
+                return contour, i
+    return None, None
+
+
 class GlyphTransformer:
     """Transforms glyphs by merging contours with bridge gaps.
 
@@ -489,22 +515,9 @@ class GlyphTransformer:
                     # Nested outer with no children - this is an "inverted island"
                     # (like the bowls of an 8 inside a filled encircled digit ⑧)
                     # It needs bridges to connect it to the parent CCW hole.
-
-                    # Find which CCW contour (hole portion) contains this nested outer
-                    containing_hole = None
-                    containing_hole_idx = None
-                    for i, contour in enumerate(new_contours):
-                        # Look for CCW contours (holes)
-                        if contour.signed_area() > 0:
-                            c_bbox = contour.bounding_box()
-                            # Check if nested outer's center is inside this hole
-                            if (c_bbox[0] < nested_outer_bbox[0] and
-                                c_bbox[2] > nested_outer_bbox[2] and
-                                c_bbox[1] < nested_outer_bbox[1] and
-                                c_bbox[3] > nested_outer_bbox[3]):
-                                containing_hole = contour
-                                containing_hole_idx = i
-                                break
+                    containing_hole, containing_hole_idx = _find_containing_hole(
+                        nested_outer_bbox, new_contours
+                    )
 
                     if containing_hole is not None:
                         # Bridge the nested outer (CW) to the containing hole (CCW)

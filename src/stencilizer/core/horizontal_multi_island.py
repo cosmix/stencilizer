@@ -458,9 +458,6 @@ def merge_multi_island_horizontal(
                     if has_own_holes:
                         # Has children - skip it here, will be processed in nested_outers section
                         continue
-                    # Childless nested outer (inverted island) - fall through to crossing check
-                    # to see if it needs to be split. If it crosses the bridge, it will be split.
-                    # If it doesn't cross, it will be preserved and handled in nested_outers section.
 
                 # Check if this is a structural element (like a vertical bar)
                 # Structural elements should NOT be split - add unchanged
