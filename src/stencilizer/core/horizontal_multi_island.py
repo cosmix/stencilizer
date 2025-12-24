@@ -458,6 +458,14 @@ def merge_multi_island_horizontal(
                     if has_own_holes:
                         # Has children - skip it here, will be processed in nested_outers section
                         continue
+                    else:
+                        # Childless nested outer inside a hole - preserve it unchanged.
+                        # Such elements are structural content and should NOT be split.
+                        # They will be handled in nested_outers section if needed.
+                        result.append(contour)
+                        if processed_nested is not None:
+                            processed_nested.append(contour)
+                        continue
 
                 # Check if this is a structural element (like a vertical bar)
                 # Structural elements should NOT be split - add unchanged

@@ -170,6 +170,15 @@ def create_vertical_bridge_contours(
                 if has_own_holes:
                     # Has children - skip it here, will be processed in nested_outers section
                     continue
+                else:
+                    # Childless nested outer (like Theta's bar) - preserve it unchanged.
+                    # Such elements are structural content inside the hole and should NOT
+                    # be split by the parent bridge. They will be handled in the
+                    # nested_outers section if they're inverted islands needing bridges.
+                    result.append(contour)
+                    if processed_nested is not None:
+                        processed_nested.append(contour)
+                    continue
 
             # Check if contour crosses the bridge lines
             left_crossings = find_all_edge_crossings(contour, bridge_left, True)
