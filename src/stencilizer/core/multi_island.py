@@ -507,12 +507,17 @@ def merge_multi_island_vertical(
                                     has_own_holes = True
                                     break
 
-                    if not has_own_holes:
-                        # Preserve simple self-contained geometry (no children)
+                    if has_own_holes:
+                        # Has children - skip it here, will be processed in nested_outers section
+                        continue
+                    else:
+                        # Childless nested outer inside a hole - preserve it unchanged.
+                        # Such elements are structural content and should NOT be split.
+                        # They will be handled in nested_outers section if needed.
                         result.append(contour)
                         if processed_nested is not None:
                             processed_nested.append(contour)
-                    continue
+                        continue
 
                 # Also check if this is a structural element in the GAP between islands
                 # (like a horizontal bar connecting left and right halves)

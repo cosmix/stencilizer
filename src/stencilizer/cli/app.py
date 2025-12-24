@@ -129,7 +129,7 @@ def stencilize(
             help="Minimal console output",
         ),
     ] = False,
-    _version: Annotated[  # noqa: ARG001
+    _version: Annotated[
         bool | None,
         typer.Option(
             "--version",

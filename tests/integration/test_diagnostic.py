@@ -221,7 +221,7 @@ class TestDiagnostic:
         _, new_hole = analyze_contours(transformed.contours, "TRANSFORMED O")
 
         # For simple O, we should have 4 contours: 2 outer + 2 hole (left/right pieces)
-        print(f"\nExpected: 4 contours (2 outer + 2 hole)")
+        print("\nExpected: 4 contours (2 outer + 2 hole)")
         print(f"Got: {len(transformed.contours)} contours")
 
         hole_ratio = new_hole / orig_hole if orig_hole > 0 else 1.0

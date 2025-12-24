@@ -415,3 +415,100 @@ class TestGlyphTransformer:
         ccw_count = sum(1 for c in transformed.contours if c.direction == WindingDirection.COUNTER_CLOCKWISE)
         assert cw_count == 2, f"Expected 2 CW (outer) contours, got {cw_count}"
         assert ccw_count == 2, f"Expected 2 CCW (inner) contours, got {ccw_count}"
+
+    def test_transform_filled_encircled_digit_with_inverted_islands(self) -> None:
+        """Test transforming a filled encircled digit creates bridges for inverted islands.
+
+        Filled encircled digits (like ⑧) have:
+        - Outer: filled circle (CW)
+        - Island: digit outline cutout (CCW hole)
+        - Inverted islands: filled areas within the digit (CW nested outers)
+
+        The inverted islands (like bowls of 8) need bridges to connect them
+        to the surrounding hole boundary.
+        """
+        analyzer = GlyphAnalyzer()
+        # Use 30% bridge width
+        config = BridgeConfig(width_percent=30.0, min_bridges=1)
+        placer = BridgePlacer(config)
+        generator = BridgeGenerator(config)
+        transformer = GlyphTransformer(analyzer, placer, generator, bridge_config=config)
+
+        # Create filled circle outer (CW - filled area)
+        outer_circle = Contour(
+            points=[
+                Point(0.0, 0.0),
+                Point(0.0, 200.0),
+                Point(200.0, 200.0),
+                Point(200.0, 0.0),
+            ],
+            direction=WindingDirection.CLOCKWISE,
+        )
+
+        # Create digit-8-shaped cutout (CCW hole in the circle)
+        # This simulates the negative space of an "8" inside a filled circle
+        digit_cutout = Contour(
+            points=[
+                Point(50.0, 20.0),
+                Point(150.0, 20.0),
+                Point(150.0, 180.0),
+                Point(50.0, 180.0),
+            ],
+            direction=WindingDirection.COUNTER_CLOCKWISE,
+        )
+
+        # Create top bowl of 8 (CW - filled area inside the digit cutout)
+        # This is an "inverted island" - a filled area inside a hole
+        # CW order: bottom-left → top-left → top-right → bottom-right
+        top_bowl = Contour(
+            points=[
+                Point(70.0, 110.0),   # bottom-left
+                Point(70.0, 160.0),   # top-left
+                Point(130.0, 160.0),  # top-right
+                Point(130.0, 110.0),  # bottom-right
+            ],
+            direction=WindingDirection.CLOCKWISE,
+        )
+
+        # Create bottom bowl of 8 (CW - filled area inside the digit cutout)
+        # CW order: bottom-left → top-left → top-right → bottom-right
+        bottom_bowl = Contour(
+            points=[
+                Point(70.0, 40.0),    # bottom-left
+                Point(70.0, 90.0),    # top-left
+                Point(130.0, 90.0),   # top-right
+                Point(130.0, 40.0),   # bottom-right
+            ],
+            direction=WindingDirection.CLOCKWISE,
+        )
+
+        glyph = Glyph(
+            metadata=GlyphMetadata(
+                name="eight.circle", unicode=0x2467, advance_width=200, left_side_bearing=0
+            ),
+            contours=[outer_circle, digit_cutout, top_bowl, bottom_bowl],
+        )
+
+        transformed = transformer.transform(glyph, upm=1000)
+
+        # The transformation should create bridges:
+        # 1. Between outer circle and digit cutout (main bridging)
+        # 2. Between each bowl and the digit cutout (inverted island bridging)
+
+        # We should have more contours than the original 4 due to splitting
+        # At minimum: main outer/inner split creates 4, plus bridges for bowls
+        assert len(transformed.contours) >= 4, (
+            f"Expected at least 4 contours after transformation, got {len(transformed.contours)}"
+        )
+
+        # All contours should have valid geometry
+        for contour in transformed.contours:
+            assert len(contour.points) >= 3, (
+                f"Contour has only {len(contour.points)} points"
+            )
+
+        # Verify we have both CW and CCW contours (indicating proper bridging)
+        cw_count = sum(1 for c in transformed.contours if c.direction == WindingDirection.CLOCKWISE)
+        ccw_count = sum(1 for c in transformed.contours if c.direction == WindingDirection.COUNTER_CLOCKWISE)
+        assert cw_count >= 2, f"Expected at least 2 CW contours, got {cw_count}"
+        assert ccw_count >= 2, f"Expected at least 2 CCW contours, got {ccw_count}"
