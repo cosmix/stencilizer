@@ -1,4 +1,5 @@
 # Stencilizer
+
 Convert TrueType fonts to stencil-ready versions by automatically adding bridges to enclosed contours.
 
 <img width="1024" height="409" alt="stencil" src="https://github.com/user-attachments/assets/03d0c074-4d97-4d39-a457-60366c400de2" />
@@ -14,7 +15,7 @@ Characters like **O**, **A**, **B**, **D**, **P**, **R**, **Q**, **4**, **6**, *
 - **Automatic Island Detection**: Intelligently identifies enclosed contours using contour hierarchy analysis
 - **Smart Bridge Placement**: Places bridges optimally based on contour geometry and user preferences
 - **Parallel Processing**: Leverages multicore CPUs for fast processing of large fonts
-- **Flexible Configuration**: Control bridge width, position, and count
+- **Flexible Configuration**: Control bridge width and position
 - **Font Coexistence**: Output fonts get a "Stenciled" suffix in their internal name table, allowing installation alongside the original font
 - **Multiple Output Modes**:
   - Full processing (default)
@@ -26,18 +27,6 @@ Characters like **O**, **A**, **B**, **D**, **P**, **R**, **Q**, **4**, **6**, *
 
 ## Installation
 
-### Using uv (recommended)
-
-```bash
-uv pip install stencilizer
-```
-
-### Using pip
-
-```bash
-pip install stencilizer
-```
-
 ### From source
 
 ```bash
@@ -48,9 +37,10 @@ uv pip install -e .
 
 ## Quick Start
 
-Convert a font with default settings:
-
 ```bash
+git clone https://github.com/cosmix/stencilizer.git
+cd stencilizer
+uv pip install -e .
 stencilizer Roboto-Regular.ttf
 ```
 
@@ -69,9 +59,6 @@ stencilizer input.ttf -o output.ttf
 
 # Adjust bridge width (30-110% of stroke width)
 stencilizer input.ttf --bridge-width 70
-
-# Set minimum bridges per island
-stencilizer input.ttf --min-bridges 2
 ```
 
 ### Bridge Position Control
@@ -179,7 +166,6 @@ Glyphs are processed in parallel using Python's ProcessPoolExecutor, enabling ef
 ```bash
 stencilizer Roboto-Regular.ttf \
   --bridge-width 80 \
-  --min-bridges 2 \
   --position top_bottom \
   -o Roboto-Stencil.ttf
 ```
@@ -275,13 +261,13 @@ stencilizer input.ttf --log-file debug.log --log-level DEBUG
 
 Stencilizer supports the following font formats:
 
-| Format | Extension | Outline Type | Status |
-|--------|-----------|--------------|--------|
-| TrueType | `.ttf` | TrueType (`glyf` table) | ✅ Fully supported |
-| OpenType with TrueType outlines | `.otf` | TrueType (`glyf` table) | ✅ Fully supported |
-| OpenType with CFF outlines | `.otf` | PostScript (`CFF` table) | ✅ Supported |
-| OpenType with CFF2 outlines | `.otf` | PostScript (`CFF2` table) | ❌ Not supported |
-| Variable fonts | `.ttf`/`.otf` | Variable (`fvar` table) | ❌ Not supported |
+| Format                          | Extension     | Outline Type              | Status             |
+| ------------------------------- | ------------- | ------------------------- | ------------------ |
+| TrueType                        | `.ttf`        | TrueType (`glyf` table)   | ✅ Fully supported |
+| OpenType with TrueType outlines | `.otf`        | TrueType (`glyf` table)   | ✅ Fully supported |
+| OpenType with CFF outlines      | `.otf`        | PostScript (`CFF` table)  | ✅ Supported       |
+| OpenType with CFF2 outlines     | `.otf`        | PostScript (`CFF2` table) | ❌ Not supported   |
+| Variable fonts                  | `.ttf`/`.otf` | Variable (`fvar` table)   | ❌ Not supported   |
 
 ### How to identify your font's format
 
