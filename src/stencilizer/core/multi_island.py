@@ -325,31 +325,37 @@ def merge_multi_island_vertical(
             return [outer, *inners]
 
         # Find crossings for each inner
+        # NOTE: We use actual crossing Y positions to determine top/bottom,
+        # NOT the bounding box midpoint. This is critical for diagonal islands
+        # (like slashed zeros) where crossings at a given X may all be on one
+        # side of the bounding box center.
         inner_crossings = []
         for inner in inners_sorted:
             inner_bbox = inner.bounding_box()
-            inner_mid_y = (inner_bbox[1] + inner_bbox[3]) / 2
 
-            left_top = find_edge_crossing(
-                inner, bridge_left, True, constraint_min=inner_mid_y, pick_extreme=True
-            )
-            left_bot = find_edge_crossing(
-                inner, bridge_left, True, constraint_max=inner_mid_y, pick_extreme=True
-            )
-            right_top = find_edge_crossing(
-                inner, bridge_right, True, constraint_min=inner_mid_y, pick_extreme=True
-            )
-            right_bot = find_edge_crossing(
-                inner, bridge_right, True, constraint_max=inner_mid_y, pick_extreme=True
-            )
+            # Get ALL crossings for each bridge line
+            left_all = find_all_edge_crossings(inner, bridge_left, True)
+            right_all = find_all_edge_crossings(inner, bridge_right, True)
 
-            if not all([left_top, left_bot, right_top, right_bot]):
-                inner_bbox = inner.bounding_box()
+            # Need at least 2 crossings on each side
+            if len(left_all) < 2 or len(right_all) < 2:
                 logger.debug(
-                    "Multi-island merge failed: missing inner crossings for island at y=[%.1f, %.1f]",
-                    inner_bbox[1], inner_bbox[3]
+                    "Multi-island merge failed: insufficient crossings for island at y=[%.1f, %.1f] "
+                    "(left=%d, right=%d)",
+                    inner_bbox[1], inner_bbox[3], len(left_all), len(right_all)
                 )
                 return [outer, *inners]
+
+            # Sort by Y and take extremes - this works for diagonal islands
+            # where crossings may be clustered on one side of bbox center
+            left_sorted = sorted(left_all, key=lambda c: c[2])  # Sort by Y ascending
+            right_sorted = sorted(right_all, key=lambda c: c[2])
+
+            # Bottom is lowest Y, top is highest Y
+            left_bot = left_sorted[0]
+            left_top = left_sorted[-1]
+            right_bot = right_sorted[0]
+            right_top = right_sorted[-1]
 
             inner_crossings.append(
                 {
