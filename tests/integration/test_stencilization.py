@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import ClassVar
 
 import pytest
+from fontTools.pens.recordingPen import RecordingPen
 from fontTools.ttLib import TTFont
 
 from stencilizer.config import BridgeConfig, StencilizerSettings
@@ -22,6 +23,7 @@ from stencilizer.io import FontReader
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 ROBOTO_PATH = FIXTURES_DIR / "Roboto-Regular.ttf"
+COMMIT_MONO_OTF_PATH = FIXTURES_DIR / "CommitMono-Cosmix-700-Regular.otf"
 
 
 @pytest.fixture
@@ -30,6 +32,17 @@ def roboto_reader() -> Generator[FontReader, None, None]:
     if not ROBOTO_PATH.exists():
         pytest.skip("Roboto font fixture not available")
     reader = FontReader(ROBOTO_PATH)
+    reader.load()
+    yield reader
+    reader.close()
+
+
+@pytest.fixture
+def commit_mono_otf_reader() -> Generator[FontReader, None, None]:
+    """Load CommitMono OTF font for testing."""
+    if not COMMIT_MONO_OTF_PATH.exists():
+        pytest.skip("CommitMono OTF font fixture not available")
+    reader = FontReader(COMMIT_MONO_OTF_PATH)
     reader.load()
     yield reader
     reader.close()
@@ -670,3 +683,109 @@ class TestEdgeCases:
 
             original.close()
             processed.close()
+
+
+class TestOpenTypeFonts:
+    """Test OpenType (CFF) font processing."""
+
+    def test_otf_font_detected_as_opentype(self, commit_mono_otf_reader: FontReader) -> None:
+        """Test that OTF font is detected as OpenType format."""
+        font_format = commit_mono_otf_reader.format
+        assert font_format == "OpenType", f"Expected 'OpenType', got '{font_format}'"
+
+    def test_process_otf_font_creates_valid_output(self) -> None:
+        """Test that processing OTF creates a valid, loadable font."""
+        if not COMMIT_MONO_OTF_PATH.exists():
+            pytest.skip("CommitMono OTF font fixture not available")
+
+        settings = StencilizerSettings()
+        processor = FontProcessor(settings)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "CommitMono-Stenciled.otf"
+
+            stats = processor.process(
+                font_path=COMMIT_MONO_OTF_PATH,
+                output_path=output_path,
+                max_workers=1,  # Single worker for deterministic testing
+            )
+
+            # Check stats
+            assert stats.processed_count > 0, "Should process some glyphs"
+            assert stats.bridges_added > 0, "Should add some bridges"
+            assert stats.error_count == 0, f"Should have no errors: {stats.errors}"
+
+            # Verify output file exists and is valid
+            assert output_path.exists(), "Output file should exist"
+
+            # Load and verify output font
+            output_font = TTFont(str(output_path))
+            assert "CFF " in output_font, "Output should be a valid OpenType/CFF font"
+            output_font.close()
+
+    def test_otf_glyphs_have_valid_charstrings(self) -> None:
+        """Test that processed OTF glyphs have valid charstrings that can be drawn."""
+        if not COMMIT_MONO_OTF_PATH.exists():
+            pytest.skip("CommitMono OTF font fixture not available")
+
+        settings = StencilizerSettings()
+        processor = FontProcessor(settings)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "CommitMono-Stenciled.otf"
+
+            processor.process(
+                font_path=COMMIT_MONO_OTF_PATH,
+                output_path=output_path,
+                max_workers=1,
+            )
+
+            # Load output font and verify glyphs can be drawn
+            output_font = TTFont(str(output_path))
+            glyph_set = output_font.getGlyphSet()
+
+            # Test that we can draw glyphs with islands
+            test_glyphs = ["O", "A", "B", "D", "P", "Q", "R", "a", "b", "d", "e", "p", "q"]
+            glyphs_drawn = 0
+
+            for glyph_name in test_glyphs:
+                if glyph_name in glyph_set:
+                    try:
+                        # Try to draw the glyph - this validates the charstrings
+                        pen = RecordingPen()
+                        glyph_set[glyph_name].draw(pen)
+                        glyphs_drawn += 1
+                    except Exception as e:
+                        pytest.fail(f"Failed to draw glyph '{glyph_name}': {e}")
+
+            assert glyphs_drawn > 0, "Should have drawn at least some test glyphs"
+            output_font.close()
+
+    def test_otf_island_detection(self, commit_mono_otf_reader: FontReader) -> None:
+        """Test that island detection works on CFF font glyphs.
+
+        Note: CommitMono Cosmix is a stencil variant, so typical letters don't have islands.
+        We test with special glyphs that do have islands like Theta, copyright, registered.
+        """
+        analyzer = GlyphAnalyzer()
+        glyphs_with_islands = []
+
+        for glyph in commit_mono_otf_reader.iter_glyphs():
+            if glyph.is_empty() or glyph.is_composite():
+                continue
+            hierarchy = analyzer.analyze(glyph)
+            if hierarchy.has_islands():
+                glyphs_with_islands.append(glyph.name)
+
+        # CommitMono Cosmix should have some glyphs with islands (special symbols)
+        assert len(glyphs_with_islands) >= 5, (
+            f"Expected at least 5 glyphs with islands, found {len(glyphs_with_islands)}: {glyphs_with_islands[:10]}"
+        )
+
+        # Check that special symbol glyphs with islands are detected
+        # (using glyphs that actually have islands in this stencil font variant)
+        symbol_island_glyphs = ["Theta", "copyright", "registered"]
+        found_symbols = [g for g in symbol_island_glyphs if g in glyphs_with_islands]
+        assert len(found_symbols) >= 2, (
+            f"Expected at least 2 symbol island glyphs, found {len(found_symbols)}: {found_symbols}"
+        )

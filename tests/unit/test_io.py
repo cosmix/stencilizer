@@ -377,3 +377,134 @@ class TestUpdateFontNames:
         update_font_names(mock_font)
 
         mock_name_table.setName.assert_not_called()
+
+
+class TestCffGlyphUpdate:
+    """Tests for CFF glyph update functionality."""
+
+    def test_update_cff_glyph_passes_private_and_global_subrs(self):
+        """Test that _update_cff_glyph passes Private dict and GlobalSubrs to charstring."""
+        from stencilizer.io.converter import _update_cff_glyph
+
+        # Create mock font structure
+        mock_font = MagicMock()
+        mock_cff_table = MagicMock()
+        mock_top_dict = MagicMock()
+        mock_charstrings = {}
+        mock_private = MagicMock()
+        mock_global_subrs = MagicMock()
+
+        # Set up the CFF structure
+        mock_cff_table.cff.topDictIndex = [mock_top_dict]
+        mock_top_dict.CharStrings = mock_charstrings
+        mock_top_dict.Private = mock_private
+        mock_cff_table.cff.GlobalSubrs = mock_global_subrs
+
+        mock_font.__getitem__ = Mock(return_value=mock_cff_table)
+        mock_font.getGlyphSet.return_value = {}
+
+        # Create a simple glyph with one contour
+        glyph = Glyph(
+            metadata=GlyphMetadata("A", None, 500, 0),
+            contours=[]
+        )
+
+        # Mock the T2CharStringPen to track getCharString calls
+        with patch("stencilizer.io.converter.T2CharStringPen") as mock_pen_class:
+            mock_pen = MagicMock()
+            mock_charstring = MagicMock()
+            mock_pen.getCharString.return_value = mock_charstring
+            mock_pen_class.return_value = mock_pen
+
+            _update_cff_glyph(glyph, None, mock_font)
+
+            # Verify getCharString was called with private and globalSubrs
+            mock_pen.getCharString.assert_called_once_with(
+                private=mock_private,
+                globalSubrs=mock_global_subrs
+            )
+
+    def test_update_cff_glyph_stores_charstring_in_font(self):
+        """Test that the updated charstring is stored in the CharStrings dict."""
+        from stencilizer.io.converter import _update_cff_glyph
+
+        # Create mock font structure
+        mock_font = MagicMock()
+        mock_cff_table = MagicMock()
+        mock_top_dict = MagicMock()
+        mock_charstrings = {}
+        mock_private = MagicMock()
+        mock_global_subrs = MagicMock()
+
+        # Set up the CFF structure
+        mock_cff_table.cff.topDictIndex = [mock_top_dict]
+        mock_top_dict.CharStrings = mock_charstrings
+        mock_top_dict.Private = mock_private
+        mock_cff_table.cff.GlobalSubrs = mock_global_subrs
+
+        mock_font.__getitem__ = Mock(return_value=mock_cff_table)
+        mock_font.getGlyphSet.return_value = {}
+
+        # Create a glyph
+        glyph = Glyph(
+            metadata=GlyphMetadata("B", None, 600, 0),
+            contours=[]
+        )
+
+        # Mock the T2CharStringPen
+        with patch("stencilizer.io.converter.T2CharStringPen") as mock_pen_class:
+            mock_pen = MagicMock()
+            mock_charstring = MagicMock()
+            mock_pen.getCharString.return_value = mock_charstring
+            mock_pen_class.return_value = mock_pen
+
+            _update_cff_glyph(glyph, None, mock_font)
+
+            # Verify the charstring was stored in the CharStrings dict
+            assert "B" in mock_charstrings
+            assert mock_charstrings["B"] == mock_charstring
+
+    def test_update_cff_glyph_empty_contours(self):
+        """Test that _update_cff_glyph handles glyphs with no contours."""
+        from stencilizer.io.converter import _update_cff_glyph
+
+        # Create mock font structure
+        mock_font = MagicMock()
+        mock_cff_table = MagicMock()
+        mock_top_dict = MagicMock()
+        mock_charstrings = {}
+        mock_private = MagicMock()
+        mock_global_subrs = MagicMock()
+
+        # Set up the CFF structure
+        mock_cff_table.cff.topDictIndex = [mock_top_dict]
+        mock_top_dict.CharStrings = mock_charstrings
+        mock_top_dict.Private = mock_private
+        mock_cff_table.cff.GlobalSubrs = mock_global_subrs
+
+        mock_font.__getitem__ = Mock(return_value=mock_cff_table)
+        mock_font.getGlyphSet.return_value = {}
+
+        # Create a glyph with empty contours (e.g., space character)
+        glyph = Glyph(
+            metadata=GlyphMetadata("space", None, 250, 0),
+            contours=[]
+        )
+
+        # Mock the T2CharStringPen
+        with patch("stencilizer.io.converter.T2CharStringPen") as mock_pen_class:
+            mock_pen = MagicMock()
+            mock_charstring = MagicMock()
+            mock_pen.getCharString.return_value = mock_charstring
+            mock_pen_class.return_value = mock_pen
+
+            _update_cff_glyph(glyph, None, mock_font)
+
+            # Verify no drawing operations were performed (no moveTo calls)
+            mock_pen.moveTo.assert_not_called()
+
+            # Verify getCharString was still called (to create empty glyph)
+            mock_pen.getCharString.assert_called_once()
+
+            # Verify the charstring was stored
+            assert "space" in mock_charstrings
