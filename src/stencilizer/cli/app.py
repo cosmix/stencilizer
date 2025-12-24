@@ -10,6 +10,7 @@ import typer
 
 from stencilizer import __version__
 from stencilizer.cli.output import (
+    SYM_OK,
     console,
     create_progress,
     print_cancellation_notice,
@@ -18,7 +19,7 @@ from stencilizer.cli.output import (
     print_font_info,
     print_header,
     print_islands_found,
-    print_processing_summary,
+    print_processing_info,
     print_step,
     print_success,
 )
@@ -130,7 +131,7 @@ def stencilize(
             "--log-level",
             help="Logging level (DEBUG|INFO|WARNING|ERROR)",
         ),
-    ] = "INFO",
+    ] = "WARNING",
     verbose: Annotated[
         bool,
         typer.Option(
@@ -232,7 +233,7 @@ def stencilize(
 
         # Load font info
         if not quiet:
-            print_step(1, 4, "Loading font...")
+            print_step("Loading font")
 
         try:
             reader = FontReader(input_font)
@@ -254,7 +255,7 @@ def stencilize(
 
         # Analyze glyphs
         if not quiet:
-            print_step(2, 4, "Analyzing glyphs...")
+            print_step("Analyzing glyphs")
 
         island_glyphs = []
         try:
@@ -282,14 +283,16 @@ def stencilize(
 
         if len(island_glyphs) == 0:
             if not quiet:
-                console.print("\n[yellow]No glyphs with islands found. Nothing to process.[/yellow]")
+                console.print("\nNo glyphs with islands found. Nothing to process.")
             raise typer.Exit(code=0)
 
         # Process font
         if not quiet:
-            print_step(3, 4, "Adding bridges...")
-            console.print(f"      Using {workers if workers else 'auto'} parallel workers")
-            console.print("      [dim]Press Ctrl+C to cancel[/dim]")
+            import os
+
+            actual_workers = workers if workers else os.cpu_count() or 1
+            print_step("Processing")
+            print_processing_info(actual_workers, is_auto=(workers is None))
 
         # Determine output path early for cancellation handling
         if output is None:
@@ -336,24 +339,20 @@ def stencilize(
                 )
             raise typer.Exit(code=130) from None  # Standard Unix SIGINT exit code
 
+        # Get file size and print success
+        file_size = _format_file_size(actual_output_path)
+
         if not quiet:
-            print_processing_summary(
+            print_success(
+                output_path=str(actual_output_path),
+                file_size=file_size,
+                total_time_s=stats.duration_seconds,
                 processed=stats.processed_count,
                 bridges=stats.bridges_added,
                 errors=stats.error_count,
                 avg_time_ms=stats.avg_glyph_time_ms,
                 min_time_ms=stats.min_glyph_time_ms,
                 max_time_ms=stats.max_glyph_time_ms,
-            )
-
-        # Get file size
-        file_size = _format_file_size(actual_output_path)
-
-        if not quiet:
-            print_step(4, 4, "Saving font...")
-            print_success(
-                output_path=str(actual_output_path),
-                file_size=file_size,
             )
 
     except FontLoadError as e:
@@ -381,7 +380,7 @@ def _handle_list_islands(font_path: Path, quiet: bool) -> None:
         quiet: Suppress output
     """
     if not quiet:
-        print_step(1, 2, "Loading font...")
+        print_step("Loading font")
 
     try:
         reader = FontReader(font_path)
@@ -394,7 +393,7 @@ def _handle_list_islands(font_path: Path, quiet: bool) -> None:
                 glyph_count=reader.glyph_count,
                 upm=reader.units_per_em,
             )
-            print_step(2, 2, "Analyzing glyphs...")
+            print_step("Scanning for islands")
 
         analyzer = GlyphAnalyzer()
         island_glyphs = []
@@ -410,14 +409,11 @@ def _handle_list_islands(font_path: Path, quiet: bool) -> None:
         reader.close()
 
         if not quiet:
-            console.print(f"\n[bold]Found {len(island_glyphs)} glyphs with islands:[/bold]\n")
+            console.print(f"\n[bold]{len(island_glyphs)} glyphs with islands[/bold]\n")
 
         for glyph_name, island_count in island_glyphs:
             plural = "island" if island_count == 1 else "islands"
-            console.print(f"  {glyph_name}: [cyan]{island_count}[/cyan] {plural}")
-
-        if not quiet:
-            console.print(f"\n[dim]Total: {len(island_glyphs)} glyphs[/dim]")
+            console.print(f"  {glyph_name}: {island_count} {plural}")
 
     except Exception as e:
         print_error(f"Could not analyze font: {e}")
@@ -436,7 +432,7 @@ def _handle_dry_run(
         verbose: Show verbose output
     """
     if not quiet:
-        print_step(1, 2, "Loading font...")
+        print_step("Loading font")
 
     try:
         reader = FontReader(font_path)
@@ -449,7 +445,7 @@ def _handle_dry_run(
                 glyph_count=reader.glyph_count,
                 upm=reader.units_per_em,
             )
-            print_step(2, 2, "Analyzing glyphs (dry run)...")
+            print_step("Analyzing (dry run)")
 
         analyzer = GlyphAnalyzer()
         island_glyphs = []
@@ -467,26 +463,21 @@ def _handle_dry_run(
         reader.close()
 
         if not quiet:
-            console.print("\n[bold]Dry run analysis:[/bold]\n")
-            console.print(f"  Glyphs with islands: [cyan]{len(island_glyphs)}[/cyan]")
-            console.print(f"  Total islands: [cyan]{total_islands}[/cyan]")
-            console.print(
-                f"  Estimated bridges: [cyan]{total_islands * settings.bridge.min_bridges}[/cyan]+"
-            )
-            console.print(f"  Bridge width: [cyan]{settings.bridge.width_percent}%[/cyan] of UPM")
-            console.print(
-                f"  Position preference: [cyan]{settings.bridge.position_preference.value}[/cyan]"
-            )
+            console.print("\n[bold]Analysis[/bold]\n")
+            console.print(f"  Glyphs with islands   {len(island_glyphs)}")
+            console.print(f"  Total islands         {total_islands}")
+            console.print(f"  Estimated bridges     {total_islands}")
+            console.print(f"  Bridge width          {settings.bridge.width_percent}% of stroke")
 
             if verbose and island_glyphs:
-                console.print("\n[bold]Glyphs to process:[/bold]")
+                console.print("\n[bold]Glyphs[/bold]")
                 for glyph_name, island_count in island_glyphs[:20]:
                     plural = "island" if island_count == 1 else "islands"
                     console.print(f"  {glyph_name}: {island_count} {plural}")
                 if len(island_glyphs) > 20:
-                    console.print(f"  [dim]... and {len(island_glyphs) - 20} more[/dim]")
+                    console.print(f"  ... +{len(island_glyphs) - 20} more")
 
-            console.print("\n[yellow]Dry run complete. No font was modified.[/yellow]")
+            console.print(f"\n[bold green]{SYM_OK} Dry run complete[/bold green] – no changes made")
 
     except Exception as e:
         print_error(f"Could not analyze font: {e}")

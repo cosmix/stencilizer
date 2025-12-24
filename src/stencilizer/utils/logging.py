@@ -83,6 +83,7 @@ def configure_logging(
         console_handler = logging.StreamHandler()
         console_handler.setLevel(getattr(logging, console_level.upper()))
         console_handler.setFormatter(logging.Formatter("%(message)s"))
+        root_logger.addHandler(console_handler)
 
     structlog.configure(
         processors=[

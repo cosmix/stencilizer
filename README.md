@@ -13,9 +13,9 @@ Characters like **O**, **A**, **B**, **D**, **P**, **R**, **Q**, **4**, **6**, *
 ## Features
 
 - **Automatic Island Detection**: Intelligently identifies enclosed contours using contour hierarchy analysis
-- **Smart Bridge Placement**: Places bridges optimally based on contour geometry and user preferences
+- **Smart Bridge Placement**: Places bridges optimally based on contour geometry
 - **Parallel Processing**: Leverages multicore CPUs for fast processing of large fonts
-- **Flexible Configuration**: Control bridge width and position
+- **Flexible Configuration**: Control bridge width and parallel workers
 - **Font Coexistence**: Output fonts get a "Stenciled" suffix in their internal name table, allowing installation alongside the original font
 - **Multiple Output Modes**:
   - Full processing (default)
@@ -46,6 +46,29 @@ stencilizer Roboto-Regular.ttf
 
 This creates `Roboto-Regular-stenciled.ttf` in the same directory.
 
+Example output:
+
+```text
+Stencilizer v1.0.0
+────────────────────────────────────────────
+
+▸ Loading font
+  Roboto-Regular.ttf (TrueType)
+  897 glyphs · 2,048 UPM
+
+▸ Analyzing glyphs
+  42 glyphs with islands
+
+▸ Processing
+  8 workers (auto) · Ctrl+C to cancel
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:02
+
+✓ Complete in 2.1s
+  Roboto-Regular-stenciled.ttf (156 KB)
+  42 glyphs · 38 bridges · 0 errors
+  45.2ms avg (12.1–98.3ms range)
+```
+
 ## Usage
 
 ### Basic Usage
@@ -59,23 +82,6 @@ stencilizer input.ttf -o output.ttf
 
 # Adjust bridge width (30-110% of stroke width)
 stencilizer input.ttf --bridge-width 70
-```
-
-### Bridge Position Control
-
-Control where bridges are placed:
-
-```bash
-# Automatic placement (default)
-stencilizer input.ttf --position auto
-
-# Prefer top bridges
-stencilizer input.ttf --position top
-
-# Prefer both top and bottom
-stencilizer input.ttf --position top_bottom
-
-# Other options: bottom, left, right
 ```
 
 ### Analysis Modes
@@ -143,13 +149,10 @@ Stencilizer analyzes each glyph to identify its contour hierarchy:
 
 For each island, the algorithm:
 
-1. Samples candidate points around the island perimeter
-2. Calculates distances to the containing outer contour
-3. Evaluates positions based on:
-   - User-specified position preference
-   - Geometric stability
-   - Aesthetic considerations
-4. Places the minimum required number of bridges
+1. Analyzes stroke geometry between inner and outer contours
+2. Determines optimal bridge orientation (vertical or horizontal)
+3. Calculates bridge width based on stroke dimensions
+4. Places bridges to connect the island to the outer contour
 
 ### 3. Glyph Transformation
 
@@ -166,7 +169,6 @@ Glyphs are processed in parallel using Python's ProcessPoolExecutor, enabling ef
 ```bash
 stencilizer Roboto-Regular.ttf \
   --bridge-width 80 \
-  --position top_bottom \
   -o Roboto-Stencil.ttf
 ```
 
@@ -177,7 +179,26 @@ stencilizer Roboto-Regular.ttf \
 stencilizer Roboto-Regular.ttf --list-islands
 
 # See what would be done
-stencilizer Roboto-Regular.ttf --dry-run --verbose
+stencilizer Roboto-Regular.ttf --dry-run
+```
+
+Dry-run output:
+
+```text
+▸ Loading font
+  Roboto-Regular.ttf (TrueType)
+  897 glyphs · 2,048 UPM
+
+▸ Analyzing (dry run)
+
+Analysis
+
+  Glyphs with islands   42
+  Total islands         67
+  Estimated bridges     67
+  Bridge width          60% of stroke
+
+✓ Dry run complete – no changes made
 ```
 
 ### Process with detailed logging

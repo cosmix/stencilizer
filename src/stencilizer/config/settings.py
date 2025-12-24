@@ -140,7 +140,7 @@ class LoggingConfig(BaseModel):
         description="Path to log file",
     )
     log_level: str = Field(
-        default="INFO",
+        default="WARNING",
         description="Console log level",
     )
     file_log_level: str = Field(
