@@ -486,12 +486,57 @@ class GlyphTransformer:
                                 processed_indices.add(nested_outer_idx)
                                 processed_indices.add(child_idx)
                 else:
-                    # Nested outer with no children - just add it
-                    # (It should have been split during outer structure bridging
-                    # if it wasn't protected. If we reach here, it was protected
-                    # but has no children to process.)
-                    new_contours.append(nested_outer)
-                    processed_indices.add(nested_outer_idx)
+                    # Nested outer with no children - this is an "inverted island"
+                    # (like the bowls of an 8 inside a filled encircled digit ⑧)
+                    # It needs bridges to connect it to the parent CCW hole.
+
+                    # Find which CCW contour (hole portion) contains this nested outer
+                    containing_hole = None
+                    containing_hole_idx = None
+                    for i, contour in enumerate(new_contours):
+                        # Look for CCW contours (holes)
+                        if contour.signed_area() > 0:
+                            c_bbox = contour.bounding_box()
+                            # Check if nested outer's center is inside this hole
+                            if (c_bbox[0] < nested_outer_bbox[0] and
+                                c_bbox[2] > nested_outer_bbox[2] and
+                                c_bbox[1] < nested_outer_bbox[1] and
+                                c_bbox[3] > nested_outer_bbox[3]):
+                                containing_hole = contour
+                                containing_hole_idx = i
+                                break
+
+                    if containing_hole is not None:
+                        # Bridge the nested outer (CW) to the containing hole (CCW)
+                        # This treats the nested outer as an "inverted island"
+                        inverted_nested: list[Contour] = []
+                        merged = self.merger.merge_contours_with_bridges(
+                            inner=nested_outer,  # CW filled area to bridge
+                            outer=containing_hole,  # CCW hole boundary
+                            bridge_width=bridge_width,
+                            all_contours=glyph.contours,
+                            processed_nested=inverted_nested,
+                        )
+                        if len(merged) >= 1 and merged != [containing_hole, nested_outer]:
+                            # Replace the containing hole with the bridged result
+                            new_contours = (
+                                new_contours[:containing_hole_idx]
+                                + merged
+                                + new_contours[containing_hole_idx + 1:]
+                            )
+                            processed_indices.add(nested_outer_idx)
+                            for c in inverted_nested:
+                                idx = contour_to_idx.get(id(c))
+                                if idx is not None:
+                                    processed_indices.add(idx)
+                        else:
+                            # Bridging failed - add nested outer as-is
+                            new_contours.append(nested_outer)
+                            processed_indices.add(nested_outer_idx)
+                    else:
+                        # Couldn't find containing hole - add as-is
+                        new_contours.append(nested_outer)
+                        processed_indices.add(nested_outer_idx)
 
         # Add any unprocessed contours (non-islands, failed merges, orphans)
         for i, contour in enumerate(glyph.contours):

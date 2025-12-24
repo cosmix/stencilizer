@@ -456,10 +456,11 @@ def merge_multi_island_horizontal(
                                     break
 
                     if not has_own_holes:
-                        # Preserve simple self-contained geometry (no children)
-                        result.append(contour)
-                        if processed_nested is not None:
-                            processed_nested.append(contour)
+                        # This is a childless nested outer (inverted island).
+                        # DON'T add it to result or processed_nested here.
+                        # It will be handled in the nested_outers section of surgery.py
+                        # where proper bridges will be added to connect it to the parent hole.
+                        pass
                     continue
 
                 # Check if this is a structural element (like a vertical bar)

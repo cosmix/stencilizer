@@ -331,7 +331,7 @@ class TestWindingPreservationGeneral:
                 )
 
         assert not failures, (
-            f"The following glyphs lost ALL their holes:\n" + "\n".join(failures)
+            "The following glyphs lost ALL their holes:\n" + "\n".join(failures)
         )
 
     def test_transformed_contours_have_valid_winding(
