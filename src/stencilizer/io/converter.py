@@ -26,6 +26,10 @@ def fonttools_glyph_to_domain(
     Uses a RecordingPen to extract the glyph outline as a series of
     drawing commands, then converts these to Contour objects.
 
+    Note: CFF fonts use opposite winding convention (CCW=outer, CW=inner)
+    compared to TrueType (CW=outer, CCW=inner). We normalize CFF contours
+    by reversing point order so the analyzer receives consistent winding.
+
     Args:
         name: Name of the glyph
         fonttools_glyph: The fonttools glyph object from GlyphSet
@@ -41,6 +45,13 @@ def fonttools_glyph_to_domain(
     fonttools_glyph.draw(pen)
 
     contours = _recording_to_contours(pen.value)
+
+    # CFF fonts use opposite winding convention from TrueType.
+    # Reverse contour points to normalize to TrueType convention.
+    is_cff = "CFF " in font
+    if is_cff:
+        for contour in contours:
+            contour.points = list(reversed(contour.points))
 
     metadata = _extract_glyph_metadata(name, font)
 
@@ -232,38 +243,45 @@ def _update_truetype_glyph(glyph: Glyph, _: Any, font: TTFont) -> None:
 def _update_cff_glyph(glyph: Glyph, _: Any, font: TTFont) -> None:
     """Update CFF/OpenType glyph from domain model.
 
+    Note: Domain contours use TrueType winding convention (normalized on read).
+    We must reverse points when writing back to restore CFF winding convention.
+
     Args:
         glyph: Domain glyph model
         _: Original fonttools glyph (unused)
         font: The TTFont object
     """
     cff_table = font["CFF "]
-    top_dict = cff_table.cff.topDictIndex[0]
+    top_dict = cff_table.cff.topDictIndex[0]  # type: ignore[union-attr]
     charstrings = top_dict.CharStrings
     glyph_name = glyph.name
+    private = top_dict.Private
+    global_subrs = cff_table.cff.GlobalSubrs  # type: ignore[union-attr]
 
     pen = T2CharStringPen(width=glyph.metadata.advance_width, glyphSet=font.getGlyphSet())  # type: ignore[arg-type]
 
     for contour in glyph.contours:
-        if not contour.points:
+        # Reverse points to restore CFF winding convention
+        points = list(reversed(contour.points))
+        if not points:
             continue
 
-        first_point = contour.points[0]
+        first_point = points[0]
         pen.moveTo((first_point.x, first_point.y))
 
         i = 1
-        while i < len(contour.points):
-            point = contour.points[i]
+        while i < len(points):
+            point = points[i]
 
             if point.point_type == PointType.ON_CURVE:
                 pen.lineTo((point.x, point.y))
                 i += 1
 
             elif point.point_type == PointType.OFF_CURVE_CUBIC:
-                if i + 2 < len(contour.points):
+                if i + 2 < len(points):
                     p1 = point
-                    p2 = contour.points[i + 1]
-                    p3 = contour.points[i + 2]
+                    p2 = points[i + 1]
+                    p3 = points[i + 2]
 
                     pen.curveTo(
                         (p1.x, p1.y),
@@ -279,5 +297,5 @@ def _update_cff_glyph(glyph: Glyph, _: Any, font: TTFont) -> None:
 
         pen.closePath()
 
-    charstring = pen.getCharString()
+    charstring = pen.getCharString(private=private, globalSubrs=global_subrs)
     charstrings[glyph_name] = charstring

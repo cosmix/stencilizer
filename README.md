@@ -286,7 +286,7 @@ Stencilizer supports the following font formats:
 | ------------------------------- | ------------- | ------------------------- | ------------------ |
 | TrueType                        | `.ttf`        | TrueType (`glyf` table)   | ✅ Fully supported |
 | OpenType with TrueType outlines | `.otf`        | TrueType (`glyf` table)   | ✅ Fully supported |
-| OpenType with CFF outlines      | `.otf`        | PostScript (`CFF` table)  | ✅ Supported       |
+| OpenType with CFF outlines      | `.otf`        | PostScript (`CFF` table)  | ✅ Fully supported |
 | OpenType with CFF2 outlines     | `.otf`        | PostScript (`CFF2` table) | ❌ Not supported   |
 | Variable fonts                  | `.ttf`/`.otf` | Variable (`fvar` table)   | ❌ Not supported   |
 
@@ -294,8 +294,8 @@ Stencilizer supports the following font formats:
 
 Most `.ttf` files use TrueType outlines and will work. For `.otf` files, the situation is more nuanced:
 
-- **OTF with TrueType outlines**: Some foundries package TrueType outlines in an OpenType container. These work fine.
-- **OTF with CFF outlines**: Traditional PostScript-based OpenType fonts. These are supported.
+- **OTF with TrueType outlines**: Some foundries package TrueType outlines in an OpenType container. These are fully supported.
+- **OTF with CFF outlines**: Traditional PostScript-based OpenType fonts. These are fully supported.
 - **OTF with CFF2 outlines**: Modern variable OpenType fonts use CFF2. These are not yet supported.
 
 If you're unsure about your font's format, try processing it—Stencilizer will report an error if the format is unsupported.
