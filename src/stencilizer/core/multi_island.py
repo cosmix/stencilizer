@@ -507,13 +507,12 @@ def merge_multi_island_vertical(
                                     has_own_holes = True
                                     break
 
-                    if not has_own_holes:
-                        # This is a childless nested outer (inverted island).
-                        # DON'T add it to result or processed_nested here.
-                        # It will be handled in the nested_outers section of surgery.py
-                        # where proper bridges will be added to connect it to the parent hole.
-                        pass
-                    continue
+                    if has_own_holes:
+                        # Has children - skip it here, will be processed in nested_outers section
+                        continue
+                    # Childless nested outer (inverted island) - fall through to crossing check
+                    # to see if it needs to be split. If it crosses the bridge, it will be split.
+                    # If it doesn't cross, it will be preserved and handled in nested_outers section.
 
                 # Also check if this is a structural element in the GAP between islands
                 # (like a horizontal bar connecting left and right halves)

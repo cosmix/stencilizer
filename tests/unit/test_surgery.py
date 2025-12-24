@@ -459,23 +459,25 @@ class TestGlyphTransformer:
 
         # Create top bowl of 8 (CW - filled area inside the digit cutout)
         # This is an "inverted island" - a filled area inside a hole
+        # CW order: bottom-left → top-left → top-right → bottom-right
         top_bowl = Contour(
             points=[
-                Point(70.0, 110.0),
-                Point(130.0, 110.0),
-                Point(130.0, 160.0),
-                Point(70.0, 160.0),
+                Point(70.0, 110.0),   # bottom-left
+                Point(70.0, 160.0),   # top-left
+                Point(130.0, 160.0),  # top-right
+                Point(130.0, 110.0),  # bottom-right
             ],
             direction=WindingDirection.CLOCKWISE,
         )
 
         # Create bottom bowl of 8 (CW - filled area inside the digit cutout)
+        # CW order: bottom-left → top-left → top-right → bottom-right
         bottom_bowl = Contour(
             points=[
-                Point(70.0, 40.0),
-                Point(130.0, 40.0),
-                Point(130.0, 90.0),
-                Point(70.0, 90.0),
+                Point(70.0, 40.0),    # bottom-left
+                Point(70.0, 90.0),    # top-left
+                Point(130.0, 90.0),   # top-right
+                Point(130.0, 40.0),   # bottom-right
             ],
             direction=WindingDirection.CLOCKWISE,
         )
