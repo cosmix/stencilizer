@@ -1,5 +1,5 @@
 # Stencilizer
-Convert TrueType and OpenType fonts to stencil-ready versions by automatically adding bridges to enclosed contours.
+Convert TrueType fonts to stencil-ready versions by automatically adding bridges to enclosed contours.
 
 <img width="1024" height="409" alt="stencil" src="https://github.com/user-attachments/assets/03d0c074-4d97-4d39-a457-60366c400de2" />
 
@@ -22,7 +22,7 @@ Characters like **O**, **A**, **B**, **D**, **P**, **R**, **Q**, **4**, **6**, *
   - Island listing
 - **Rich CLI Output**: Beautiful console output with progress tracking
 - **Detailed Logging**: Optional file logging for debugging and analysis
-- **Format Support**: Works with both TTF and OTF font formats
+- **Format Support**: Works with TTF and OTF fonts containing TrueType outlines (see [Font Format Support](#font-format-support))
 
 ## Installation
 
@@ -253,7 +253,7 @@ ruff format src tests
 
 ### Font not loading
 
-Ensure your font file is a valid TTF or OTF file and not corrupted.
+Ensure your font file is a valid TTF file (or OTF with TrueType outlines) and not corrupted. See [Font Format Support](#font-format-support) for details on supported formats.
 
 ### No islands found
 
@@ -271,10 +271,32 @@ Enable detailed logging to diagnose issues:
 stencilizer input.ttf --log-file debug.log --log-level DEBUG
 ```
 
+## Font Format Support
+
+Stencilizer supports the following font formats:
+
+| Format | Extension | Outline Type | Status |
+|--------|-----------|--------------|--------|
+| TrueType | `.ttf` | TrueType (`glyf` table) | ✅ Fully supported |
+| OpenType with TrueType outlines | `.otf` | TrueType (`glyf` table) | ✅ Fully supported |
+| OpenType with CFF outlines | `.otf` | PostScript (`CFF` table) | ✅ Supported |
+| OpenType with CFF2 outlines | `.otf` | PostScript (`CFF2` table) | ❌ Not supported |
+| Variable fonts | `.ttf`/`.otf` | Variable (`fvar` table) | ❌ Not supported |
+
+### How to identify your font's format
+
+Most `.ttf` files use TrueType outlines and will work. For `.otf` files, the situation is more nuanced:
+
+- **OTF with TrueType outlines**: Some foundries package TrueType outlines in an OpenType container. These work fine.
+- **OTF with CFF outlines**: Traditional PostScript-based OpenType fonts. These are supported.
+- **OTF with CFF2 outlines**: Modern variable OpenType fonts use CFF2. These are not yet supported.
+
+If you're unsure about your font's format, try processing it—Stencilizer will report an error if the format is unsupported.
+
 ## Future Work
 
-- OpenType (CFF) font support
-- Variable font support
+- OpenType CFF2 font support
+- Variable font support (fonts with `fvar` table)
 
 ## License
 
