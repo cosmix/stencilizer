@@ -25,7 +25,6 @@ from stencilizer.cli.output import (
 )
 from stencilizer.config import (
     BridgeConfig,
-    BridgePosition,
     LoggingConfig,
     ProcessingConfig,
     StencilizerSettings,
@@ -77,24 +76,6 @@ def stencilize(
             max=110.0,
         ),
     ] = 60.0,
-    min_bridges: Annotated[
-        int,
-        typer.Option(
-            "--min-bridges",
-            "-n",
-            help="Minimum bridges per island",
-            min=1,
-            max=4,
-        ),
-    ] = 1,
-    position: Annotated[
-        str,
-        typer.Option(
-            "--position",
-            "-p",
-            help="Bridge position preference (auto|top|bottom|left|right|top_bottom)",
-        ),
-    ] = "auto",
     workers: Annotated[
         int | None,
         typer.Option(
@@ -190,16 +171,6 @@ def stencilize(
         )
         raise typer.Exit(code=1)
 
-    # Validate position argument
-    try:
-        position_pref = BridgePosition(position.lower())
-    except ValueError:
-        print_error(
-            f"Invalid position: {position}",
-            details="Valid values: auto, top, bottom, left, right, top_bottom",
-        )
-        raise typer.Exit(code=1)
-
     # Print header
     if not quiet:
         print_header(__version__)
@@ -208,8 +179,6 @@ def stencilize(
     settings = StencilizerSettings(
         bridge=BridgeConfig(
             width_percent=bridge_width,
-            min_bridges=min_bridges,
-            position_preference=position_pref,
         ),
         processing=ProcessingConfig(
             max_workers=workers,
