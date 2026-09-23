@@ -1,0 +1,584 @@
+{
+  "revision": "6e9f89147deeafb6ca25761fdf6be493aef608f2",
+  "generation": "b980daa111c23e896fa40a172c688be5f53e9c15daa62adfe1fbb245ec926c9e",
+  "built_at": "2026-09-23T07:13:55.785606215Z",
+  "files": {
+    ".bootstrap-receipt.json": {
+      "content_hash": "sha256:77bdfa632236d69bedf10c7356ae6974ba250d9be2e03c4fa17f4c2121fed70b",
+      "nodes": [
+        {
+          "id": ".bootstrap-receipt.json",
+          "kind": "file",
+          "path": ".bootstrap-receipt.json",
+          "scope": [],
+          "span": {
+            "start_byte": 0,
+            "end_byte": 624,
+            "line_start": 1,
+            "line_end": 24
+          },
+          "signature": "",
+          "body_hash": "sha256:77bdfa632236d69bedf10c7356ae6974ba250d9be2e03c4fa17f4c2121fed70b",
+          "language": {
+            "other": "json"
+          },
+          "parser_version": "lexical+v1",
+          "coverage": {
+            "status": "lexical-only",
+            "detail": "no source-graph extractor for json"
+          }
+        }
+      ],
+      "edges": [],
+      "coverage": {
+        "status": "lexical-only",
+        "detail": "no source-graph extractor for json"
+      }
+    },
+    "INDEX.md": {
+      "content_hash": "sha256:5aa451d1835e420e076ea492b48fd1957f4c215c1a7b6779b9a0e8df6953a9c0",
+      "nodes": [
+        {
+          "id": "INDEX.md",
+          "kind": "file",
+          "path": "INDEX.md",
+          "scope": [],
+          "span": {
+            "start_byte": 0,
+            "end_byte": 1334,
+            "line_start": 1,
+            "line_end": 25
+          },
+          "signature": "",
+          "body_hash": "sha256:5aa451d1835e420e076ea492b48fd1957f4c215c1a7b6779b9a0e8df6953a9c0",
+          "language": {
+            "other": "md"
+          },
+          "parser_version": "lexical+v1",
+          "coverage": {
+            "status": "lexical-only",
+            "detail": "no source-graph extractor for md"
+          }
+        }
+      ],
+      "edges": [],
+      "coverage": {
+        "status": "lexical-only",
+        "detail": "no source-graph extractor for md"
+      }
+    },
+    "architecture.md": {
+      "content_hash": "sha256:bd76919e782e12531c833ce44b5cc8a11ed28eaef2ae6834c22f237dbf8d3ba6",
+      "nodes": [
+        {
+          "id": "architecture.md",
+          "kind": "file",
+          "path": "architecture.md",
+          "scope": [],
+          "span": {
+            "start_byte": 0,
+            "end_byte": 2161,
+            "line_start": 1,
+            "line_end": 22
+          },
+          "signature": "",
+          "body_hash": "sha256:bd76919e782e12531c833ce44b5cc8a11ed28eaef2ae6834c22f237dbf8d3ba6",
+          "language": {
+            "other": "md"
+          },
+          "parser_version": "lexical+v1",
+          "coverage": {
+            "status": "lexical-only",
+            "detail": "no source-graph extractor for md"
+          }
+        }
+      ],
+      "edges": [],
+      "coverage": {
+        "status": "lexical-only",
+        "detail": "no source-graph extractor for md"
+      }
+    },
+    "concerns.md": {
+      "content_hash": "sha256:e54b084becb8534253535d6413967ca56abece95f288666b3314fda815fb0545",
+      "nodes": [
+        {
+          "id": "concerns.md",
+          "kind": "file",
+          "path": "concerns.md",
+          "scope": [],
+          "span": {
+            "start_byte": 0,
+            "end_byte": 1346,
+            "line_start": 1,
+            "line_end": 24
+          },
+          "signature": "",
+          "body_hash": "sha256:e54b084becb8534253535d6413967ca56abece95f288666b3314fda815fb0545",
+          "language": {
+            "other": "md"
+          },
+          "parser_version": "lexical+v1",
+          "coverage": {
+            "status": "lexical-only",
+            "detail": "no source-graph extractor for md"
+          }
+        }
+      ],
+      "edges": [],
+      "coverage": {
+        "status": "lexical-only",
+        "detail": "no source-graph extractor for md"
+      }
+    },
+    "conventions.md": {
+      "content_hash": "sha256:0791954c8ddc88ba016466d68bfe4c8ea14d811d9e53ec642ff0665decf949a2",
+      "nodes": [
+        {
+          "id": "conventions.md",
+          "kind": "file",
+          "path": "conventions.md",
+          "scope": [],
+          "span": {
+            "start_byte": 0,
+            "end_byte": 1719,
+            "line_start": 1,
+            "line_end": 20
+          },
+          "signature": "",
+          "body_hash": "sha256:0791954c8ddc88ba016466d68bfe4c8ea14d811d9e53ec642ff0665decf949a2",
+          "language": {
+            "other": "md"
+          },
+          "parser_version": "lexical+v1",
+          "coverage": {
+            "status": "lexical-only",
+            "detail": "no source-graph extractor for md"
+          }
+        }
+      ],
+      "edges": [],
+      "coverage": {
+        "status": "lexical-only",
+        "detail": "no source-graph extractor for md"
+      }
+    },
+    "doc/loom/knowledge/INDEX.md": {
+      "content_hash": "sha256:fd5c061b890053d2a6d2ff8d8565a38aada626de9ee55ac3e07442c31c3e3916",
+      "nodes": [
+        {
+          "id": "doc/loom/knowledge/INDEX.md",
+          "kind": "file",
+          "path": "doc/loom/knowledge/INDEX.md",
+          "scope": [],
+          "span": {
+            "start_byte": 0,
+            "end_byte": 1113,
+            "line_start": 1,
+            "line_end": 17
+          },
+          "signature": "",
+          "body_hash": "sha256:fd5c061b890053d2a6d2ff8d8565a38aada626de9ee55ac3e07442c31c3e3916",
+          "language": {
+            "other": "md"
+          },
+          "parser_version": "lexical+v1",
+          "coverage": {
+            "status": "lexical-only",
+            "detail": "no source-graph extractor for md"
+          }
+        }
+      ],
+      "edges": [],
+      "coverage": {
+        "status": "lexical-only",
+        "detail": "no source-graph extractor for md"
+      }
+    },
+    "doc/loom/knowledge/architecture.md": {
+      "content_hash": "sha256:971ce38bbc46b7c110dbd614b261fb2af71e877ee76ef27833af5fdf7f947726",
+      "nodes": [
+        {
+          "id": "doc/loom/knowledge/architecture.md",
+          "kind": "file",
+          "path": "doc/loom/knowledge/architecture.md",
+          "scope": [],
+          "span": {
+            "start_byte": 0,
+            "end_byte": 235,
+            "line_start": 1,
+            "line_end": 6
+          },
+          "signature": "",
+          "body_hash": "sha256:971ce38bbc46b7c110dbd614b261fb2af71e877ee76ef27833af5fdf7f947726",
+          "language": {
+            "other": "md"
+          },
+          "parser_version": "lexical+v1",
+          "coverage": {
+            "status": "lexical-only",
+            "detail": "no source-graph extractor for md"
+          }
+        }
+      ],
+      "edges": [],
+      "coverage": {
+        "status": "lexical-only",
+        "detail": "no source-graph extractor for md"
+      }
+    },
+    "doc/loom/knowledge/concerns.md": {
+      "content_hash": "sha256:1bee1b45266e99a3e8df44d497d4f31a2615a82f142f38e64a2bc1c1d2b13b1d",
+      "nodes": [
+        {
+          "id": "doc/loom/knowledge/concerns.md",
+          "kind": "file",
+          "path": "doc/loom/knowledge/concerns.md",
+          "scope": [],
+          "span": {
+            "start_byte": 0,
+            "end_byte": 194,
+            "line_start": 1,
+            "line_end": 6
+          },
+          "signature": "",
+          "body_hash": "sha256:1bee1b45266e99a3e8df44d497d4f31a2615a82f142f38e64a2bc1c1d2b13b1d",
+          "language": {
+            "other": "md"
+          },
+          "parser_version": "lexical+v1",
+          "coverage": {
+            "status": "lexical-only",
+            "detail": "no source-graph extractor for md"
+          }
+        }
+      ],
+      "edges": [],
+      "coverage": {
+        "status": "lexical-only",
+        "detail": "no source-graph extractor for md"
+      }
+    },
+    "doc/loom/knowledge/conventions.md": {
+      "content_hash": "sha256:d1aba72e88b1545da418ddf7ab7cc12b6ccfc6d588a610ea102f314ebcdd0169",
+      "nodes": [
+        {
+          "id": "doc/loom/knowledge/conventions.md",
+          "kind": "file",
+          "path": "doc/loom/knowledge/conventions.md",
+          "scope": [],
+          "span": {
+            "start_byte": 0,
+            "end_byte": 435,
+            "line_start": 1,
+            "line_end": 10
+          },
+          "signature": "",
+          "body_hash": "sha256:d1aba72e88b1545da418ddf7ab7cc12b6ccfc6d588a610ea102f314ebcdd0169",
+          "language": {
+            "other": "md"
+          },
+          "parser_version": "lexical+v1",
+          "coverage": {
+            "status": "lexical-only",
+            "detail": "no source-graph extractor for md"
+          }
+        }
+      ],
+      "edges": [],
+      "coverage": {
+        "status": "lexical-only",
+        "detail": "no source-graph extractor for md"
+      }
+    },
+    "doc/loom/knowledge/entry-points.md": {
+      "content_hash": "sha256:7adbc8d182b00e6bb2b084f6111144fbb009b5c3f3e8bd1e0b38c155da69ddc7",
+      "nodes": [
+        {
+          "id": "doc/loom/knowledge/entry-points.md",
+          "kind": "file",
+          "path": "doc/loom/knowledge/entry-points.md",
+          "scope": [],
+          "span": {
+            "start_byte": 0,
+            "end_byte": 189,
+            "line_start": 1,
+            "line_end": 6
+          },
+          "signature": "",
+          "body_hash": "sha256:7adbc8d182b00e6bb2b084f6111144fbb009b5c3f3e8bd1e0b38c155da69ddc7",
+          "language": {
+            "other": "md"
+          },
+          "parser_version": "lexical+v1",
+          "coverage": {
+            "status": "lexical-only",
+            "detail": "no source-graph extractor for md"
+          }
+        }
+      ],
+      "edges": [],
+      "coverage": {
+        "status": "lexical-only",
+        "detail": "no source-graph extractor for md"
+      }
+    },
+    "doc/loom/knowledge/mistakes.md": {
+      "content_hash": "sha256:091a1bb2d963b52f9a194fad43757033df1bf7ffb96e8a95a1cd302ff6702c2c",
+      "nodes": [
+        {
+          "id": "doc/loom/knowledge/mistakes.md",
+          "kind": "file",
+          "path": "doc/loom/knowledge/mistakes.md",
+          "scope": [],
+          "span": {
+            "start_byte": 0,
+            "end_byte": 286,
+            "line_start": 1,
+            "line_end": 8
+          },
+          "signature": "",
+          "body_hash": "sha256:091a1bb2d963b52f9a194fad43757033df1bf7ffb96e8a95a1cd302ff6702c2c",
+          "language": {
+            "other": "md"
+          },
+          "parser_version": "lexical+v1",
+          "coverage": {
+            "status": "lexical-only",
+            "detail": "no source-graph extractor for md"
+          }
+        }
+      ],
+      "edges": [],
+      "coverage": {
+        "status": "lexical-only",
+        "detail": "no source-graph extractor for md"
+      }
+    },
+    "doc/loom/knowledge/patterns.md": {
+      "content_hash": "sha256:58ce7e3c867c4ccb85dc6bb8044f947c435cccae18e12397abfe65dd7613db4c",
+      "nodes": [
+        {
+          "id": "doc/loom/knowledge/patterns.md",
+          "kind": "file",
+          "path": "doc/loom/knowledge/patterns.md",
+          "scope": [],
+          "span": {
+            "start_byte": 0,
+            "end_byte": 213,
+            "line_start": 1,
+            "line_end": 6
+          },
+          "signature": "",
+          "body_hash": "sha256:58ce7e3c867c4ccb85dc6bb8044f947c435cccae18e12397abfe65dd7613db4c",
+          "language": {
+            "other": "md"
+          },
+          "parser_version": "lexical+v1",
+          "coverage": {
+            "status": "lexical-only",
+            "detail": "no source-graph extractor for md"
+          }
+        }
+      ],
+      "edges": [],
+      "coverage": {
+        "status": "lexical-only",
+        "detail": "no source-graph extractor for md"
+      }
+    },
+    "doc/loom/knowledge/stack.md": {
+      "content_hash": "sha256:7a3f81d8874e2276244bf49be6509f8cd582e40f4a31809cc9b639de39a53d4b",
+      "nodes": [
+        {
+          "id": "doc/loom/knowledge/stack.md",
+          "kind": "file",
+          "path": "doc/loom/knowledge/stack.md",
+          "scope": [],
+          "span": {
+            "start_byte": 0,
+            "end_byte": 197,
+            "line_start": 1,
+            "line_end": 6
+          },
+          "signature": "",
+          "body_hash": "sha256:7a3f81d8874e2276244bf49be6509f8cd582e40f4a31809cc9b639de39a53d4b",
+          "language": {
+            "other": "md"
+          },
+          "parser_version": "lexical+v1",
+          "coverage": {
+            "status": "lexical-only",
+            "detail": "no source-graph extractor for md"
+          }
+        }
+      ],
+      "edges": [],
+      "coverage": {
+        "status": "lexical-only",
+        "detail": "no source-graph extractor for md"
+      }
+    },
+    "entry-points.md": {
+      "content_hash": "sha256:426913cabb92ec42c6e71991be31942bd4a5606a5e936827113c725d7139d026",
+      "nodes": [
+        {
+          "id": "entry-points.md",
+          "kind": "file",
+          "path": "entry-points.md",
+          "scope": [],
+          "span": {
+            "start_byte": 0,
+            "end_byte": 1130,
+            "line_start": 1,
+            "line_end": 17
+          },
+          "signature": "",
+          "body_hash": "sha256:426913cabb92ec42c6e71991be31942bd4a5606a5e936827113c725d7139d026",
+          "language": {
+            "other": "md"
+          },
+          "parser_version": "lexical+v1",
+          "coverage": {
+            "status": "lexical-only",
+            "detail": "no source-graph extractor for md"
+          }
+        }
+      ],
+      "edges": [],
+      "coverage": {
+        "status": "lexical-only",
+        "detail": "no source-graph extractor for md"
+      }
+    },
+    "mistakes.md": {
+      "content_hash": "sha256:1f78f2523d03e50a2e09dac5d55132d2495df37cfd0e68a89d0ae91b521b4478",
+      "nodes": [
+        {
+          "id": "mistakes.md",
+          "kind": "file",
+          "path": "mistakes.md",
+          "scope": [],
+          "span": {
+            "start_byte": 0,
+            "end_byte": 2581,
+            "line_start": 1,
+            "line_end": 36
+          },
+          "signature": "",
+          "body_hash": "sha256:1f78f2523d03e50a2e09dac5d55132d2495df37cfd0e68a89d0ae91b521b4478",
+          "language": {
+            "other": "md"
+          },
+          "parser_version": "lexical+v1",
+          "coverage": {
+            "status": "lexical-only",
+            "detail": "no source-graph extractor for md"
+          }
+        }
+      ],
+      "edges": [],
+      "coverage": {
+        "status": "lexical-only",
+        "detail": "no source-graph extractor for md"
+      }
+    },
+    "patterns.md": {
+      "content_hash": "sha256:3021afd22a767e0fc580247dcacf28b69a5fe55772d43e8456c7c3df8d6f4a4e",
+      "nodes": [
+        {
+          "id": "patterns.md",
+          "kind": "file",
+          "path": "patterns.md",
+          "scope": [],
+          "span": {
+            "start_byte": 0,
+            "end_byte": 2326,
+            "line_start": 1,
+            "line_end": 22
+          },
+          "signature": "",
+          "body_hash": "sha256:3021afd22a767e0fc580247dcacf28b69a5fe55772d43e8456c7c3df8d6f4a4e",
+          "language": {
+            "other": "md"
+          },
+          "parser_version": "lexical+v1",
+          "coverage": {
+            "status": "lexical-only",
+            "detail": "no source-graph extractor for md"
+          }
+        }
+      ],
+      "edges": [],
+      "coverage": {
+        "status": "lexical-only",
+        "detail": "no source-graph extractor for md"
+      }
+    },
+    "patterns/bridge-algorithm.md": {
+      "content_hash": "sha256:d8128c4259644c169e46ca6ab70284e22c685f6cfe3e9174c8583298e78633ed",
+      "nodes": [
+        {
+          "id": "patterns/bridge-algorithm.md",
+          "kind": "file",
+          "path": "patterns/bridge-algorithm.md",
+          "scope": [],
+          "span": {
+            "start_byte": 0,
+            "end_byte": 3956,
+            "line_start": 1,
+            "line_end": 29
+          },
+          "signature": "",
+          "body_hash": "sha256:d8128c4259644c169e46ca6ab70284e22c685f6cfe3e9174c8583298e78633ed",
+          "language": {
+            "other": "md"
+          },
+          "parser_version": "lexical+v1",
+          "coverage": {
+            "status": "lexical-only",
+            "detail": "no source-graph extractor for md"
+          }
+        }
+      ],
+      "edges": [],
+      "coverage": {
+        "status": "lexical-only",
+        "detail": "no source-graph extractor for md"
+      }
+    },
+    "stack.md": {
+      "content_hash": "sha256:303782d64d29d84d0512b10202aef2bda5c358e0b42bfde3eb74f979200db6cf",
+      "nodes": [
+        {
+          "id": "stack.md",
+          "kind": "file",
+          "path": "stack.md",
+          "scope": [],
+          "span": {
+            "start_byte": 0,
+            "end_byte": 1284,
+            "line_start": 1,
+            "line_end": 18
+          },
+          "signature": "",
+          "body_hash": "sha256:303782d64d29d84d0512b10202aef2bda5c358e0b42bfde3eb74f979200db6cf",
+          "language": {
+            "other": "md"
+          },
+          "parser_version": "lexical+v1",
+          "coverage": {
+            "status": "lexical-only",
+            "detail": "no source-graph extractor for md"
+          }
+        }
+      ],
+      "edges": [],
+      "coverage": {
+        "status": "lexical-only",
+        "detail": "no source-graph extractor for md"
+      }
+    }
+  },
+  "blob_index": {}
+}

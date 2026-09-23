@@ -1,0 +1,13 @@
+{
+  "structural": {
+    "revision": "45e7ed3447d445f555eb40f18ccb4b9dfe79eedbf18f9a2529ed31dab98e149c",
+    "computed_at": "2026-09-23T07:13:55.767977226Z",
+    "stale": false
+  },
+  "semantic": {
+    "revision": "6e9f89147deeafb6ca25761fdf6be493aef608f2",
+    "computed_at": "2026-09-23T07:13:55.795654079Z",
+    "stale": false
+  },
+  "catalog_revision": "eb01d429af50dab4576af9aca6f57b13408fe0c4f3a2a76a6cf07d73a033faa4"
+}

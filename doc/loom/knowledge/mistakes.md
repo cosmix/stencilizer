@@ -48,3 +48,10 @@
 **Why**: loom resolves the knowledge root relative to the working directory.
 **Prevention**: Run loom knowledge commands from the repository root (`cd <repo> && loom knowledge ...`).
 **Fix**: Deleted the nested tree and re-ran from the root.
+
+## Codex worker briefs told to verify with uv run
+
+**What happened**: The GUI plan's worker briefs (doc/plans/briefs/stencilizer-gui/) had every codex unit run `uv run pytest/mypy/ruff` as its proof command; the 2026-09-23 pressure test found none of them could run.
+**Why**: The codex companion runs write jobs in codex's workspace-write sandbox: no network, a read-only ~/.cache/uv, and `exclude_slash_tmp = true` in ~/.codex/config.toml, so `uv run` fails and pytest's tmp_path is unwritable. The codex preamble (codex-forward.sh) also forbids verification.
+**Prevention**: A codex unit's single check calls the worktree venv directly and stays static: `.venv/bin/mypy <files> && .venv/bin/ruff check <files> && .venv/bin/python -m pytest --no-cov -q -p no:cacheprovider --collect-only <test>`. The orchestrator runs the real tests with `uv run` after each wave. The stage's FOUNDATION step must create .venv first.
+**Fix**: Briefs and plan amended in the pressure pass.
