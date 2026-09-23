@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "source_revision": "6e9f89147deeafb6ca25761fdf6be493aef608f2",
+  "model": "opus",
+  "effort": "medium",
+  "completed_at": "2026-09-22T21:41:54.962884878+00:00",
+  "clusters": [
+    {
+      "id": ".",
+      "digest": "sha256:b082d51ad1f2149f30c7f8a4b738ec4f43230f0de0a5623beb4ec999eb58c11b",
+      "files": 9
+    },
+    {
+      "id": "src",
+      "digest": "sha256:8c0452ac396f9eccd3158e20a7dfa05c15ce2c835d45771037244cf071bd7e6c",
+      "files": 30
+    },
+    {
+      "id": "tests",
+      "digest": "sha256:b3ad18616cf9c194bf2e8a45f7117ca122c95c23c8561113bfaec2727e858a84",
+      "files": 17
+    }
+  ]
+}
