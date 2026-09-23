@@ -87,3 +87,11 @@ Icon
 *.swp
 *.swo
 .*.swp
+
+# loom workspace state
+.loom/work/
+.loom/work
+
+# loom worktrees
+.worktrees/
+.worktrees
