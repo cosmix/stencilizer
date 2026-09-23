@@ -71,6 +71,7 @@ class ComparisonView(QWidget):
         layout.addWidget(self.before_canvas, 1, 0)
         layout.addWidget(self.after_canvas, 1, 1)
         layout.addWidget(self.info_label, 2, 0, 1, 2)
+        layout.setRowStretch(1, 1)
 
     def show_preview(self, result: PreviewResult, ascender: int, descender: int) -> None:
         """Display one preview result at a shared scale in both canvases."""
