@@ -15,3 +15,7 @@ Script `stencilizer = "stencilizer.cli.app:main"` (pyproject.toml). One Typer co
 - `src/stencilizer/core/surgery.py`: `GlyphTransformer.transform()` (surgery.py:42), delegating to surgery_groups.py and surgery_nested.py.
 - `src/stencilizer/core/axis.py`: `Axis` (VERTICAL / HORIZONTAL), the parameter that replaced the mirrored horizontal/vertical modules.
 - `src/stencilizer/core/analyzer.py`: contour hierarchy and island detection.
+
+## GUI
+
+Script `stencilizer-gui = "stencilizer.gui.app:main"` (pyproject.toml:20), usage `stencilizer-gui [font]`. Start at `src/stencilizer/gui/session.py` (`FontSession`, Qt-free) and `controller.py` (`GuiController`); `main_window.py` composes the widgets. Module table: [architecture/gui](architecture/gui.md). Tests: `tests/gui/` (`conftest.py` has the `processor`, font-path and `outlines_match` fixtures and `build_settings`).

@@ -9,8 +9,8 @@
 
 ## Stale root CLAUDE.md claims
 
-**What happened**: The root CLAUDE.md (as of 6e9f891) states TrueType is "CCW=outer, CW=inner" and lists a `_update_cff2_glyph()` writer with static CFF2 support.
-**Why**: Docs written ahead of, or inverted from, the implementation; `cff2.md` is an unimplemented plan.
+**What happened**: The root CLAUDE.md states TrueType is "CCW=outer, CW=inner" (CLAUDE.md:52) and lists a `_update_cff2_glyph()` writer with static CFF2 support (CLAUDE.md:36).
+**Why**: Docs written ahead of, or inverted from, the implementation; no CFF2 writer was ever implemented.
 **Prevention**: Trust code over CLAUDE.md for winding and format support: TrueType is CW outer / CCW hole (src/stencilizer/core/analyzer.py:122-135); only `glyf` and `CFF ` are writable (src/stencilizer/io/converter.py:89-95).
 **Fix**: Correct CLAUDE.md when next editing it (knowledge bootstrap may not touch it).
 
@@ -55,3 +55,30 @@
 **Why**: The codex companion runs write jobs in codex's workspace-write sandbox: no network, a read-only ~/.cache/uv, and `exclude_slash_tmp = true` in ~/.codex/config.toml, so `uv run` fails and pytest's tmp_path is unwritable. The codex preamble (codex-forward.sh) also forbids verification.
 **Prevention**: A codex unit's single check calls the worktree venv directly and stays static: `.venv/bin/mypy <files> && .venv/bin/ruff check <files> && .venv/bin/python -m pytest --no-cov -q -p no:cacheprovider --collect-only <test>`. The orchestrator runs the real tests with `uv run` after each wave. The stage's FOUNDATION step must create .venv first.
 **Fix**: Briefs and plan amended in the pressure pass.
+
+## Codex unit proof command misses the function-length limit
+
+**What happened**: A codex-written `ControlPanel.__init__` came out at 59 effective lines and failed `tests/regression/test_code_structure.py::test_function_line_limit`.
+**Why**: The static proof command (mypy, ruff, collect-only) does not run that test.
+**Prevention**: Include `tests/regression/test_code_structure.py` in every wave's orchestrator pytest run. It covers `src/` only: check `wc -l` on test files by hand (see concerns.md).
+**Fix**: Split the constructor.
+
+## Path-based writer aimed at a directory others can write
+
+**What happened**: The first GUI save fix had `FontProcessor` write to an `O_EXCL` temp sibling in the output directory and closed the descriptor. `FontWriter.save` reopens the path with `open(path, 'wb')` after the whole glyph run, so a local user with write access to that directory could swap the file for a symlink to the input.
+**Why**: `O_EXCL` protects creation only, not a later path-based reopen.
+**Prevention**: Stage in a private `mkdtemp` directory and publish into the destination through the descriptor `O_EXCL` returned, then rename. Found by the adversarial review.
+**Fix**: `FontSession.save` now stages privately (architecture/gui.md).
+
+## Existence check ordered before a resolve()-based check
+
+**What happened**: A new `output_path.parent.is_dir()` check placed before the overwrite-input check failed `test_save_refuses_input_path`, which passes `tmp_path/'sub'/'..'/name` with `sub` absent.
+**Why**: `Path.is_dir()` stats through the missing `sub`; `Path.resolve()` normalizes `..` without requiring it to exist.
+**Prevention**: Put stat-based checks (`is_dir`, `exists`) after a `resolve()`-based check.
+**Fix**: `save` checks the input, then the resolve()/samefile overwrite guard, then `parent.is_dir()`.
+
+## Codex units and loom tooling inside the stage sandbox
+
+**What happened**: Codex units could not record memories (loom scratch dir read-only in codex's sandbox), and `loom subagents watch` from the sandboxed Bash tool exited 3 ("process is gone") seconds after a codex forward started.
+**Why**: Codex runs in its own workspace-write sandbox; each Bash call gets its own PID namespace, so the watch cannot see codex's pid.
+**Prevention**: The orchestrator records codex assumptions itself. Treat that watch exit as unknown and wait for the forwarder's own completion.

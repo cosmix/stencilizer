@@ -5,11 +5,11 @@
 
 ## Unsupported font formats
 
-CFF2 write and variable fonts are unsupported; see stack.md "Supported font formats". Nothing in the core rejects them: `FontReader.load` only checks the file exists and `FontReader.format` labels CFF2 "OpenType", so `classify_glyphs` succeeds (26 island glyphs on a CFF2 copy of CommitMono) and every glyph write raises `NotImplementedError` in `domain_glyph_to_fonttools` (`io/converter.py`). Callers must check for `fvar`/`CFF2` themselves (the GUI plan does so in `FontSession.open`).
+CFF2 write and variable fonts are unsupported; see stack.md "Supported font formats". Nothing in the core rejects them: `FontReader.load` only checks the file exists and `FontReader.format` labels CFF2 "OpenType", so `classify_glyphs` succeeds (26 island glyphs on a CFF2 copy of CommitMono) and every glyph write raises `NotImplementedError` in `domain_glyph_to_fonttools` (`io/converter.py`). The GUI rejects them in `unsupported_reason` (`gui/session.py:54`, called from `FontSession.open`); the CLI does not, so callers of the core must check for `fvar`/`CFF2` themselves.
 
 ## Oversized test module
 
-tests/unit/test_io.py is 490 lines, over the 400-line file limit. src/ is within limits (enforced by tests/regression/test_code_structure.py, which checks src/ only).
+tests/unit/test_io.py is 490 lines, over the 400-line file limit. tests/regression/test_code_structure.py enforces the 50-line function limit on src/ only, so nothing fails when a test file passes 400 lines (tests/gui/test_session.py and test_controller.py did during integration and were split by hand). Check `wc -l tests/gui/*.py` by hand.
 
 ## Unknown config fields are silently ignored
 
@@ -26,3 +26,7 @@ UPM scaling made fonts not at 1000 UPM behave as the 1000-UPM tuning scaled. For
 ## Swallowed glyph-write failures and unchecked classification reuse
 
 `FontProcessor._save_font` (`core/processor.py`) logs a failed `writer.update_glyph` and continues: the failure is not counted in `ProcessingStats.error_count`, and `writer.save()` still writes a font renamed "Stenciled". A caller-supplied `classification` passed to `process` is used without checking it came from the file `process` reopens, so an edited source mixes old outlines with new tables. Tests of a save must read the output back rather than trust the stats.
+
+## Tests write log files into the working directory
+
+`setup_logging` names the log `stencilizer_%Y%m%d_%H%M%S.log` in the cwd when `log_file` is None (src/stencilizer/utils/logging.py:69-71), and tests that build `FontProcessor(settings)` without a `log_file` hit it (tests/unit/test_processor.py, tests/integration/test_stencilization*.py, test_e2e_output.py, tests/regression/_golden.py:195). One full `uv run pytest` leaves about 12 such files at the repo root; `*.log` is gitignored (.gitignore:65). Fix: give those fixtures a `tmp_path` log file, as the tests/gui `processor` fixture does.

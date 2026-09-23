@@ -22,3 +22,19 @@
 ## Knowledge files hold current state
 
 Only mistakes.md (and topics under mistakes/) is append-only. Every other knowledge file lists current facts: delete a concern once it is fixed and correct or remove stale claims, rather than marking them "Resolved".
+
+## Qt and GUI code
+
+- Qt event overrides need `# noqa: N802` (`closeEvent`, `paintEvent`), plus `ARG002` when the event argument is unused (gui/main_window.py:87, gui/glyph_view.py:38).
+- Draw glyphs with `QtPen(None, path=path)` and a PySide6 `QPainterPath`: without `path=`, `fontTools.pens.qtPen` imports PyQt5 (gui/outline.py:50). The import needs `# type: ignore[import-untyped]`.
+- Connect worker signals to controller slots with `Qt.ConnectionType.QueuedConnection` so handlers run on the GUI thread; never touch widgets from a `QRunnable`.
+- `FontSession` and other logic stay Qt-free; only controller, tasks and widgets import PySide6.
+- The domain `Point` field is `point_type`, not `type` (src/stencilizer/domain/contour.py:58).
+
+## GUI tests
+
+- Under `tests/gui/`: pytest-qt `qtbot`, no `skip`/`xfail`/`importorskip`; build unsupported fonts (CFF2, variable) in `tmp_path` fixtures; never build a `FontProcessor` without a `tmp_path` `log_file`.
+- Error-message asserts must match the reason text, and fixture filenames must not contain the words a test searches for (`FontLoadError` embeds the path).
+- To check a thread, compare `QThread.currentThread() == controller.thread()` inside the slot and store the bool; stored PySide6 `QThread` wrappers compare unequal or raise `libshiboken: Internal C++ object already deleted` under suite load.
+- Mutation spot-checks: re-apply one `str.replace` per mutant, run the named node ids, restore the bytes. Run with `PYTHONDONTWRITEBYTECODE=1` and clear `__pycache__` with `fd -H -I` afterwards; a same-length mutant restored within one mtime second keeps its stale `.pyc`.
+- In a loom stage sandbox, set `COVERAGE_FILE=$TMPDIR/cov.data` for `uv run pytest`: an existing `.coverage` is bind-mounted and coverage.py fails with EBUSY. `UV_LINK_MODE=copy` silences the hardlink warning on a fresh worktree venv.
