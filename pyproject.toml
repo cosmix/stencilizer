@@ -90,6 +90,10 @@ module = "tests.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
+[[tool.mypy.overrides]]
+module = "tests.regression._golden"
+disable_error_code = ["import-untyped"]
+
 [tool.pydantic-mypy]
 init_forbid_extra = true
 init_typed = true
