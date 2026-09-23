@@ -1,6 +1,9 @@
 """Font session state for the desktop GUI."""
 
 import hashlib
+import os
+import secrets
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -23,6 +26,29 @@ from stencilizer.utils import ProcessingStats
 def source_digest(path: Path) -> str:
     """SHA-256 hex digest of the file's bytes (the pinned source revision)."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _publish(staged: Path, output_path: Path) -> None:
+    """Write the staged font through a new, exclusively created sibling, then rename it in place."""
+    temporary = output_path.with_name(f".{output_path.name}.{secrets.token_hex(8)}.tmp")
+    data = staged.read_bytes()
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(output_path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def _save_failure_reason(error: Exception) -> str:
+    """User-facing reason for a failed save, without internal staging paths."""
+    if isinstance(error, OSError) and error.strerror:
+        return f"cannot write the output: {error.strerror}"
+    return str(error)
 
 
 def unsupported_reason(font: Any) -> str | None:
@@ -71,6 +97,8 @@ class FontSession:
     def open(cls, path: Path, processor: FontProcessor) -> "FontSession":
         """Load a supported font and classify its island glyphs."""
         try:
+            if path.exists() and not path.is_file():
+                raise FontLoadError(str(path), "not a regular file")
             source_sha256 = source_digest(path)
             with FontReader(path) as reader:
                 reason = unsupported_reason(reader.font)
@@ -146,28 +174,31 @@ class FontSession:
         settings: StencilizerSettings,
         progress: ProgressCallback | None = None,
     ) -> ProcessingStats:
-        """Stencilize the pinned source font and save it to a new path."""
-        if output_path.resolve() == self.path.resolve() or (
-            output_path.exists() and output_path.samefile(self.path)
-        ):
-            raise FontSaveError(str(output_path), "output would overwrite the input font")
+        """Stencilize the pinned source font in a private staging directory, then publish it."""
         try:
             self._assert_source_unchanged(output_path)
+            if output_path.is_dir():
+                raise FontSaveError(str(output_path), "output is a directory")
+            if output_path.resolve() == self.path.resolve() or (
+                output_path.exists() and output_path.samefile(self.path)
+            ):
+                raise FontSaveError(str(output_path), "output would overwrite the input font")
+            if not output_path.parent.is_dir():
+                raise FontSaveError(str(output_path), "output folder does not exist")
             self.processor.config = settings
-            stats = self.processor.process(
-                font_path=self.path,
-                output_path=output_path,
-                max_workers=settings.processing.max_workers,
-                progress_callback=progress,
-                classification=self.classification,
-            )
-            try:
+            with tempfile.TemporaryDirectory(prefix="stencilizer-gui-") as staging:
+                staged = Path(staging) / output_path.name
+                stats = self.processor.process(
+                    font_path=self.path,
+                    output_path=staged,
+                    max_workers=settings.processing.max_workers,
+                    progress_callback=progress,
+                    classification=self.classification,
+                )
                 self._assert_source_unchanged(output_path)
-            except FontSaveError:
-                output_path.unlink(missing_ok=True)
-                raise
+                _publish(staged, output_path)
             return stats
         except StencilizerError:
             raise
         except Exception as error:
-            raise FontSaveError(str(output_path), str(error)) from error
+            raise FontSaveError(str(output_path), _save_failure_reason(error)) from error

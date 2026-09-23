@@ -1,36 +1,27 @@
 """Tests for GUI font sessions without Qt widgets."""
 
-import hashlib
 import os
 import shutil
+import stat
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 
-from stencilizer.config import (
-    BridgeConfig,
-    ProcessingConfig,
-    StencilizerSettings,
-)
+from stencilizer.config import BridgeConfig
 from stencilizer.config.settings import GeometryConfig
 from stencilizer.core import FontProcessor
 from stencilizer.core.processor import GlyphClassification
 from stencilizer.domain import Glyph
-from stencilizer.exceptions import FontLoadError, FontSaveError, GlyphNotFoundError
-from stencilizer.gui.session import FontSession, unsupported_reason
+from stencilizer.exceptions import FontLoadError, FontSaveError
+from stencilizer.gui.session import FontSession, source_digest, unsupported_reason
 from stencilizer.io import FontReader
 from stencilizer.utils import ProcessingStats
+from tests.gui.conftest import build_settings
 
-
-def _settings(processor: FontProcessor, bridge: BridgeConfig | None = None) -> StencilizerSettings:
-    """Build serial-save settings while retaining the fixture logger."""
-    return StencilizerSettings(
-        bridge=bridge or BridgeConfig(),
-        processing=ProcessingConfig(max_workers=1),
-        logging=processor.config.logging,
-    )
+pytestmark = pytest.mark.usefixtures("staging_root")
 
 
 def _saved_glyph(path: Path, name: str) -> Glyph:
@@ -41,45 +32,28 @@ def _saved_glyph(path: Path, name: str) -> Glyph:
     return glyph
 
 
-def test_open_roboto(processor: FontProcessor, roboto_path: Path) -> None:
-    """Opening Roboto exposes its measured metadata and island selection."""
-    session = FontSession.open(roboto_path, processor)
-
-    assert session.font_format == "TrueType"
-    assert session.units_per_em == 2048
-    assert session.ascender == 2146
-    assert session.descender == -555
-    assert len(session.island_glyphs) == 562
-    assert session.glyph("O") is not None
-    assert session.glyph("space") is None
+def _temporary_files(directory: Path) -> list[Path]:
+    """Return save temporaries left behind in a directory."""
+    return list(directory.glob(".*.tmp"))
 
 
-def test_open_commit_mono_previews_first_glyph(
-    processor: FontProcessor, commit_mono_path: Path
-) -> None:
-    """Opening the CFF fixture supports an in-process glyph preview."""
-    session = FontSession.open(commit_mono_path, processor)
+def _write_then_replace_source(source: Path, replacement: bytes) -> Callable[..., ProcessingStats]:
+    """Build a fake process that writes partial output, then replaces the source."""
 
-    assert session.font_format == "OpenType"
-    assert len(session.island_glyphs) == 467
-    result = session.preview(session.island_glyphs[0].name, BridgeConfig(), _geometry())
-    assert result.stenciled is not None
+    def process_and_change(**kwargs: object) -> ProcessingStats:
+        """Write partial output then replace the source under processing."""
+        output = kwargs["output_path"]
+        assert isinstance(output, Path)
+        output.write_bytes(b"partial")
+        source.write_bytes(replacement)
+        return ProcessingStats()
+
+    return process_and_change
 
 
 def _geometry() -> GeometryConfig:
     """Return the default geometry configuration for previews."""
     return GeometryConfig()
-
-
-def test_open_wraps_invalid_and_missing_files(processor: FontProcessor, tmp_path: Path) -> None:
-    """Invalid and missing inputs become GUI load errors."""
-    invalid_path = tmp_path / "invalid.ttf"
-    invalid_path.write_bytes(b"not a font")
-
-    with pytest.raises(FontLoadError):
-        FontSession.open(invalid_path, processor)
-    with pytest.raises(FontLoadError):
-        FontSession.open(tmp_path / "missing.ttf", processor)
 
 
 def test_open_rejects_unsupported_fonts(
@@ -112,43 +86,6 @@ def test_open_rejects_unsupported_fonts(
     assert calls == []
 
 
-def test_open_pins_source_digest(processor: FontProcessor, roboto_path: Path) -> None:
-    """Opening records the exact source revision used for previews and saves."""
-    session = FontSession.open(roboto_path, processor)
-
-    assert session.source_sha256 == hashlib.sha256(roboto_path.read_bytes()).hexdigest()
-
-
-def test_preview_uses_parameters(processor: FontProcessor, roboto_path: Path) -> None:
-    """Preview output changes with bridge width and spanning behavior."""
-    session = FontSession.open(roboto_path, processor)
-    default_o = session.preview("O", BridgeConfig(), _geometry())
-    narrow_o = session.preview("O", BridgeConfig(width_percent=30.0), _geometry())
-    wide_o = session.preview("O", BridgeConfig(width_percent=110.0), _geometry())
-    spanning_b = session.preview("B", BridgeConfig(use_spanning_bridges=True), _geometry())
-    split_b = session.preview("B", BridgeConfig(use_spanning_bridges=False), _geometry())
-
-    assert default_o.bridges_added == 1
-    assert default_o.error is None
-    assert len(default_o.original.contours) == 2
-    assert default_o.stenciled is not None
-    assert len(default_o.stenciled.contours) == 4
-    assert narrow_o.stenciled is not None
-    assert wide_o.stenciled is not None
-    assert spanning_b.stenciled is not None
-    assert split_b.stenciled is not None
-    assert narrow_o.stenciled.to_dict() != wide_o.stenciled.to_dict()
-    assert spanning_b.stenciled.to_dict() != split_b.stenciled.to_dict()
-
-
-def test_preview_rejects_unselected_glyph(processor: FontProcessor, roboto_path: Path) -> None:
-    """A glyph outside the island selection cannot be previewed."""
-    session = FontSession.open(roboto_path, processor)
-
-    with pytest.raises(GlyphNotFoundError):
-        session.preview("space", BridgeConfig(), _geometry())
-
-
 @pytest.mark.parametrize(
     ("input_path", "output_name", "island_count"),
     [("roboto", "out.ttf", 562), ("commit_mono", "out.otf", 467)],
@@ -168,7 +105,7 @@ def test_save_writes_stenciled_outlines(
     session = FontSession.open(source, processor)
     output_path = tmp_path / output_name
 
-    stats = session.save(output_path, _settings(processor))
+    stats = session.save(output_path, build_settings(processor))
 
     assert stats.processed_count == island_count
     assert stats.error_count == 0
@@ -197,7 +134,7 @@ def test_save_uses_given_settings(
     outputs = [("a.ttf", narrow), ("b.ttf", wide), ("c.ttf", spanning), ("d.ttf", split)]
 
     for filename, bridge in outputs:
-        stats = session.save(tmp_path / filename, _settings(processor, bridge))
+        stats = session.save(tmp_path / filename, build_settings(processor, bridge))
         assert stats.error_count == 0
         assert stats.processed_count == 562
 
@@ -237,28 +174,20 @@ def test_save_refuses_changed_source(
     output_path = tmp_path / "out.ttf"
 
     with pytest.raises(FontSaveError, match="changed on disk"):
-        session.save(output_path, _settings(processor))
+        session.save(output_path, build_settings(processor))
     assert not output_path.exists()
 
     source.unlink()
     with pytest.raises(FontSaveError, match="changed on disk"):
-        session.save(output_path, _settings(processor))
+        session.save(output_path, build_settings(processor))
     assert not output_path.exists()
 
     shutil.copy(roboto_path, source)
     session = FontSession.open(source, processor)
 
-    def process_and_change(**kwargs: object) -> ProcessingStats:
-        """Write partial output then replace the source under processing."""
-        output = kwargs["output_path"]
-        assert isinstance(output, Path)
-        output.write_bytes(b"partial")
-        source.write_bytes(replacement)
-        return ProcessingStats()
-
-    monkeypatch.setattr(processor, "process", process_and_change)
+    monkeypatch.setattr(processor, "process", _write_then_replace_source(source, replacement))
     with pytest.raises(FontSaveError, match="changed on disk"):
-        session.save(output_path, _settings(processor))
+        session.save(output_path, build_settings(processor))
     assert not output_path.exists()
 
 
@@ -277,6 +206,164 @@ def test_save_refuses_input_path(
 
     for output_path in (source, symlink, hardlink, tmp_path / "sub" / ".." / source.name):
         with pytest.raises(FontSaveError, match="overwrite the input"):
-            session.save(output_path, _settings(processor))
+            session.save(output_path, build_settings(processor))
 
     assert source.read_bytes() == original_bytes
+
+
+def test_save_does_not_follow_output_swapped_to_input(
+    processor: FontProcessor,
+    roboto_path: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An output path swapped for a link to the input during processing never writes the input."""
+    source = tmp_path / "source.ttf"
+    shutil.copy(roboto_path, source)
+    session = FontSession.open(source, processor)
+    output_path = tmp_path / "out.ttf"
+    real_process = processor.process
+
+    def link_then_process(**kwargs: Any) -> ProcessingStats:
+        """Plant a link from the output path to the input, then process for real."""
+        output_path.symlink_to(source)
+        return real_process(**kwargs)
+
+    monkeypatch.setattr(processor, "process", link_then_process)
+    stats = session.save(output_path, build_settings(processor))
+
+    assert stats.error_count == 0
+    assert source_digest(source) == session.source_sha256
+    assert not output_path.is_symlink()
+    assert len(_saved_glyph(output_path, "O").contours) == 4
+    assert _temporary_files(tmp_path) == []
+
+
+def test_failed_save_keeps_existing_output(
+    processor: FontProcessor,
+    roboto_path: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A save that fails after writing leaves a file already at the output path untouched."""
+    source = tmp_path / "source.ttf"
+    shutil.copy(roboto_path, source)
+    session = FontSession.open(source, processor)
+    output_path = tmp_path / "out.ttf"
+    output_path.write_bytes(b"previous save")
+    replacement = roboto_path.with_name("Lato-Black.ttf").read_bytes()
+
+    monkeypatch.setattr(processor, "process", _write_then_replace_source(source, replacement))
+    with pytest.raises(FontSaveError, match="changed on disk"):
+        session.save(output_path, build_settings(processor))
+
+    assert output_path.read_bytes() == b"previous save"
+    assert _temporary_files(tmp_path) == []
+
+
+def test_save_stages_outside_the_output_directory(
+    processor: FontProcessor,
+    roboto_path: Path,
+    tmp_path: Path,
+    staging_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The font is written in a private directory; the output directory sees only the result."""
+    session = FontSession.open(roboto_path, processor)
+    output_dir = tmp_path / "saved"
+    output_dir.mkdir()
+    real_process = processor.process
+    staged: list[tuple[Path, int, list[str]]] = []
+
+    def process_and_record(**kwargs: Any) -> ProcessingStats:
+        """Process for real, then record the staging location and the output directory."""
+        stats = real_process(**kwargs)
+        path = kwargs["output_path"]
+        mode = stat.S_IMODE(path.parent.stat().st_mode)
+        staged.append((path, mode, [entry.name for entry in output_dir.iterdir()]))
+        return stats
+
+    monkeypatch.setattr(processor, "process", process_and_record)
+    session.save(output_dir / "out.ttf", build_settings(processor))
+
+    [(path, mode, listing)] = staged
+    assert not path.resolve().is_relative_to(output_dir.resolve())
+    assert listing == []
+    if os.name == "posix":
+        assert mode == 0o700
+    assert [entry.name for entry in output_dir.iterdir()] == ["out.ttf"]
+    assert list(staging_root.iterdir()) == []
+
+
+def test_save_refuses_directory_output(
+    processor: FontProcessor,
+    roboto_path: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An output path naming an existing directory is refused before any processing."""
+    session = FontSession.open(roboto_path, processor)
+    output_path = tmp_path / "out.ttf"
+    output_path.mkdir()
+    calls: list[dict[str, Any]] = []
+
+    def record(**kwargs: Any) -> ProcessingStats:
+        """Record an attempt to process."""
+        calls.append(kwargs)
+        return ProcessingStats()
+
+    monkeypatch.setattr(processor, "process", record)
+    with pytest.raises(FontSaveError, match="output is a directory"):
+        session.save(output_path, build_settings(processor))
+
+    assert calls == []
+    assert output_path.is_dir()
+
+
+def test_save_refuses_missing_output_folder(
+    processor: FontProcessor,
+    roboto_path: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An output path whose parent folder is missing is refused before any processing."""
+    session = FontSession.open(roboto_path, processor)
+    output_path = tmp_path / "missing" / "out.ttf"
+    calls: list[dict[str, Any]] = []
+
+    def record(**kwargs: Any) -> ProcessingStats:
+        """Record an attempt to process."""
+        calls.append(kwargs)
+        return ProcessingStats()
+
+    monkeypatch.setattr(processor, "process", record)
+    with pytest.raises(FontSaveError, match="output folder does not exist"):
+        session.save(output_path, build_settings(processor))
+
+    assert calls == []
+    assert not (tmp_path / "missing").exists()
+
+
+def test_save_error_hides_internal_paths(
+    processor: FontProcessor,
+    roboto_path: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A write failure names its cause without exposing staging or temporary paths."""
+    session = FontSession.open(roboto_path, processor)
+    staged: list[Path] = []
+
+    def deny(**kwargs: Any) -> ProcessingStats:
+        """Fail the way an unwritable staged file would, naming that file."""
+        staged.append(kwargs["output_path"])
+        raise PermissionError(13, "Permission denied", str(kwargs["output_path"]))
+
+    monkeypatch.setattr(processor, "process", deny)
+    with pytest.raises(FontSaveError, match="Permission denied") as caught:
+        session.save(tmp_path / "out.ttf", build_settings(processor))
+
+    message = str(caught.value)
+    assert ".tmp" not in message
+    assert staged[0].parent.name not in message
+    assert not (tmp_path / "out.ttf").exists()
