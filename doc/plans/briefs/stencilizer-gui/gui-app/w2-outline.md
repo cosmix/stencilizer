@@ -48,7 +48,7 @@ on-curve points).
   `reader.font.getGlyphSet()[name].draw(RecordingPen())`. Measured: equal for all six.
 - CFF bounds: for CommitMono `O` and `B`, `glyph_path(...).boundingRect()` equals the fontTools
   `BoundsPen` bounds (measured: `(30, -10, 570, 710)` and `(85, 0, 546, 700)`).
-- Winding: a 100x100 outer square wound clockwise (points (0,0),(0,100),(100,100),(100,0)) plus
+- `test_winding_fill_shows_broken_hole`: a 100x100 outer square wound clockwise (points (0,0),(0,100),(100,100),(100,0)) plus
   a 30..70 inner square. Rendered at 32 px with white background and black foreground, the
   centre pixel is white when the inner square winds counter-clockwise and black when it winds
   clockwise. Measured: odd-even fill gives white for both, so this test fails a wrong fill rule.
@@ -61,5 +61,5 @@ on-curve points).
 ## Proof command
 
 ```bash
-uv run pytest --no-cov -q tests/gui/test_outline.py && uv run mypy src/stencilizer/gui/outline.py tests/gui/test_outline.py && uv run ruff check src/stencilizer/gui/outline.py tests/gui/test_outline.py
+.venv/bin/mypy src/stencilizer/gui/outline.py tests/gui/test_outline.py && .venv/bin/ruff check src/stencilizer/gui/outline.py tests/gui/test_outline.py && .venv/bin/python -m pytest --no-cov -q -p no:cacheprovider --collect-only tests/gui/test_outline.py
 ```

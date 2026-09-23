@@ -9,8 +9,10 @@ Where a body is described in prose, the prose is the specification.
 - Never run `git`. Write only the files your brief lists under "Files owned".
 - Modules written by earlier waves exist in the worktree but NOT in the source graph: `loom map`
   answers from the base commit and will not show them. Read them with `cat`.
-- Python >= 3.11, `X | None` unions. mypy runs in strict mode (`uv run mypy <files>`); ruff
-  (`uv run ruff format <files>`, then `uv run ruff check --fix <files>`; zero findings left).
+- Python >= 3.11, `X | None` unions. mypy runs in strict mode and ruff with the repo config.
+  Inside codex's sandbox `uv run` fails (no network, read-only uv cache and `/tmp`): call the
+  tools through `.venv/bin/` (`.venv/bin/ruff check --fix <files>`, `.venv/bin/mypy <files>`).
+  The orchestrator formats (`ruff format`) and runs the tests after each wave.
 - `tests/regression/test_code_structure.py` enforces on everything under `src/`: file <= 400
   lines, function <= 50 lines (docstring excluded), class <= 300 lines, and no `x._font` access
   outside `io/reader.py` (use the public `FontReader.font`).
@@ -21,10 +23,14 @@ Where a body is described in prose, the prose is the specification.
   `int()`/`float()` before returning (mypy `warn_return_any`).
 - `fontTools.pens.qtPen.QtPen(glyphSet, path=None)` imports PyQt5 when `path` is None. Always
   construct it as `QtPen(None, path=QPainterPath())`.
-- No `@Slot` decorators (they erase signatures under mypy strict).
+- No `@Slot` decorators (not needed: plain methods work as PySide6 slots).
 - Signals emitted from a `QThreadPool` thread are connected ONLY to bound methods of a QObject
   that lives in the GUI thread, with `Qt.ConnectionType.QueuedConnection`. Never connect them to
   a lambda or free function: that runs the callback in the pool thread.
+- The import block shown per module below lists only the names its public signatures use.
+  Import whatever else the implementation needs (`Qt`, `QPointF`, `QSignalBlocker`, layouts,
+  `QListWidgetItem`, `QIcon`, `QPixmap`, `QSize`, ...) and let `ruff check --fix` sort the block
+  (ruff reports I001 otherwise).
 - Every module, public class and public function gets a docstring (the style of `src/`).
 - Errors use the existing hierarchy in `src/stencilizer/exceptions.py`: `StencilizerError`,
   `FontLoadError(path: str, reason: str)` (message `Failed to load font '<path>': <reason>`),
@@ -36,11 +42,37 @@ Where a body is described in prose, the prose is the specification.
 - pytest + pytest-qt (`qtbot`, `qapp` fixtures) under `tests/gui/`. `qt_api = "pyside6"` is set
   in `pyproject.toml`.
 - `tests/gui/conftest.py` already exists. It sets `QT_QPA_PLATFORM=offscreen` and provides the
-  fixtures `processor` (a `FontProcessor` logging into `tmp_path`), `roboto_path` and
-  `commit_mono_path`. Never construct a `FontProcessor` in a test without a `log_file`: it would
-  write `stencilizer_<timestamp>.log` into the working directory.
+  fixtures `processor` (a `FontProcessor` logging into `tmp_path`), `roboto_path`,
+  `commit_mono_path`, `cff2_font_path` and `variable_font_path` (unsupported fonts built in
+  `tmp_path`), and `outlines_match(saved, expected) -> bool` (same contour/point structure,
+  coordinates within 1 unit: compares a glyph read back from a saved font with a preview). Never construct a `FontProcessor` in a test without a `log_file`: it would
+  write `stencilizer_<timestamp>.log` into the working directory. It also has an autouse fixture
+  patching `stencilizer.core.processor.ProcessPoolExecutor` to a spawn context, so every save in
+  a GUI test starts its workers the way `app.main` does (never forked from a threaded process).
 - Tests are exempt from `disallow_untyped_defs`, but annotate fixtures and helpers anyway.
-- Run your proof command once, at the end. It must pass before you report.
+- Run your brief's proof command once, at the end, and report its output whether it passes or
+  fails. Never loop on it and never run the tests themselves (codex cannot: `tmp_path` needs a
+  writable temp dir); the orchestrator runs them after the wave.
+- No `skip`/`xfail`/`importorskip` under `tests/gui/` (an acceptance command rejects them).
+- These test names are fixed; the stage acceptance runs them by node id:
+  `test_session.py::test_save_refuses_input_path`, `test_session.py::test_save_uses_given_settings`,
+  `test_session.py::test_save_writes_stenciled_outlines`,
+  `test_session.py::test_save_refuses_changed_source`,
+  `test_session.py::test_open_rejects_unsupported_fonts`,
+  `test_outline.py::test_winding_fill_shows_broken_hole`,
+  `test_glyph_view.py::test_show_preview_shares_one_frame`,
+  `test_controller.py::test_open_font_busy_guard`,
+  `test_controller.py::test_single_processor_per_controller`,
+  `test_controller.py::test_signals_delivered_on_gui_thread`,
+  `test_controller.py::test_shutdown_waits_for_active_save`,
+  `test_main_window.py::test_close_while_busy_is_refused`,
+  `test_main_window.py::test_saved_font_matches_preview`,
+  `test_main_window.py::test_unsupported_font_is_rejected`,
+  `test_app.py::test_main_sets_spawn_and_shows_window`,
+  `test_app.py::test_main_subprocess_saves_with_spawn`.
+- Every test that saves a supported fixture asserts `stats.error_count == 0` and the exact
+  processed count (Roboto 562, CommitMono 467), and inspects the saved outlines after reopening
+  the output; `processed_count + error_count == total` alone passes when every glyph fails.
 
 ## Measured facts tests may rely on (measured at commit 389557c)
 
@@ -56,6 +88,19 @@ Where a body is described in prose, the prose is the specification.
   takes 0.37-0.65 s, so loading runs on a worker thread.
 - `process_glyph` returns the island count under the key `bridges_added`; label it in the UI as
   "island(s) bridged".
+- `FontProcessor.process` reads `self.config.bridge`/`geometry` at call time
+  (`config_dict = self.config.bridge.model_dump()` in `FontProcessor._process_glyphs_parallel`,
+  `src/stencilizer/core/processor.py`), so swapping `processor.config` per save
+  takes effect: a saved Roboto `O` differs between widths 30 and 110 (4 contours each).
+- Saving with `ProcessingConfig(max_workers=1)` and default settings: Roboto 562 processed,
+  0 errors, about 0.6 s; CommitMono 467 processed, 0 errors, about 0.7 s. The saved `O` has
+  4 contours in both, with the preview's point counts; coordinates differ from the preview by at
+  most 0.06 units (Roboto, TrueType rounding) and 0.0 (CommitMono). Saved `B` matches too.
+- `fontTools.cffLib.CFFToCFF2.convertCFFToCFF2` turns CommitMono into a font with a `CFF2`
+  table and no `CFF `; `FontReader` loads it and calls it `"OpenType"`, and without a GUI check
+  it classifies 26 island glyphs whose writes then fail with `NotImplementedError`.
+- `.notdef` is the first island glyph of all three fixtures, so the glyph auto-selected after a
+  load is `.notdef`; its preview succeeds.
 
 ## Module contract
 
@@ -68,13 +113,31 @@ working without the `gui` extra).
 ```python
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from stencilizer.config import BridgeConfig, StencilizerSettings
 from stencilizer.config.settings import GeometryConfig
-from stencilizer.core import FontProcessor
+from stencilizer.core import FontProcessor, process_glyph
 from stencilizer.core.processor import GlyphClassification, ProgressCallback
 from stencilizer.domain import Glyph
+from stencilizer.exceptions import (
+    FontLoadError,
+    FontSaveError,
+    GlyphNotFoundError,
+    StencilizerError,
+)
+from stencilizer.io import FontReader
 from stencilizer.utils import ProcessingStats
+
+
+def source_digest(path: Path) -> str:
+    """SHA-256 hex digest of the file's bytes (the pinned source revision)."""
+    ...
+
+
+def unsupported_reason(font: Any) -> str | None:
+    """Why the core cannot stencilize this TTFont (fvar, CFF2, no glyf/CFF), or None."""
+    ...
 
 
 @dataclass(frozen=True)
@@ -101,6 +164,7 @@ class FontSession:
     descender: int  # hhea descent (negative)
     classification: GlyphClassification
     processor: FontProcessor
+    source_sha256: str  # source_digest(path) at open; save refuses a changed source
 
     @classmethod
     def open(cls, path: Path, processor: FontProcessor) -> "FontSession": ...
@@ -127,7 +191,7 @@ class FontSession:
 ```python
 from typing import Any
 
-from PySide6.QtCore import QRectF
+from PySide6.QtCore import QPointF, QRectF
 from PySide6.QtGui import QColor, QImage, QPainterPath, QTransform
 
 from stencilizer.domain import Glyph

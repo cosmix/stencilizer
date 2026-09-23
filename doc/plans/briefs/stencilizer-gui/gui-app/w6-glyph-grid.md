@@ -37,9 +37,11 @@ Read-only anchors: `render_glyph_image` and `glyph_frame` in `src/stencilizer/gu
   (`qtbot.waitSignal(..., check_params_cb=...)` or collect emissions).
 - `select_glyph("missing")` returns False and emits nothing.
 - A second `set_glyphs` call with one glyph replaces the contents (`count() == 1`).
+- Keyboard: after `set_glyphs` with `O`, `B`, `eight` and `select_glyph("O")`,
+  `qtbot.keyClick(grid, Qt.Key.Key_Right)` emits `glyph_selected` with `"B"`.
 
 ## Proof command
 
 ```bash
-uv run pytest --no-cov -q tests/gui/test_glyph_grid.py && uv run mypy src/stencilizer/gui/glyph_grid.py tests/gui/test_glyph_grid.py && uv run ruff check src/stencilizer/gui/glyph_grid.py tests/gui/test_glyph_grid.py
+.venv/bin/mypy src/stencilizer/gui/glyph_grid.py tests/gui/test_glyph_grid.py && .venv/bin/ruff check src/stencilizer/gui/glyph_grid.py tests/gui/test_glyph_grid.py && .venv/bin/python -m pytest --no-cov -q -p no:cacheprovider --collect-only tests/gui/test_glyph_grid.py
 ```

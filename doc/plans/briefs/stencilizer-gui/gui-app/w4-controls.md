@@ -53,5 +53,5 @@ default 60; `use_spanning_bridges` default True); the `--bridge-width` help text
 ## Proof command
 
 ```bash
-uv run pytest --no-cov -q tests/gui/test_controls.py && uv run mypy src/stencilizer/gui/controls.py tests/gui/test_controls.py && uv run ruff check src/stencilizer/gui/controls.py tests/gui/test_controls.py
+.venv/bin/mypy src/stencilizer/gui/controls.py tests/gui/test_controls.py && .venv/bin/ruff check src/stencilizer/gui/controls.py tests/gui/test_controls.py && .venv/bin/python -m pytest --no-cov -q -p no:cacheprovider --collect-only tests/gui/test_controls.py
 ```

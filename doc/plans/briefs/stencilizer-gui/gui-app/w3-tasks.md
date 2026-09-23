@@ -29,13 +29,15 @@ Read-only anchors: `StencilizerError` in `src/stencilizer/exceptions.py`.
 - Progress: a work function calling `progress(1, 3)`, `progress(3, 3)` -> both pairs arrive in
   order (collect them through a receiver QObject's bound method, connected with
   `Qt.ConnectionType.QueuedConnection`, as production code does).
-- `StencilizerError("bad input")` -> `failed` delivers `["bad input"]`.
-- `ValueError("boom")` -> `failed` delivers `["Unexpected error: boom"]`.
+- `StencilizerError("bad input")` -> `failed` delivers `["bad input"]`; `finished` is not
+  emitted (`qtbot.assertNotEmitted(task.signals.finished)`).
+- `ValueError("boom")` -> `failed` delivers `["Unexpected error: boom"]`; `finished` is not
+  emitted (`qtbot.assertNotEmitted(task.signals.finished)`).
 - `BackgroundTask(...).autoDelete()` is False.
 - Call `pool.waitForDone()` at the end of each test.
 
 ## Proof command
 
 ```bash
-uv run pytest --no-cov -q tests/gui/test_tasks.py && uv run mypy src/stencilizer/gui/tasks.py tests/gui/test_tasks.py && uv run ruff check src/stencilizer/gui/tasks.py tests/gui/test_tasks.py
+.venv/bin/mypy src/stencilizer/gui/tasks.py tests/gui/test_tasks.py && .venv/bin/ruff check src/stencilizer/gui/tasks.py tests/gui/test_tasks.py && .venv/bin/python -m pytest --no-cov -q -p no:cacheprovider --collect-only tests/gui/test_tasks.py
 ```

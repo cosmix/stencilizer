@@ -20,9 +20,10 @@ Read-only anchors: `glyph_path`, `glyph_frame`, `font_to_widget_transform` in
    `self.update()`; `glyph` and `frame` are read-only properties. `paintEvent`: `QPainter(self)`,
    fill `self.rect()` with `self.palette().base()`; when both glyph and frame are set, enable
    antialiasing, set the transform `font_to_widget_transform(frame,
-   QRectF(self.rect()).adjusted(8, 8, -8, -8))`, draw the baseline (font y 0 from frame.left()
-   to frame.right()) with a cosmetic pen in `palette().mid().color()`, then
-   `fillPath(glyph_path(glyph), self.palette().text())`. End the painter.
+   QRectF(self.rect()).adjusted(8, 8, -8, -8))`, draw the baseline with a cosmetic pen as
+   `painter.drawLine(QPointF(frame.left(), 0.0), QPointF(frame.right(), 0.0))` (the four-number
+   `drawLine` overloads take ints, so floats fail mypy strict) in `palette().mid().color()`,
+   then `fillPath(glyph_path(glyph), self.palette().text())`. End the painter.
 2. `ComparisonView`: a grid layout with the titles "Original" and "Stencilized" over
    `before_canvas` and `after_canvas`, and `info_label` spanning below. `show_preview(result,
    ascender, descender)`: frame = `glyph_frame(result.original, ascender, descender)`, united
@@ -38,9 +39,9 @@ Read-only anchors: `glyph_path`, `glyph_frame`, `font_to_widget_transform` in
 
 - Build a `FontSession` from Roboto (`FontSession.open(roboto_path, processor)`) and a
   `PreviewResult` for `O` with default configs.
-- `show_preview` sets `before_canvas.glyph is result.original`, `after_canvas.glyph is
-  result.stenciled`, and `before_canvas.frame == after_canvas.frame`; the info text contains
-  `"O (U+004F)"` and `"1 island(s) bridged"`.
+- `test_show_preview_shares_one_frame`: `show_preview` sets `before_canvas.glyph is
+  result.original`, `after_canvas.glyph is result.stenciled`, and `before_canvas.frame ==
+  after_canvas.frame`; the info text contains `"O (U+004F)"` and `"1 island(s) bridged"`.
 - A synthetic `PreviewResult(stenciled=None, error="boom", ...)` leaves `after_canvas.glyph is
   None` and the info text contains `"transform failed: boom"`.
 - Painting: `canvas.resize(200, 200)`, `canvas.set_glyph(o_glyph, frame)`, then
@@ -52,5 +53,5 @@ Read-only anchors: `glyph_path`, `glyph_frame`, `font_to_widget_transform` in
 ## Proof command
 
 ```bash
-uv run pytest --no-cov -q tests/gui/test_glyph_view.py && uv run mypy src/stencilizer/gui/glyph_view.py tests/gui/test_glyph_view.py && uv run ruff check src/stencilizer/gui/glyph_view.py tests/gui/test_glyph_view.py
+.venv/bin/mypy src/stencilizer/gui/glyph_view.py tests/gui/test_glyph_view.py && .venv/bin/ruff check src/stencilizer/gui/glyph_view.py tests/gui/test_glyph_view.py && .venv/bin/python -m pytest --no-cov -q -p no:cacheprovider --collect-only tests/gui/test_glyph_view.py
 ```

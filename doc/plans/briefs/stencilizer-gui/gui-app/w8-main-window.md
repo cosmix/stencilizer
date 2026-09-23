@@ -6,8 +6,8 @@ Read `doc/plans/briefs/stencilizer-gui/gui-app/_shared.md` first; its contract f
 
 ## Files owned
 
-- `src/stencilizer/gui/main_window.py`
-- `tests/gui/test_main_window.py`
+W8 (wave 3) writes `src/stencilizer/gui/main_window.py` from Steps. W8T (wave 4) writes
+`tests/gui/test_main_window.py` from Tests, reading the finished module with `cat`.
 
 Read-only anchors: `ControlPanel` (controls.py), `GlyphGrid` (glyph_grid.py), `ComparisonView`
 (glyph_view.py), `GuiController` (controller.py), `FontSession`/`PreviewResult` (session.py),
@@ -46,8 +46,10 @@ Read-only anchors: `ControlPanel` (controls.py), `GlyphGrid` (glyph_grid.py), `C
    chosen path (an empty string means cancelled). `save_font_dialog()` returns when no session is
    loaded; otherwise it offers `FontWriter.get_stenciled_path(session.path)` in
    `QFileDialog.getSaveFileName(self, "Save Stenciled Font", str(default), "Fonts (*.ttf *.otf)")`
-   and saves to the chosen path. `closeEvent` calls `controller.shutdown()`, then
-   `event.accept()`.
+   and saves to the chosen path. `closeEvent`: while `controller.is_busy`, `event.ignore()` and
+   `statusBar().showMessage("Wait for the current operation to finish")`; otherwise
+   `controller.shutdown()`, then `event.accept()` (`shutdown` waits on the pool with no
+   deadline; mid-save it would freeze the window).
 
 ## Tests (`tests/gui/test_main_window.py`, `qtbot`)
 
@@ -63,16 +65,44 @@ directly; dialogs are exercised by monkeypatching `QFileDialog.getOpenFileName` 
 - After selecting `O` (`grid.select_glyph("O")`), moving `controls.width_slider` to 30 and then
   110 changes `comparison.after_canvas.glyph.to_dict()`.
 - `save_font(tmp_path / "out.ttf")` inside `qtbot.waitSignal(controller.save_finished,
-  timeout=120000)`: the file exists and `statusBar().currentMessage()` starts with
-  `"Saved out.ttf"`.
+  timeout=120000)`: `statusBar().currentMessage()` starts with `"Saved out.ttf: 562 glyphs
+  stencilized, 0 errors"`.
+- `test_saved_font_matches_preview`: after the load, `grid.select_glyph("O")`,
+  `controls.workers_spin.setValue(1)`, move `controls.width_slider` to 30, and keep
+  `expected = comparison.after_canvas.glyph` (the preview on screen). `save_font(tmp_path /
+  "w30.ttf")` inside `waitSignal(save_finished, timeout=120000)`; the stats carry
+  `error_count == 0`; `with FontReader(w30) as reader:` `outlines_match(reader.get_glyph("O"),
+  expected)` is True. A window that saves default settings, or a save whose glyph writes
+  failed, fails this.
 - `load_font` on a `b"not a font"` file: the recorded `QMessageBox.warning` message starts with
   `"Failed to load font"`.
+- `test_unsupported_font_is_rejected`: `load_font(cff2_font_path)`, then `qtbot.waitUntil` the
+  recorded warning: its message starts with `"Failed to load font"` and contains `"CFF2"`;
+  `controller.session` is None, `grid.count() == 0` and `controls.save_button.isEnabled()` is
+  False (the rejected font never becomes a session, so save stays disabled).
 - `open_font_dialog` with `getOpenFileName` patched to return `(str(roboto_path), "")` loads the
   font; patched to return `("", "")` loads nothing (no `busy_changed` emission).
 - `window.close()` returns without hanging after a load has finished.
+- Busy reflection: synchronously after `save_font(tmp_path / "out.ttf")` (before waiting),
+  `controls.save_button.isEnabled()` and `controls.open_button.isEnabled()` are False; once
+  `save_finished` has arrived both are True and `controls.progress_bar.isVisibleTo(controls)`
+  is False.
+- `test_close_while_busy_is_refused`: `window.show()`; after `save_font(...)`, `window.close()`
+  returns False and the status bar shows `"Wait for the current operation to finish"`; after
+  `save_finished`, `window.close()` returns True.
+- Workers reach the controller: `monkeypatch.setattr(controller, "set_parameters", recorder)`,
+  then `controls.workers_spin.setValue(1)`: the last recorded call has `max_workers == 1`.
 
 ## Proof command
 
+W8 (module unit):
+
 ```bash
-uv run pytest --no-cov -q tests/gui/test_main_window.py && uv run mypy src/stencilizer/gui/main_window.py tests/gui/test_main_window.py && uv run ruff check src/stencilizer/gui/main_window.py tests/gui/test_main_window.py
+.venv/bin/mypy src/stencilizer/gui/main_window.py && .venv/bin/ruff check src/stencilizer/gui/main_window.py
+```
+
+W8T (test unit):
+
+```bash
+.venv/bin/mypy src/stencilizer/gui/main_window.py tests/gui/test_main_window.py && .venv/bin/ruff check tests/gui/test_main_window.py && .venv/bin/python -m pytest --no-cov -q -p no:cacheprovider --collect-only tests/gui/test_main_window.py
 ```
