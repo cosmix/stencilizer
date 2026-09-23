@@ -213,11 +213,11 @@ stencilizer Roboto-Regular.ttf \
 ## Requirements
 
 - Python 3.11 or higher
-- fonttools >= 4.47.0
-- pydantic >= 2.5.0
-- rich >= 13.7.0
-- structlog >= 24.1.0
-- typer >= 0.9.0
+- fonttools >= 4.65.0
+- pydantic >= 2.13.5
+- rich >= 15.0.0
+- structlog >= 26.1.0
+- typer >= 0.27.2
 
 ## Development
 
