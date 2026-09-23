@@ -35,6 +35,14 @@ cd stencilizer
 uv pip install -e .
 ```
 
+### Graphical interface (optional)
+
+The desktop GUI needs PySide6, which ships in the optional `gui` extra:
+
+```bash
+uv pip install -e ".[gui]"
+```
+
 ## Quick Start
 
 ```bash
@@ -119,6 +127,20 @@ stencilizer input.ttf --log-file stencilizer.log
 # Set log level
 stencilizer input.ttf --log-level DEBUG
 ```
+
+### Graphical Interface
+
+```bash
+# Launch the window, optionally opening a font straight away
+stencilizer-gui [font]
+```
+
+The window opens a TTF/OTF font through a file dialog (or the command-line argument) and lists
+its island glyphs as thumbnails. Selecting one shows the glyph before and after stencilization
+side by side at one shared scale, recomputed as you change the bridge width (30-110 %), the
+spanning-bridges toggle, or the worker count. "Stencilize & Save..." writes the full font with a
+progress bar. It refuses to overwrite the input font, and refuses a source file that changed on
+disk since it was opened. Variable fonts and CFF2 fonts are rejected on open.
 
 ## Configuration
 

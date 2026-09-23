@@ -8,15 +8,21 @@
 
 | File | Description | Lines |
 | --- | --- | --- |
-| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 22 |
-| [entry-points.md](entry-points.md) | Key files agents should read first | 17 |
+| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 26 |
+| [entry-points.md](entry-points.md) | Key files agents should read first | 21 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 22 |
-| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 24 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 57 |
-| [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 18 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 28 |
+| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 40 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 84 |
+| [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 22 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 32 |
 
 ## Tier 2 — Topics
+
+### architecture
+
+| Topic | Blurb | Lines |
+| --- | --- | --- |
+| [gui](architecture/gui.md) | GUI package layout, threading model, save safety | 32 |
 
 ### patterns
 
