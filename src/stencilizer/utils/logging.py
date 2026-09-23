@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
 import structlog
 
@@ -106,7 +107,7 @@ def configure_logging(
     logger = structlog.get_logger("stencilizer")
     logger.info("Logging initialized", log_file=str(log_file), level=file_level)
 
-    return logger
+    return cast("structlog.stdlib.BoundLogger", logger)
 
 
 class ProcessingLogger:

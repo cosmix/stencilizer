@@ -3,8 +3,6 @@
 import pytest
 
 from stencilizer.domain import (
-    BridgeGeometry,
-    BridgeSpec,
     Contour,
     Glyph,
     GlyphMetadata,
@@ -98,13 +96,6 @@ class TestContour:
         contour = Contour(points=points)
         assert not contour.contains_point(150, 50)
 
-    def test_sample_points(self) -> None:
-        """Test point sampling."""
-        points = [Point(i, 0) for i in range(100)]
-        contour = Contour(points=points)
-        sampled = contour.sample_points(10)
-        assert len(sampled) == 10
-
     def test_contour_serialization(self) -> None:
         """Test contour serialization and deserialization."""
         points = [Point(0, 0), Point(100, 0), Point(100, 100)]
@@ -121,12 +112,7 @@ class TestGlyphMetadata:
 
     def test_metadata_creation(self) -> None:
         """Test metadata creation."""
-        meta = GlyphMetadata(
-            name="A",
-            unicode=65,
-            advance_width=600,
-            left_side_bearing=50
-        )
+        meta = GlyphMetadata(name="A", unicode=65, advance_width=600, left_side_bearing=50)
         assert meta.name == "A"
         assert meta.unicode == 65
 
@@ -149,11 +135,11 @@ class TestGlyph:
         meta = GlyphMetadata(name="O", unicode=79, advance_width=800, left_side_bearing=50)
         outer = Contour(
             points=[Point(0, 0), Point(100, 0), Point(100, 100), Point(0, 100)],
-            direction=WindingDirection.COUNTER_CLOCKWISE
+            direction=WindingDirection.COUNTER_CLOCKWISE,
         )
         inner = Contour(
             points=[Point(25, 25), Point(25, 75), Point(75, 75), Point(75, 25)],
-            direction=WindingDirection.CLOCKWISE
+            direction=WindingDirection.CLOCKWISE,
         )
         glyph = Glyph(metadata=meta, contours=[outer, inner])
 
@@ -171,11 +157,11 @@ class TestGlyph:
         meta = GlyphMetadata(name="O", unicode=79, advance_width=800, left_side_bearing=50)
         outer = Contour(
             points=[Point(0, 0), Point(100, 0), Point(100, 100), Point(0, 100)],
-            direction=WindingDirection.COUNTER_CLOCKWISE
+            direction=WindingDirection.COUNTER_CLOCKWISE,
         )
         inner = Contour(
             points=[Point(25, 25), Point(25, 75), Point(75, 75), Point(75, 25)],
-            direction=WindingDirection.CLOCKWISE
+            direction=WindingDirection.CLOCKWISE,
         )
         glyph = Glyph(metadata=meta, contours=[outer, inner])
 
@@ -188,7 +174,7 @@ class TestGlyph:
         meta = GlyphMetadata(name="A", unicode=65, advance_width=600, left_side_bearing=50)
         contour = Contour(
             points=[Point(0, 0), Point(100, 0), Point(50, 100)],
-            direction=WindingDirection.COUNTER_CLOCKWISE
+            direction=WindingDirection.COUNTER_CLOCKWISE,
         )
         g1 = Glyph(metadata=meta, contours=[contour])
         data = g1.to_dict()
@@ -196,104 +182,3 @@ class TestGlyph:
 
         assert g2.name == g1.name
         assert len(g2.contours) == len(g1.contours)
-
-
-class TestBridgeSpec:
-    """Tests for BridgeSpec class."""
-
-    def test_bridge_spec_creation(self) -> None:
-        """Test bridge spec creation."""
-        inner_pt = Point(50, 50)
-        outer_pt = Point(100, 50)
-        spec = BridgeSpec(
-            inner_contour_idx=1,
-            outer_contour_idx=0,
-            inner_point=inner_pt,
-            outer_point=outer_pt,
-            width=30.0,
-            score=85.0
-        )
-        assert spec.inner_contour_idx == 1
-        assert spec.width == 30.0
-
-    def test_bridge_spec_serialization(self) -> None:
-        """Test bridge spec serialization."""
-        s1 = BridgeSpec(
-            inner_contour_idx=1,
-            outer_contour_idx=0,
-            inner_point=Point(50, 50),
-            outer_point=Point(100, 50),
-            width=30.0,
-            score=85.0
-        )
-        data = s1.to_dict()
-        s2 = BridgeSpec.from_dict(data)
-
-        assert s2.inner_contour_idx == s1.inner_contour_idx
-        assert s2.width == s1.width
-        assert s2.score == s1.score
-
-
-class TestBridgeGeometry:
-    """Tests for BridgeGeometry class."""
-
-    def test_bridge_geometry_creation(self) -> None:
-        """Test bridge geometry creation."""
-        spec = BridgeSpec(
-            inner_contour_idx=1,
-            outer_contour_idx=0,
-            inner_point=Point(50, 50),
-            outer_point=Point(100, 50),
-            width=30.0
-        )
-        vertices = (
-            Point(50, 35),
-            Point(100, 35),
-            Point(100, 65),
-            Point(50, 65)
-        )
-        geom = BridgeGeometry(vertices=vertices, spec=spec)
-        assert len(geom.vertices) == 4
-
-    def test_bridge_as_contour(self) -> None:
-        """Test converting bridge to contour."""
-        spec = BridgeSpec(
-            inner_contour_idx=1,
-            outer_contour_idx=0,
-            inner_point=Point(50, 50),
-            outer_point=Point(100, 50),
-            width=30.0
-        )
-        vertices = (
-            Point(50, 35),
-            Point(100, 35),
-            Point(100, 65),
-            Point(50, 65)
-        )
-        geom = BridgeGeometry(vertices=vertices, spec=spec)
-        contour = geom.as_contour()
-
-        assert len(contour.points) == 4
-        assert contour.direction == WindingDirection.COUNTER_CLOCKWISE
-
-    def test_bridge_geometry_serialization(self) -> None:
-        """Test bridge geometry serialization."""
-        spec = BridgeSpec(
-            inner_contour_idx=1,
-            outer_contour_idx=0,
-            inner_point=Point(50, 50),
-            outer_point=Point(100, 50),
-            width=30.0
-        )
-        vertices = (
-            Point(50, 35),
-            Point(100, 35),
-            Point(100, 65),
-            Point(50, 65)
-        )
-        g1 = BridgeGeometry(vertices=vertices, spec=spec)
-        data = g1.to_dict()
-        g2 = BridgeGeometry.from_dict(data)
-
-        assert len(g2.vertices) == len(g1.vertices)
-        assert g2.spec.width == g1.spec.width

@@ -7,7 +7,7 @@ with the stencilized naming convention.
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fontTools.ttLib import TTFont
+from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 
 from stencilizer import __version__
 from stencilizer.domain.glyph import Glyph
@@ -47,40 +47,7 @@ def update_font_names(font: TTFont, suffix: str = " Stenciled") -> None:
         except UnicodeDecodeError:
             continue
 
-        new_name: str | None = None
-
-        if name_id == NAME_ID_FAMILY:
-            # "Roboto" → "Roboto Stenciled"
-            new_name = original + suffix
-
-        elif name_id == NAME_ID_TYPOGRAPHIC_FAMILY:
-            # Same treatment as family name
-            new_name = original + suffix
-
-        elif name_id == NAME_ID_FULL_NAME:
-            # "Roboto Regular" → "Roboto Stenciled Regular"
-            # Insert suffix before the last word (style name)
-            parts = original.rsplit(" ", 1)
-            if len(parts) == 2:
-                new_name = f"{parts[0]}{suffix} {parts[1]}"
-            else:
-                new_name = original + suffix
-
-        elif name_id == NAME_ID_POSTSCRIPT:
-            # "Roboto-Regular" → "RobotoStenciled-Regular"
-            # PostScript names can't have spaces
-            ps_suffix = suffix.replace(" ", "")
-            if "-" in original:
-                parts = original.split("-", 1)
-                new_name = f"{parts[0]}{ps_suffix}-{parts[1]}"
-            else:
-                new_name = original + ps_suffix
-
-        elif name_id == NAME_ID_VERSION:
-            # Append stencilization timestamp to version with GitHub URL
-            # "Version 2.015" → "Version 2.015; Stencil Version generated 2025-12-23T14:30:45 (UTC) using Stencilizer v0.1.0 https://github.com/cosmix/stencilizer"
-            timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
-            new_name = f"{original}; Stencil Version generated {timestamp} (UTC) using Stencilizer v{__version__} https://github.com/cosmix/stencilizer"
+        new_name = _updated_font_name(name_id, original, suffix)
 
         if new_name is not None:
             updates.append((name_id, platform_id, plat_enc_id, lang_id, new_name))
@@ -88,6 +55,31 @@ def update_font_names(font: TTFont, suffix: str = " Stenciled") -> None:
     # Apply all updates
     for name_id, platform_id, plat_enc_id, lang_id, new_name in updates:
         name_table.setName(new_name, name_id, platform_id, plat_enc_id, lang_id)
+
+
+def _updated_font_name(name_id: int, original: str, suffix: str) -> str | None:
+    if name_id == NAME_ID_FAMILY:
+        return original + suffix
+
+    if name_id == NAME_ID_TYPOGRAPHIC_FAMILY:
+        return original + suffix
+
+    if name_id == NAME_ID_FULL_NAME:
+        parts = original.rsplit(" ", 1)
+        return f"{parts[0]}{suffix} {parts[1]}" if len(parts) == 2 else original + suffix
+
+    if name_id == NAME_ID_POSTSCRIPT:
+        ps_suffix = suffix.replace(" ", "")
+        if "-" in original:
+            parts = original.split("-", 1)
+            return f"{parts[0]}{ps_suffix}-{parts[1]}"
+        return original + ps_suffix
+
+    if name_id == NAME_ID_VERSION:
+        timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+        return f"{original}; Stencil Version generated {timestamp} (UTC) using Stencilizer v{__version__} https://github.com/cosmix/stencilizer"
+
+    return None
 
 
 class FontWriter:

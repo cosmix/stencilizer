@@ -3,6 +3,7 @@
 Tests for FontReader, FontWriter, and converter functions.
 """
 
+from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
@@ -12,6 +13,12 @@ from stencilizer.domain.contour import PointType
 from stencilizer.domain.glyph import Glyph, GlyphMetadata
 from stencilizer.io.reader import FontReader
 from stencilizer.io.writer import FontWriter, update_font_names
+
+
+@pytest.fixture
+def mock_existing_path() -> Generator[None, None, None]:
+    with patch.object(Path, "exists", return_value=True):
+        yield
 
 
 class TestFontReader:
@@ -54,9 +61,9 @@ class TestFontReader:
         with pytest.raises(RuntimeError, match="Font not loaded"):
             list(reader.iter_glyphs())
 
+    @pytest.mark.usefixtures("mock_existing_path")
     @patch("stencilizer.io.reader.TTFont")
-    @patch.object(Path, "exists", return_value=True)
-    def test_format_truetype(self, _mock_exists, mock_ttfont):
+    def test_format_truetype(self, mock_ttfont):
         """Test format property for TrueType fonts."""
         mock_font = MagicMock()
         mock_font.__contains__ = Mock(side_effect=lambda x: x == "glyf")
@@ -67,9 +74,9 @@ class TestFontReader:
 
         assert reader.format == "TrueType"
 
+    @pytest.mark.usefixtures("mock_existing_path")
     @patch("stencilizer.io.reader.TTFont")
-    @patch.object(Path, "exists", return_value=True)
-    def test_format_opentype(self, _mock_exists, mock_ttfont):
+    def test_format_opentype(self, mock_ttfont):
         """Test format property for OpenType fonts."""
         mock_font = MagicMock()
         mock_font.__contains__ = Mock(side_effect=lambda x: x == "CFF ")
@@ -80,9 +87,9 @@ class TestFontReader:
 
         assert reader.format == "OpenType"
 
+    @pytest.mark.usefixtures("mock_existing_path")
     @patch("stencilizer.io.reader.TTFont")
-    @patch.object(Path, "exists", return_value=True)
-    def test_units_per_em(self, _mock_exists, mock_ttfont):
+    def test_units_per_em(self, mock_ttfont):
         """Test units_per_em property."""
         mock_font = MagicMock()
         mock_font.__getitem__ = Mock(return_value=MagicMock(unitsPerEm=1000))
@@ -93,9 +100,9 @@ class TestFontReader:
 
         assert reader.units_per_em == 1000
 
+    @pytest.mark.usefixtures("mock_existing_path")
     @patch("stencilizer.io.reader.TTFont")
-    @patch.object(Path, "exists", return_value=True)
-    def test_glyph_count(self, _mock_exists, mock_ttfont):
+    def test_glyph_count(self, mock_ttfont):
         """Test glyph_count property."""
         mock_font = MagicMock()
         mock_font.__getitem__ = Mock(return_value=MagicMock(numGlyphs=256))
@@ -106,9 +113,9 @@ class TestFontReader:
 
         assert reader.glyph_count == 256
 
+    @pytest.mark.usefixtures("mock_existing_path")
     @patch("stencilizer.io.reader.TTFont")
-    @patch.object(Path, "exists", return_value=True)
-    def test_context_manager(self, _mock_exists, mock_ttfont):
+    def test_context_manager(self, mock_ttfont):
         """Test FontReader as context manager."""
         mock_font = MagicMock()
         mock_ttfont.return_value = mock_font
@@ -160,10 +167,7 @@ class TestFontWriter:
 
         writer = FontWriter(mock_font, Path("output.ttf"))
 
-        glyph = Glyph(
-            metadata=GlyphMetadata("Z", None, 500, 0),
-            contours=[]
-        )
+        glyph = Glyph(metadata=GlyphMetadata("Z", None, 500, 0), contours=[])
 
         with pytest.raises(ValueError, match="not found in font"):
             writer.update_glyph(glyph)
@@ -269,9 +273,7 @@ class TestUpdateFontNames:
 
         update_font_names(mock_font)
 
-        mock_name_table.setName.assert_called_once_with(
-            "Roboto Stenciled", 1, 3, 1, 0x409
-        )
+        mock_name_table.setName.assert_called_once_with("Roboto Stenciled", 1, 3, 1, 0x409)
 
     def test_full_name_inserts_suffix_before_style(self):
         """Test that full name (nameID 4) inserts suffix before style."""
@@ -282,9 +284,7 @@ class TestUpdateFontNames:
 
         update_font_names(mock_font)
 
-        mock_name_table.setName.assert_called_once_with(
-            "Roboto Stenciled Regular", 4, 3, 1, 0x409
-        )
+        mock_name_table.setName.assert_called_once_with("Roboto Stenciled Regular", 4, 3, 1, 0x409)
 
     def test_full_name_single_word(self):
         """Test that single-word full name gets suffix appended."""
@@ -295,9 +295,7 @@ class TestUpdateFontNames:
 
         update_font_names(mock_font)
 
-        mock_name_table.setName.assert_called_once_with(
-            "Roboto Stenciled", 4, 3, 1, 0x409
-        )
+        mock_name_table.setName.assert_called_once_with("Roboto Stenciled", 4, 3, 1, 0x409)
 
     def test_postscript_name_inserts_before_hyphen(self):
         """Test that PostScript name (nameID 6) inserts suffix before hyphen."""
@@ -308,9 +306,7 @@ class TestUpdateFontNames:
 
         update_font_names(mock_font)
 
-        mock_name_table.setName.assert_called_once_with(
-            "RobotoStenciled-Regular", 6, 3, 1, 0x409
-        )
+        mock_name_table.setName.assert_called_once_with("RobotoStenciled-Regular", 6, 3, 1, 0x409)
 
     def test_postscript_name_no_hyphen(self):
         """Test that PostScript name without hyphen gets suffix appended."""
@@ -321,9 +317,7 @@ class TestUpdateFontNames:
 
         update_font_names(mock_font)
 
-        mock_name_table.setName.assert_called_once_with(
-            "RobotoStenciled", 6, 3, 1, 0x409
-        )
+        mock_name_table.setName.assert_called_once_with("RobotoStenciled", 6, 3, 1, 0x409)
 
     def test_typographic_family_gets_suffix(self):
         """Test that typographic family (nameID 16) gets suffix appended."""
@@ -334,9 +328,7 @@ class TestUpdateFontNames:
 
         update_font_names(mock_font)
 
-        mock_name_table.setName.assert_called_once_with(
-            "Roboto Stenciled", 16, 3, 1, 0x409
-        )
+        mock_name_table.setName.assert_called_once_with("Roboto Stenciled", 16, 3, 1, 0x409)
 
     def test_multiple_name_records(self):
         """Test that all relevant name records are updated."""
@@ -362,9 +354,7 @@ class TestUpdateFontNames:
 
         update_font_names(mock_font, suffix=" Custom")
 
-        mock_name_table.setName.assert_called_once_with(
-            "Roboto Custom", 1, 3, 1, 0x409
-        )
+        mock_name_table.setName.assert_called_once_with("Roboto Custom", 1, 3, 1, 0x409)
 
     def test_ignores_other_name_ids(self):
         """Test that other nameIDs are not modified."""
@@ -390,7 +380,7 @@ class TestCffGlyphUpdate:
         mock_font = MagicMock()
         mock_cff_table = MagicMock()
         mock_top_dict = MagicMock()
-        mock_charstrings = {}
+        mock_charstrings: dict[str, MagicMock] = {}
         mock_private = MagicMock()
         mock_global_subrs = MagicMock()
 
@@ -404,10 +394,7 @@ class TestCffGlyphUpdate:
         mock_font.getGlyphSet.return_value = {}
 
         # Create a simple glyph with one contour
-        glyph = Glyph(
-            metadata=GlyphMetadata("A", None, 500, 0),
-            contours=[]
-        )
+        glyph = Glyph(metadata=GlyphMetadata("A", None, 500, 0), contours=[])
 
         # Mock the T2CharStringPen to track getCharString calls
         with patch("stencilizer.io.converter.T2CharStringPen") as mock_pen_class:
@@ -420,8 +407,7 @@ class TestCffGlyphUpdate:
 
             # Verify getCharString was called with private and globalSubrs
             mock_pen.getCharString.assert_called_once_with(
-                private=mock_private,
-                globalSubrs=mock_global_subrs
+                private=mock_private, globalSubrs=mock_global_subrs
             )
 
     def test_update_cff_glyph_stores_charstring_in_font(self):
@@ -432,7 +418,7 @@ class TestCffGlyphUpdate:
         mock_font = MagicMock()
         mock_cff_table = MagicMock()
         mock_top_dict = MagicMock()
-        mock_charstrings = {}
+        mock_charstrings: dict[str, MagicMock] = {}
         mock_private = MagicMock()
         mock_global_subrs = MagicMock()
 
@@ -446,10 +432,7 @@ class TestCffGlyphUpdate:
         mock_font.getGlyphSet.return_value = {}
 
         # Create a glyph
-        glyph = Glyph(
-            metadata=GlyphMetadata("B", None, 600, 0),
-            contours=[]
-        )
+        glyph = Glyph(metadata=GlyphMetadata("B", None, 600, 0), contours=[])
 
         # Mock the T2CharStringPen
         with patch("stencilizer.io.converter.T2CharStringPen") as mock_pen_class:
@@ -472,7 +455,7 @@ class TestCffGlyphUpdate:
         mock_font = MagicMock()
         mock_cff_table = MagicMock()
         mock_top_dict = MagicMock()
-        mock_charstrings = {}
+        mock_charstrings: dict[str, MagicMock] = {}
         mock_private = MagicMock()
         mock_global_subrs = MagicMock()
 
@@ -486,10 +469,7 @@ class TestCffGlyphUpdate:
         mock_font.getGlyphSet.return_value = {}
 
         # Create a glyph with empty contours (e.g., space character)
-        glyph = Glyph(
-            metadata=GlyphMetadata("space", None, 250, 0),
-            contours=[]
-        )
+        glyph = Glyph(metadata=GlyphMetadata("space", None, 250, 0), contours=[])
 
         # Mock the T2CharStringPen
         with patch("stencilizer.io.converter.T2CharStringPen") as mock_pen_class:

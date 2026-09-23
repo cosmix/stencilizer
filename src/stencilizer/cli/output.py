@@ -4,7 +4,6 @@ This module provides user-friendly console output using Rich library
 with progress bars, tables, and formatted messages.
 """
 
-
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -161,7 +160,7 @@ def print_success(
     if avg_time_ms is not None:
         timing_str = f"{avg_time_ms:.1f}ms avg"
         if min_time_ms is not None and max_time_ms is not None:
-            timing_str += f" ({min_time_ms:.1f}–{max_time_ms:.1f}ms range)"
+            timing_str += f" ({min_time_ms:.1f}–{max_time_ms:.1f}ms range)"  # noqa: RUF001
         console.print(f"  {timing_str}")
 
 

@@ -71,11 +71,7 @@ class Point:
         Returns:
             Dictionary with x, y, and type fields
         """
-        return {
-            "x": self.x,
-            "y": self.y,
-            "type": self.point_type.value
-        }
+        return {"x": self.x, "y": self.y, "type": self.point_type.value}
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Point":
@@ -87,11 +83,7 @@ class Point:
         Returns:
             Point instance
         """
-        return cls(
-            x=data["x"],
-            y=data["y"],
-            point_type=PointType(data["type"])
-        )
+        return cls(x=data["x"], y=data["y"], point_type=PointType(data["type"]))
 
 
 @dataclass
@@ -194,30 +186,6 @@ class Contour:
 
         return inside
 
-    def sample_points(self, n: int) -> list[Point]:
-        """Sample n evenly-spaced points along contour.
-
-        This is a simplified implementation that samples from the existing
-        points. For more accurate sampling along curves, Bezier curve
-        evaluation would be needed.
-
-        Args:
-            n: Number of points to sample
-
-        Returns:
-            List of sampled points
-        """
-        if n <= 0:
-            return []
-
-        if n >= len(self.points):
-            return list(self.points)
-
-        # Sample evenly from existing points
-        step = len(self.points) / n
-        indices = [int(i * step) for i in range(n)]
-        return [self.points[i] for i in indices]
-
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary for IPC.
 
@@ -226,7 +194,7 @@ class Contour:
         """
         return {
             "points": [p.to_dict() for p in self.points],
-            "direction": self.direction.value if self.direction else None
+            "direction": self.direction.value if self.direction else None,
         }
 
     @classmethod
@@ -240,9 +208,5 @@ class Contour:
             Contour instance
         """
         points = [Point.from_dict(p) for p in data["points"]]
-        direction = (
-            WindingDirection(data["direction"])
-            if data["direction"] is not None
-            else None
-        )
+        direction = WindingDirection(data["direction"]) if data["direction"] is not None else None
         return cls(points=points, direction=direction)

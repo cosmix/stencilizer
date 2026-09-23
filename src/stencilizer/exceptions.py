@@ -83,29 +83,6 @@ class IntersectionError(GeometryError):
         super().__init__(message)
 
 
-class BridgeError(StencilizerError):
-    """Errors related to bridge placement or generation."""
-
-    pass
-
-
-class BridgePlacementError(BridgeError):
-    """Could not find valid bridge placement."""
-
-    def __init__(self, glyph_name: str, reason: str) -> None:
-        self.glyph_name = glyph_name
-        self.reason = reason
-        super().__init__(f"Bridge placement failed for '{glyph_name}': {reason}")
-
-
-class BridgeGenerationError(BridgeError):
-    """Error generating bridge geometry."""
-
-    def __init__(self, reason: str) -> None:
-        self.reason = reason
-        super().__init__(f"Bridge generation failed: {reason}")
-
-
 class ProcessingCancelledError(StencilizerError):
     """Processing was cancelled by user."""
 

@@ -6,12 +6,12 @@ where inner holes must remain as CCW contours after bridge splitting.
 """
 
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
 from stencilizer.config import BridgeConfig
 from stencilizer.core.analyzer import GlyphAnalyzer
-from stencilizer.core.bridge import BridgeGenerator, BridgePlacer
 from stencilizer.core.geometry import signed_area
 from stencilizer.core.surgery import GlyphTransformer
 from stencilizer.io import FontReader
@@ -36,9 +36,7 @@ def transformer():
     """Create a glyph transformer for testing."""
     analyzer = GlyphAnalyzer()
     config = BridgeConfig(width_percent=60.0, use_spanning_bridges=True)
-    placer = BridgePlacer(config)
-    generator = BridgeGenerator(config)
-    return GlyphTransformer(analyzer, placer, generator, bridge_config=config)
+    return GlyphTransformer(analyzer=analyzer, bridge_config=config)
 
 
 def get_glyph_by_char(reader: FontReader, char: str):
@@ -106,7 +104,9 @@ class TestRegisteredSymbol:
         # 4. R's counter (CCW)
         _, holes = verify_winding_consistency(glyph.contours)
 
-        assert len(glyph.contours) >= 3, f"® should have at least 3 contours, got {len(glyph.contours)}"
+        assert len(glyph.contours) >= 3, (
+            f"® should have at least 3 contours, got {len(glyph.contours)}"
+        )
         assert holes >= 1, f"® should have at least 1 hole contour, got {holes}"
 
     def test_registered_preserves_holes_after_transform(
@@ -295,15 +295,16 @@ class TestGreekTheta:
         _, _ = verify_winding_consistency(transformed.contours)
 
         # Theta should be transformed (bridges added)
-        assert len(transformed.contours) != len(glyph.contours) or transformed.contours != glyph.contours, (
-            "Θ should be transformed"
-        )
+        assert (
+            len(transformed.contours) != len(glyph.contours)
+            or transformed.contours != glyph.contours
+        ), "Θ should be transformed"
 
 
 class TestWindingPreservationGeneral:
     """General tests for winding preservation across multiple glyphs."""
 
-    PROBLEMATIC_GLYPHS = ["®", "©", "℗", "@", "φ", "&", "ß", "Θ", "θ"]
+    PROBLEMATIC_GLYPHS: ClassVar[list[str]] = ["®", "©", "℗", "@", "φ", "&", "ß", "Θ", "θ"]
 
     def test_no_holes_become_filled(
         self, lato_reader: FontReader, transformer: GlyphTransformer
@@ -330,9 +331,7 @@ class TestWindingPreservationGeneral:
                     f"(outers: {original_outers} -> {new_outers})"
                 )
 
-        assert not failures, (
-            "The following glyphs lost ALL their holes:\n" + "\n".join(failures)
-        )
+        assert not failures, "The following glyphs lost ALL their holes:\n" + "\n".join(failures)
 
     def test_transformed_contours_have_valid_winding(
         self, lato_reader: FontReader, transformer: GlyphTransformer

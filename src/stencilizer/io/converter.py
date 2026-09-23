@@ -6,20 +6,16 @@ and our domain models (Glyph, Contour, Point).
 
 from typing import Any
 
-from fontTools.pens.recordingPen import RecordingPen
-from fontTools.pens.t2CharStringPen import T2CharStringPen
-from fontTools.pens.ttGlyphPen import TTGlyphPen
-from fontTools.ttLib import TTFont
+from fontTools.pens.recordingPen import RecordingPen  # type: ignore[import-untyped]
+from fontTools.pens.t2CharStringPen import T2CharStringPen  # type: ignore[import-untyped]
+from fontTools.pens.ttGlyphPen import TTGlyphPen  # type: ignore[import-untyped]
+from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 
 from stencilizer.domain.contour import Contour, Point, PointType
 from stencilizer.domain.glyph import Glyph, GlyphMetadata
 
 
-def fonttools_glyph_to_domain(
-    name: str,
-    fonttools_glyph: Any,
-    font: TTFont
-) -> Glyph:
+def fonttools_glyph_to_domain(name: str, fonttools_glyph: Any, font: TTFont) -> Glyph:
     """Convert fonttools glyph to domain Glyph model.
 
     Handles both TrueType (quadratic curves) and OpenType/CFF (cubic curves).
@@ -67,11 +63,7 @@ def fonttools_glyph_to_domain(
     return glyph
 
 
-def domain_glyph_to_fonttools(
-    glyph: Glyph,
-    original_glyph: Any,
-    font: TTFont
-) -> None:
+def domain_glyph_to_fonttools(glyph: Glyph, original_glyph: Any, font: TTFont) -> None:
     """Update fonttools glyph from domain model.
 
     Converts domain Glyph back to fonttools representation and updates
@@ -180,10 +172,7 @@ def _extract_glyph_metadata(name: str, font: TTFont) -> GlyphMetadata:
                 break
 
     return GlyphMetadata(
-        name=name,
-        unicode=unicode_value,
-        advance_width=advance_width,
-        left_side_bearing=lsb
+        name=name, unicode=unicode_value, advance_width=advance_width, left_side_bearing=lsb
     )
 
 
@@ -198,7 +187,7 @@ def _update_truetype_glyph(glyph: Glyph, _: Any, font: TTFont) -> None:
     glyf_table = font["glyf"]
     glyph_name = glyph.name
 
-    pen = TTGlyphPen(font.getGlyphSet())  # type: ignore[arg-type]
+    pen = TTGlyphPen(font.getGlyphSet())
 
     for contour in glyph.contours:
         if not contour.points:
@@ -252,13 +241,13 @@ def _update_cff_glyph(glyph: Glyph, _: Any, font: TTFont) -> None:
         font: The TTFont object
     """
     cff_table = font["CFF "]
-    top_dict = cff_table.cff.topDictIndex[0]  # type: ignore[union-attr]
+    top_dict = cff_table.cff.topDictIndex[0]
     charstrings = top_dict.CharStrings
     glyph_name = glyph.name
     private = top_dict.Private
-    global_subrs = cff_table.cff.GlobalSubrs  # type: ignore[union-attr]
+    global_subrs = cff_table.cff.GlobalSubrs
 
-    pen = T2CharStringPen(width=glyph.metadata.advance_width, glyphSet=font.getGlyphSet())  # type: ignore[arg-type]
+    pen = T2CharStringPen(width=glyph.metadata.advance_width, glyphSet=font.getGlyphSet())
 
     for contour in glyph.contours:
         # Reverse points to restore CFF winding convention
@@ -283,11 +272,7 @@ def _update_cff_glyph(glyph: Glyph, _: Any, font: TTFont) -> None:
                     p2 = points[i + 1]
                     p3 = points[i + 2]
 
-                    pen.curveTo(
-                        (p1.x, p1.y),
-                        (p2.x, p2.y),
-                        (p3.x, p3.y)
-                    )
+                    pen.curveTo((p1.x, p1.y), (p2.x, p2.y), (p3.x, p3.y))
                     i += 3
                 else:
                     i += 1

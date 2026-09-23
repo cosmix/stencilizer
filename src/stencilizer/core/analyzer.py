@@ -115,47 +115,12 @@ class GlyphAnalyzer:
                 nested_outers=[],
             )
 
-        outer_contours: list[int] = []
-        inner_contours: list[int] = []
-        contour_is_outer: dict[int, bool] = {}
-
-        # Classify contours by winding direction
-        # TrueType convention: outer contours are clockwise (negative area),
-        # inner contours (holes) are counter-clockwise (positive area)
-        for idx, contour in enumerate(glyph.contours):
-            area = signed_area(contour.points)
-            if area < 0:
-                # Negative area = clockwise = outer contour (TrueType convention)
-                outer_contours.append(idx)
-                contour_is_outer[idx] = True
-            elif area > 0:
-                # Positive area = counter-clockwise = inner contour (hole)
-                inner_contours.append(idx)
-                contour_is_outer[idx] = False
-            # Skip degenerate contours (area == 0)
+        outer_contours, inner_contours, contour_is_outer = self._classify_contours(glyph.contours)
 
         # Build complete nesting tree
-        nesting_tree, nested_outers = self._build_nesting_tree(
-            glyph.contours, contour_is_outer
-        )
+        nesting_tree, nested_outers = self._build_nesting_tree(glyph.contours, contour_is_outer)
 
-        # Determine containment relationships (for backward compatibility)
-        containment: dict[int, int] = {}
-        islands: list[int] = []
-
-        for inner_idx in inner_contours:
-            inner_contour = glyph.contours[inner_idx]
-            containing_outer = self._find_containing_outer(
-                inner_contour, glyph.contours, outer_contours
-            )
-
-            if containing_outer is not None:
-                containment[inner_idx] = containing_outer
-
-                # Check if this inner contour is an island
-                # (all points inside exactly one outer contour)
-                if self._is_island(inner_contour, glyph.contours[containing_outer]):
-                    islands.append(inner_idx)
+        containment, islands = self._find_islands(glyph.contours, inner_contours, outer_contours)
 
         return ContourHierarchy(
             outer_contours=outer_contours,
@@ -165,6 +130,42 @@ class GlyphAnalyzer:
             nesting_tree=nesting_tree,
             nested_outers=nested_outers,
         )
+
+    @staticmethod
+    def _classify_contours(
+        contours: list[Contour],
+    ) -> tuple[list[int], list[int], dict[int, bool]]:
+        outer_contours: list[int] = []
+        inner_contours: list[int] = []
+        contour_is_outer: dict[int, bool] = {}
+
+        # TrueType convention: negative area is clockwise (outer).
+        for idx, contour in enumerate(contours):
+            area = signed_area(contour.points)
+            if area < 0:
+                outer_contours.append(idx)
+                contour_is_outer[idx] = True
+            elif area > 0:
+                inner_contours.append(idx)
+                contour_is_outer[idx] = False
+
+        return outer_contours, inner_contours, contour_is_outer
+
+    def _find_islands(
+        self, contours: list[Contour], inner_contours: list[int], outer_contours: list[int]
+    ) -> tuple[dict[int, int], list[int]]:
+        containment: dict[int, int] = {}
+        islands: list[int] = []
+
+        for inner_idx in inner_contours:
+            inner_contour = contours[inner_idx]
+            containing_outer = self._find_containing_outer(inner_contour, contours, outer_contours)
+            if containing_outer is not None:
+                containment[inner_idx] = containing_outer
+                if self._is_island(inner_contour, contours[containing_outer]):
+                    islands.append(inner_idx)
+
+        return containment, islands
 
     def _find_containing_outer(
         self,
@@ -251,40 +252,7 @@ class GlyphAnalyzer:
         if n == 0:
             return {}, []
 
-        # Calculate bounding box areas for each contour (used for sorting)
-        bbox_areas: dict[int, float] = {}
-        for idx, contour in enumerate(contours):
-            if idx not in contour_is_outer:
-                continue
-            bbox = contour.bounding_box()
-            bbox_areas[idx] = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
-
-        # For each contour, find its immediate parent (smallest containing contour)
-        parent_map: dict[int, int | None] = {}
-
-        for idx in contour_is_outer:
-            contour = contours[idx]
-            if not contour.points:
-                parent_map[idx] = None
-                continue
-
-            # Test point for containment
-            test_point = contour.points[0]
-
-            # Find all contours that contain this one
-            candidates: list[int] = []
-            for other_idx in contour_is_outer:
-                if other_idx == idx:
-                    continue
-                other_contour = contours[other_idx]
-                if point_in_polygon(test_point, other_contour.points):
-                    candidates.append(other_idx)
-
-            if not candidates:
-                parent_map[idx] = None
-            else:
-                # Choose the smallest containing contour as parent
-                parent_map[idx] = min(candidates, key=lambda i: bbox_areas.get(i, float('inf')))
+        parent_map = self._find_parents(contours, contour_is_outer)
 
         # Build tree nodes with depth calculation
         def get_depth(idx: int, memo: dict[int, int]) -> int:
@@ -321,10 +289,50 @@ class GlyphAnalyzer:
             if node.is_outer and node.parent is not None:
                 parent_node = nesting_tree.get(node.parent)
                 if parent_node and not parent_node.is_outer:
-                    # This is a CW contour inside a CCW hole
                     nested_outers.append(idx)
 
         return nesting_tree, nested_outers
+
+    @staticmethod
+    def _find_parents(
+        contours: list[Contour], contour_is_outer: dict[int, bool]
+    ) -> dict[int, int | None]:
+        # Calculate bounding box areas for each contour (used for sorting)
+        bbox_areas: dict[int, float] = {}
+        for idx, contour in enumerate(contours):
+            if idx not in contour_is_outer:
+                continue
+            bbox = contour.bounding_box()
+            bbox_areas[idx] = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+
+        # For each contour, find its immediate parent (smallest containing contour)
+        parent_map: dict[int, int | None] = {}
+
+        for idx in contour_is_outer:
+            contour = contours[idx]
+            if not contour.points:
+                parent_map[idx] = None
+                continue
+
+            # Test point for containment
+            test_point = contour.points[0]
+
+            # Find all contours that contain this one
+            candidates: list[int] = []
+            for other_idx in contour_is_outer:
+                if other_idx == idx:
+                    continue
+                other_contour = contours[other_idx]
+                if point_in_polygon(test_point, other_contour.points):
+                    candidates.append(other_idx)
+
+            if not candidates:
+                parent_map[idx] = None
+            else:
+                # Choose the smallest containing contour as parent
+                parent_map[idx] = min(candidates, key=lambda i: bbox_areas.get(i, float("inf")))
+
+        return parent_map
 
 
 def get_island_glyphs(glyphs: list[Glyph]) -> list[Glyph]:

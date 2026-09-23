@@ -6,9 +6,9 @@ import pytest
 
 from stencilizer.config import BridgeConfig
 from stencilizer.core.analyzer import GlyphAnalyzer
-from stencilizer.core.bridge import BridgeGenerator, BridgePlacer
 from stencilizer.core.geometry import signed_area
 from stencilizer.core.surgery import GlyphTransformer
+from stencilizer.domain.contour import Contour
 from stencilizer.io import FontReader
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
@@ -34,13 +34,13 @@ def get_glyph_by_name(reader: FontReader, name: str):
     return reader.get_glyph(name)
 
 
-def analyze_contours(contours, label=""):
+def analyze_contours(contours: list[Contour], label: str = "") -> tuple[float, float]:
     """Print detailed analysis of contours."""
     print(f"\n=== {label} ===")
     print(f"Total contours: {len(contours)}")
 
-    total_outer_area = 0
-    total_hole_area = 0
+    total_outer_area = 0.0
+    total_hole_area = 0.0
 
     for i, contour in enumerate(contours):
         area = signed_area(contour.points)
@@ -77,9 +77,7 @@ class TestDiagnostic:
     def transformer(self):
         analyzer = GlyphAnalyzer()
         config = BridgeConfig(width_percent=60.0, use_spanning_bridges=True)
-        placer = BridgePlacer(config)
-        generator = BridgeGenerator(config)
-        return GlyphTransformer(analyzer, placer, generator, bridge_config=config)
+        return GlyphTransformer(analyzer=analyzer, bridge_config=config)
 
     def test_diagnose_registered(self, reader, transformer):
         """Diagnose ® transformation."""
@@ -161,7 +159,7 @@ class TestDiagnostic:
             if glyph is None:
                 continue
 
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             _, orig_hole = analyze_contours(glyph.contours, f"ORIGINAL {name}")
 
             if orig_hole == 0:

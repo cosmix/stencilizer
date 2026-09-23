@@ -25,9 +25,7 @@ class TestContourClassification:
         ]
         contour = Contour(points=points)
 
-        metadata = GlyphMetadata(
-            name="test", unicode=None, advance_width=200, left_side_bearing=0
-        )
+        metadata = GlyphMetadata(name="test", unicode=None, advance_width=200, left_side_bearing=0)
         glyph = Glyph(metadata=metadata, contours=[contour])
 
         analyzer = GlyphAnalyzer()
@@ -48,9 +46,7 @@ class TestContourClassification:
         ]
         contour = Contour(points=points)
 
-        metadata = GlyphMetadata(
-            name="test", unicode=None, advance_width=200, left_side_bearing=0
-        )
+        metadata = GlyphMetadata(name="test", unicode=None, advance_width=200, left_side_bearing=0)
         glyph = Glyph(metadata=metadata, contours=[contour])
 
         analyzer = GlyphAnalyzer()
@@ -82,9 +78,7 @@ class TestContourClassification:
             ]
         )
 
-        metadata = GlyphMetadata(
-            name="test", unicode=None, advance_width=200, left_side_bearing=0
-        )
+        metadata = GlyphMetadata(name="test", unicode=None, advance_width=200, left_side_bearing=0)
         glyph = Glyph(metadata=metadata, contours=[outer, inner])
 
         analyzer = GlyphAnalyzer()
@@ -119,9 +113,7 @@ class TestContainmentDetection:
             ]
         )
 
-        metadata = GlyphMetadata(
-            name="test", unicode=None, advance_width=200, left_side_bearing=0
-        )
+        metadata = GlyphMetadata(name="test", unicode=None, advance_width=200, left_side_bearing=0)
         glyph = Glyph(metadata=metadata, contours=[outer, inner])
 
         analyzer = GlyphAnalyzer()
@@ -152,9 +144,7 @@ class TestContainmentDetection:
             ]
         )
 
-        metadata = GlyphMetadata(
-            name="test", unicode=None, advance_width=400, left_side_bearing=0
-        )
+        metadata = GlyphMetadata(name="test", unicode=None, advance_width=400, left_side_bearing=0)
         glyph = Glyph(metadata=metadata, contours=[outer1, outer2])
 
         analyzer = GlyphAnalyzer()
@@ -188,9 +178,7 @@ class TestIslandIdentification:
             ]
         )
 
-        metadata = GlyphMetadata(
-            name="test", unicode=None, advance_width=200, left_side_bearing=0
-        )
+        metadata = GlyphMetadata(name="test", unicode=None, advance_width=200, left_side_bearing=0)
         glyph = Glyph(metadata=metadata, contours=[outer, inner])
 
         analyzer = GlyphAnalyzer()
@@ -230,9 +218,7 @@ class TestIslandIdentification:
             ]
         )
 
-        metadata = GlyphMetadata(
-            name="test", unicode=None, advance_width=300, left_side_bearing=0
-        )
+        metadata = GlyphMetadata(name="test", unicode=None, advance_width=300, left_side_bearing=0)
         glyph = Glyph(metadata=metadata, contours=[outer, inner1, inner2])
 
         analyzer = GlyphAnalyzer()
@@ -252,9 +238,7 @@ class TestIslandIdentification:
             ]
         )
 
-        metadata = GlyphMetadata(
-            name="test", unicode=None, advance_width=200, left_side_bearing=0
-        )
+        metadata = GlyphMetadata(name="test", unicode=None, advance_width=200, left_side_bearing=0)
         glyph = Glyph(metadata=metadata, contours=[outer])
 
         analyzer = GlyphAnalyzer()
@@ -268,9 +252,7 @@ class TestEdgeCases:
 
     def test_empty_glyph(self):
         """Empty glyph should return empty hierarchy."""
-        metadata = GlyphMetadata(
-            name="space", unicode=32, advance_width=200, left_side_bearing=0
-        )
+        metadata = GlyphMetadata(name="space", unicode=32, advance_width=200, left_side_bearing=0)
         glyph = Glyph(metadata=metadata, contours=[])
 
         analyzer = GlyphAnalyzer()
@@ -292,9 +274,7 @@ class TestEdgeCases:
             ]
         )
 
-        metadata = GlyphMetadata(
-            name="test", unicode=None, advance_width=200, left_side_bearing=0
-        )
+        metadata = GlyphMetadata(name="test", unicode=None, advance_width=200, left_side_bearing=0)
         glyph = Glyph(metadata=metadata, contours=[degenerate])
 
         analyzer = GlyphAnalyzer()
@@ -327,9 +307,7 @@ class TestGetIslandGlyphs:
             ]
         )
         glyph_with_island = Glyph(
-            metadata=GlyphMetadata(
-                name="O", unicode=79, advance_width=200, left_side_bearing=0
-            ),
+            metadata=GlyphMetadata(name="O", unicode=79, advance_width=200, left_side_bearing=0),
             contours=[outer, inner],
         )
 
@@ -343,9 +321,7 @@ class TestGetIslandGlyphs:
             ]
         )
         glyph_without_island = Glyph(
-            metadata=GlyphMetadata(
-                name="L", unicode=76, advance_width=100, left_side_bearing=0
-            ),
+            metadata=GlyphMetadata(name="L", unicode=76, advance_width=100, left_side_bearing=0),
             contours=[simple],
         )
 

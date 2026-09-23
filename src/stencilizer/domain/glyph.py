@@ -36,7 +36,7 @@ class GlyphMetadata:
             "name": self.name,
             "unicode": self.unicode,
             "advance_width": self.advance_width,
-            "lsb": self.left_side_bearing
+            "lsb": self.left_side_bearing,
         }
 
     @classmethod
@@ -53,7 +53,7 @@ class GlyphMetadata:
             name=data["name"],
             unicode=data["unicode"],
             advance_width=data["advance_width"],
-            left_side_bearing=data["lsb"]
+            left_side_bearing=data["lsb"],
         )
 
 
@@ -121,8 +121,7 @@ class Glyph:
             List of contours with clockwise winding direction
         """
         return [
-            contour for contour in self.contours
-            if contour.direction == WindingDirection.CLOCKWISE
+            contour for contour in self.contours if contour.direction == WindingDirection.CLOCKWISE
         ]
 
     def get_outer_contours(self) -> list[Contour]:
@@ -132,7 +131,8 @@ class Glyph:
             List of contours with counter-clockwise winding direction
         """
         return [
-            contour for contour in self.contours
+            contour
+            for contour in self.contours
             if contour.direction == WindingDirection.COUNTER_CLOCKWISE
         ]
 
@@ -145,7 +145,7 @@ class Glyph:
         return {
             "metadata": self.metadata.to_dict(),
             "contours": [c.to_dict() for c in self.contours],
-            "is_composite": self.is_composite()
+            "is_composite": self.is_composite(),
         }
 
     @classmethod

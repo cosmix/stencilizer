@@ -80,7 +80,7 @@ stencilizer input.ttf
 # Specify output path
 stencilizer input.ttf -o output.ttf
 
-# Adjust bridge width (30-110% of stroke width)
+# Adjust bridge width (30-110% of a reference stroke of 10% of font UPM)
 stencilizer input.ttf --bridge-width 70
 ```
 
@@ -151,7 +151,7 @@ For each island, the algorithm:
 
 1. Analyzes stroke geometry between inner and outer contours
 2. Determines optimal bridge orientation (vertical or horizontal)
-3. Calculates bridge width based on stroke dimensions
+3. Calculates bridge width as a percentage of a reference stroke of 10% of the font's UPM
 4. Places bridges to connect the island to the outer contour
 
 ### 3. Glyph Transformation
@@ -196,7 +196,7 @@ Analysis
   Glyphs with islands   42
   Total islands         67
   Estimated bridges     67
-  Bridge width          60% of stroke
+  Bridge width          60% of a reference stroke of 10% of font UPM
 
 ✓ Dry run complete – no changes made
 ```
@@ -268,7 +268,7 @@ Some fonts may not have enclosed contours. Use `--list-islands` to check which g
 
 ### Bridge width too wide/narrow
 
-Adjust the `--bridge-width` parameter (range: 30-110% of stroke width). Default is 60%.
+Adjust the `--bridge-width` parameter (range: 30-110% of a reference stroke of 10% of the font's UPM). Default is 60%.
 
 ### Processing errors
 

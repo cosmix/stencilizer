@@ -6,10 +6,12 @@ and extracting glyph data into domain models.
 
 from collections.abc import Iterator
 from pathlib import Path
+from typing import cast
 
-from fontTools.ttLib import TTFont
+from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 
 from stencilizer.domain.glyph import Glyph
+from stencilizer.exceptions import GlyphProcessingError
 from stencilizer.io.converter import fonttools_glyph_to_domain
 
 
@@ -65,6 +67,13 @@ class FontReader:
         return "TrueType"
 
     @property
+    def font(self) -> TTFont:
+        """Return the loaded font."""
+        if self._font is None:
+            raise RuntimeError("Font not loaded. Call load() first.")
+        return self._font
+
+    @property
     def units_per_em(self) -> int:
         """Return font's units per em.
 
@@ -80,7 +89,7 @@ class FontReader:
         if self._font is None:
             raise RuntimeError("Font not loaded. Call load() first.")
 
-        return self._font["head"].unitsPerEm  # type: ignore[attr-defined]
+        return cast("int", self._font["head"].unitsPerEm)
 
     @property
     def glyph_count(self) -> int:
@@ -95,7 +104,7 @@ class FontReader:
         if self._font is None:
             raise RuntimeError("Font not loaded. Call load() first.")
 
-        return self._font["maxp"].numGlyphs
+        return cast("int", self._font["maxp"].numGlyphs)
 
     def iter_glyphs(self) -> Iterator[Glyph]:
         """Iterate over all glyphs, converting to domain model.
@@ -115,7 +124,10 @@ class FontReader:
         glyph_order = self._font.getGlyphOrder()
 
         for glyph_name in glyph_order:
-            glyph = self.get_glyph(glyph_name)
+            try:
+                glyph = self.get_glyph(glyph_name)
+            except GlyphProcessingError:
+                continue
             if glyph is not None:
                 yield glyph
 
@@ -142,12 +154,10 @@ class FontReader:
 
         try:
             return fonttools_glyph_to_domain(
-                name=name,
-                fonttools_glyph=fonttools_glyph,
-                font=self._font
+                name=name, fonttools_glyph=fonttools_glyph, font=self._font
             )
-        except Exception:
-            return None
+        except Exception as e:
+            raise GlyphProcessingError(name, str(e)) from e
 
     def close(self) -> None:
         """Close the font file and free resources."""

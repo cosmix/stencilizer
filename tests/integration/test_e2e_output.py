@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from fontTools.ttLib import TTFont
+from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 
 from stencilizer.config import StencilizerSettings
 from stencilizer.core.processor import FontProcessor
@@ -33,8 +33,8 @@ def analyze_glyph_from_font(font: TTFont, glyph_name: str):
         start = end + 1
 
     # Calculate areas
-    outer_area = 0
-    hole_area = 0
+    outer_area = 0.0
+    hole_area = 0.0
 
     for contour in contours:
         # Calculate signed area
@@ -88,14 +88,19 @@ class TestEndToEndOutput:
             orig_contours, orig_outer, orig_hole = analyze_glyph_from_font(orig_font, "b")
             out_contours, out_outer, out_hole = analyze_glyph_from_font(out_font, "b")
 
-            print(f"\nOriginal 'b': {orig_contours} contours, outer={orig_outer:.0f}, hole={orig_hole:.0f}")
-            print(f"Output 'b': {out_contours} contours, outer={out_outer:.0f}, hole={out_hole:.0f}")
+            print(
+                f"\nOriginal 'b': {orig_contours} contours, outer={orig_outer:.0f}, hole={orig_hole:.0f}"
+            )
+            print(
+                f"Output 'b': {out_contours} contours, outer={out_outer:.0f}, hole={out_hole:.0f}"
+            )
 
             orig_font.close()
             out_font.close()
 
             # Verify holes exist in output
-            assert out_hole is not None and out_hole > 0, f"'b' lost all holes! outer={out_outer}, hole={out_hole}"
+            assert out_hole is not None, f"'b' lost all holes! outer={out_outer}, hole={out_hole}"
+            assert out_hole > 0, f"'b' lost all holes! outer={out_outer}, hole={out_hole}"
 
             # Verify hole area didn't decrease too much
             if orig_hole is not None and orig_hole > 0:
@@ -128,11 +133,17 @@ class TestEndToEndOutput:
             glyph_name = cmap.get(ord("®")) if cmap is not None else None
 
             if glyph_name:
-                orig_contours, orig_outer, orig_hole = analyze_glyph_from_font(orig_font, glyph_name)
+                orig_contours, orig_outer, orig_hole = analyze_glyph_from_font(
+                    orig_font, glyph_name
+                )
                 out_contours, out_outer, out_hole = analyze_glyph_from_font(out_font, glyph_name)
 
-                print(f"\nOriginal '®': {orig_contours} contours, outer={orig_outer:.0f}, hole={orig_hole:.0f}")
-                print(f"Output '®': {out_contours} contours, outer={out_outer:.0f}, hole={out_hole:.0f}")
+                print(
+                    f"\nOriginal '®': {orig_contours} contours, outer={orig_outer:.0f}, hole={orig_hole:.0f}"
+                )
+                print(
+                    f"Output '®': {out_contours} contours, outer={out_outer:.0f}, hole={out_hole:.0f}"
+                )
 
                 if orig_hole is not None and orig_hole > 0 and out_hole is not None:
                     ratio = out_hole / orig_hole
