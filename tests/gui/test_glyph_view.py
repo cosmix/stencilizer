@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from PySide6.QtCore import QPointF, QRectF
 from PySide6.QtGui import QColor
 from pytestqt.qtbot import QtBot
 
@@ -10,7 +11,7 @@ from stencilizer.config.settings import GeometryConfig
 from stencilizer.core import FontProcessor
 from stencilizer.domain import Contour, Glyph, GlyphMetadata, Point
 from stencilizer.gui.glyph_view import ComparisonView, GlyphCanvas
-from stencilizer.gui.outline import glyph_frame
+from stencilizer.gui.outline import font_to_widget_transform, glyph_frame
 from stencilizer.gui.session import FontSession, PreviewResult
 
 
@@ -26,14 +27,14 @@ def _synthetic_glyph(advance_width: int, coordinates: list[tuple[float, float]])
     return Glyph(metadata, [Contour([Point(x, y) for x, y in coordinates])])
 
 
-def _contains_colour(canvas: GlyphCanvas, colour: QColor) -> bool:
-    """Return whether the canvas raster includes the requested RGB colour."""
+def _pixel_at(canvas: GlyphCanvas, point: QPointF) -> QColor:
+    """Return the rendered colour at a widget-space point, scaled to the grabbed raster."""
     image = canvas.grab().toImage()
-    return any(
-        QColor(image.pixel(x, y)).rgb() == colour.rgb()
-        for x in range(image.width())
-        for y in range(image.height())
-    )
+    scale_x = image.width() / canvas.width()
+    scale_y = image.height() / canvas.height()
+    x = min(max(round(point.x() * scale_x), 0), image.width() - 1)
+    y = min(max(round(point.y() * scale_y), 0), image.height() - 1)
+    return QColor(image.pixel(x, y))
 
 
 def test_show_preview_shares_one_frame(
@@ -108,19 +109,53 @@ def test_show_preview_displays_transform_failure(
 def test_canvas_paints_and_clears_glyph(
     qtbot: QtBot, processor: FontProcessor, roboto_path: Path
 ) -> None:
-    """A canvas paints glyph outlines in the text colour and clears them."""
+    """A canvas paints the O's stroke and counter in the right colours, and clears them."""
     session, result = _o_preview(processor, roboto_path)
     canvas = GlyphCanvas()
     qtbot.addWidget(canvas)
     canvas.resize(200, 200)
     canvas.show()
     frame = glyph_frame(result.original, session.ascender, session.descender)
-
     canvas.set_glyph(result.original, frame)
 
-    assert _contains_colour(canvas, canvas.palette().text().color())
+    target = QRectF(canvas.rect()).adjusted(8.0, 8.0, -8.0, -8.0)
+    transform = font_to_widget_transform(frame, target)
+    outer, inner = sorted(
+        result.original.contours,
+        key=lambda contour: contour.bounding_box()[2] - contour.bounding_box()[0],
+        reverse=True,
+    )
+    outer_bounds = outer.bounding_box()
+    inner_bounds = inner.bounding_box()
+    mid_y = (inner_bounds[1] + inner_bounds[3]) / 2.0
+    counter = transform.map(QPointF((inner_bounds[0] + inner_bounds[2]) / 2.0, mid_y))
+    left_stroke = transform.map(QPointF((outer_bounds[0] + inner_bounds[0]) / 2.0, mid_y))
+    right_stroke = transform.map(QPointF((outer_bounds[2] + inner_bounds[2]) / 2.0, mid_y))
+    outside = transform.map(QPointF((outer_bounds[0] + outer_bounds[2]) / 2.0, frame.top() + 5.0))
+    background = canvas.palette().base().color()
+    text_colour = canvas.palette().text().color()
+
+    assert _pixel_at(canvas, counter) == background
+    assert _pixel_at(canvas, left_stroke) == text_colour
+    assert _pixel_at(canvas, right_stroke) == text_colour
+    assert _pixel_at(canvas, outside) == background
+
     canvas.set_glyph(None, None)
-    assert not _contains_colour(canvas, canvas.palette().text().color())
+
+    assert _pixel_at(canvas, left_stroke) == background
+
+
+def test_comparison_view_gives_canvases_the_free_vertical_space(qtbot: QtBot) -> None:
+    """The canvas row absorbs a tall pane's height instead of splitting it evenly."""
+    view = ComparisonView()
+    qtbot.addWidget(view)
+    view.resize(600, 800)
+
+    with qtbot.waitExposed(view):
+        view.show()
+
+    assert view.before_canvas.height() > view.height() / 2
+    assert view.after_canvas.height() > view.height() / 2
 
 
 def test_clear_empties_canvases_and_label(

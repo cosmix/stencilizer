@@ -8,9 +8,10 @@ from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox
 from pytestqt.qtbot import QtBot
 
 from stencilizer.config import BridgeConfig
-from stencilizer.domain import Glyph
+from stencilizer.domain import Glyph, GlyphMetadata
 from stencilizer.gui.controller import GuiController
 from stencilizer.gui.main_window import MainWindow
+from stencilizer.gui.session import PreviewResult
 from stencilizer.io import FontReader
 from stencilizer.utils import ProcessingStats
 
@@ -161,6 +162,30 @@ def test_second_save_while_busy_keeps_first_output_path(
     assert path_a.exists()
 
 
+def test_save_finished_without_requested_save_does_not_report_saved(window: MainWindow) -> None:
+    """A save_finished signal a window save call never triggered leaves the status untouched."""
+    window.controller.save_finished.emit(ProcessingStats())
+
+    assert not window.statusBar().currentMessage().startswith("Saved")
+
+
+def test_preview_ready_without_session_leaves_comparison_empty(window: MainWindow) -> None:
+    """A preview_ready signal without a loaded session leaves the after canvas empty."""
+    original = Glyph(GlyphMetadata("empty", None, 100, 0), [])
+    result = PreviewResult(
+        glyph_name="empty",
+        original=original,
+        stenciled=None,
+        bridges_added=0,
+        error=None,
+        duration_ms=0.0,
+    )
+
+    window.controller.preview_ready.emit(result)
+
+    assert window.comparison.after_canvas.glyph is None
+
+
 def test_invalid_font_shows_load_warning(
     window: MainWindow, qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -241,6 +266,40 @@ def test_save_font_dialog_saves_selected_path(
         window.save_font_dialog()
 
     _assert_roboto_save(blocker.args[0], output_path)
+
+
+def test_save_font_dialog_without_session_does_nothing(
+    window: MainWindow, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The save dialog guard skips the file chooser entirely when nothing is loaded."""
+    calls: list[tuple[object, ...]] = []
+
+    def record_dialog(*args: object) -> tuple[str, str]:
+        """Record a getSaveFileName call that should never happen."""
+        calls.append(args)
+        return ("", "")
+
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", record_dialog)
+    busy_values: list[bool] = []
+    window.controller.busy_changed.connect(busy_values.append)
+
+    window.save_font_dialog()
+
+    assert calls == []
+    assert busy_values == []
+
+
+def test_save_font_dialog_cancelled_starts_no_save(
+    window: MainWindow, qtbot: QtBot, roboto_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cancelling the save dialog after a load starts no background save."""
+    _load_font(window, qtbot, roboto_path)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *_args: ("", ""))
+
+    with qtbot.assertNotEmitted(window.controller.save_finished):
+        window.save_font_dialog()
+
+    assert window.controller.is_busy is False
 
 
 def test_close_after_load_returns_without_hanging(

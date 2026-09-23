@@ -3,8 +3,10 @@
 import importlib.metadata
 import multiprocessing
 import os
+import stat
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -110,15 +112,12 @@ def test_create_window_without_font_has_no_session(qtbot: QtBot, tmp_path: Path)
     window.controller.shutdown()
 
 
-def test_main_sets_spawn_and_shows_window(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The production startup path configures spawn before creating Qt widgets."""
+def _stub_startup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> tuple[list[str], list[Path | None]]:
+    """Replace Qt and window creation with recorders and keep main's log file in tmp_path."""
     events: list[str] = []
-    methods: list[str] = []
     created_fonts: list[Path | None] = []
-
-    def set_start_method(method: str) -> None:
-        events.append("start-method")
-        methods.append(method)
 
     class ApplicationStub:
         """Record QApplication construction without starting Qt."""
@@ -144,16 +143,64 @@ def test_main_sets_spawn_and_shows_window(monkeypatch: pytest.MonkeyPatch) -> No
         created_fonts.append(font)
         return WindowStub()
 
-    monkeypatch.setattr(multiprocessing, "get_start_method", lambda **_kwargs: None)
-    monkeypatch.setattr(multiprocessing, "set_start_method", set_start_method)
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setattr(app, "QApplication", ApplicationStub)
     monkeypatch.setattr(app, "create_window", create_window)
+    return events, created_fonts
+
+
+def test_default_log_file_is_private_and_unique(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Each run gets its own freshly created log file that only its owner can read."""
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+
+    first = app.default_log_file()
+    second = app.default_log_file()
+
+    assert first != second
+    for log_file in (first, second):
+        assert log_file.is_file()
+        assert log_file.parent == tmp_path
+        assert log_file.match("stencilizer-gui-*.log")
+        if os.name == "posix":
+            assert stat.S_IMODE(log_file.stat().st_mode) == 0o600
+
+
+def test_main_sets_spawn_and_shows_window(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The production startup path configures spawn before creating Qt widgets."""
+    events, created_fonts = _stub_startup(monkeypatch, tmp_path)
+    methods: list[str] = []
+
+    def set_start_method(method: str) -> None:
+        events.append("start-method")
+        methods.append(method)
+
+    monkeypatch.setattr(multiprocessing, "get_start_method", lambda **_kwargs: None)
+    monkeypatch.setattr(multiprocessing, "set_start_method", set_start_method)
 
     assert app.main(["x.ttf"]) == 0
     assert methods == ["spawn"]
     assert events.index("start-method") < events.index("application")
     assert created_fonts == [Path("x.ttf")]
     assert events[-1] == "show"
+
+
+def test_main_keeps_an_existing_start_method(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A start method chosen before main runs is left in place."""
+    events, created_fonts = _stub_startup(monkeypatch, tmp_path)
+    methods: list[str] = []
+
+    monkeypatch.setattr(multiprocessing, "get_start_method", lambda **_kwargs: "spawn")
+    monkeypatch.setattr(multiprocessing, "set_start_method", methods.append)
+
+    assert app.main(["x.ttf"]) == 0
+    assert methods == []
+    assert created_fonts == [Path("x.ttf")]
+    assert events == ["application", "show"]
+    assert len(list(tmp_path.glob("stencilizer-gui-*.log"))) == 1
 
 
 def test_main_subprocess_saves_with_spawn(roboto_path: Path, tmp_path: Path) -> None:
@@ -164,7 +211,7 @@ def test_main_subprocess_saves_with_spawn(roboto_path: Path, tmp_path: Path) -> 
 
     result = subprocess.run(
         [sys.executable, str(driver), str(roboto_path), str(output_path)],
-        env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
+        env={**os.environ, "QT_QPA_PLATFORM": "offscreen", "TMPDIR": str(tmp_path)},
         capture_output=True,
         text=True,
         timeout=180,
@@ -174,6 +221,7 @@ def test_main_subprocess_saves_with_spawn(roboto_path: Path, tmp_path: Path) -> 
     assert result.returncode == 0
     assert "start-method=spawn processed=562 errors=0" in result.stdout
     assert "Traceback" not in result.stderr
+    assert len(list(tmp_path.glob("stencilizer-gui-*.log"))) == 1
     with FontReader(output_path) as reader:
         glyph = reader.get_glyph("O")
     assert glyph is not None

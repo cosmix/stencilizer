@@ -82,6 +82,25 @@ def test_set_glyphs_replaces_contents(qtbot: QtBot, roboto_path: Path) -> None:
     assert _grid_items(grid)[0].text() == "B"
 
 
+def test_clear_after_selection_emits_no_signal(qtbot: QtBot, roboto_path: Path) -> None:
+    """Clearing a populated, selected grid emits no selection and does not raise.
+
+    The middle glyph is selected (rather than the first) so removing it does not shift an
+    adjacent item into the current position first: clearing goes straight to no current item.
+    """
+    grid = GlyphGrid()
+    qtbot.addWidget(grid)
+    grid.set_glyphs(_load_glyphs(roboto_path, ["O", "B", "eight"]), 2146, -555)
+    assert grid.select_glyph("B")
+    selected: list[str] = []
+    grid.glyph_selected.connect(selected.append)
+
+    grid.clear()
+
+    assert grid.count() == 0
+    assert selected == []
+
+
 def test_keyboard_navigation_emits_selection(qtbot: QtBot, roboto_path: Path) -> None:
     """The right arrow moves from O to B and emits the new glyph name."""
     grid = GlyphGrid()

@@ -1,8 +1,8 @@
 """Launch the stencilizer desktop application."""
 
 import argparse
-import getpass
 import multiprocessing
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -36,8 +36,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def default_log_file() -> Path:
-    """Return the per-user temporary log-file location."""
-    return Path(tempfile.gettempdir()) / f"stencilizer-gui-{getpass.getuser()}.log"
+    """Create a private (0600), randomly named log file for this run in the temp dir."""
+    descriptor, name = tempfile.mkstemp(prefix="stencilizer-gui-", suffix=".log")
+    os.close(descriptor)
+    return Path(name)
 
 
 def create_window(font: Path | None, log_file: Path) -> MainWindow:
