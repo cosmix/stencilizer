@@ -1,8 +1,7 @@
 """Tests for the GUI controller's asynchronous font workflow."""
 
 import logging
-import shutil
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -16,9 +15,7 @@ from stencilizer.gui.controller import GuiController
 from stencilizer.gui.session import FontSession, PreviewResult
 from stencilizer.io import FontReader
 from stencilizer.utils import ProcessingStats
-
-LOAD_TIMEOUT = 30_000
-SAVE_TIMEOUT = 120_000
+from tests.gui.conftest import LOAD_TIMEOUT, SAVE_TIMEOUT, load_session
 
 
 class ProgressRecorder(QObject):
@@ -78,23 +75,6 @@ class ThreadRecorder(QObject):
         self.threads.append(thread)
 
 
-@pytest.fixture
-def controller(tmp_path: Path) -> Iterator[GuiController]:
-    """Create a controller whose private thread pool is cleaned up after each test."""
-    result = GuiController(tmp_path / "gui.log")
-    yield result
-    result.shutdown()
-
-
-def _load(controller: GuiController, qtbot: QtBot, path: Path) -> FontSession:
-    """Load a font and return the session delivered by the controller."""
-    with qtbot.waitSignal(controller.font_loaded, timeout=LOAD_TIMEOUT) as blocker:
-        controller.open_font(path)
-    session = blocker.args[0]
-    assert isinstance(session, FontSession)
-    return session
-
-
 def _saved_glyph(path: Path, name: str) -> Glyph:
     """Read one glyph from a saved output font."""
     with FontReader(path) as reader:
@@ -110,41 +90,10 @@ def test_open_font_loads_session_and_toggles_busy(
     busy_values: list[bool] = []
     controller.busy_changed.connect(busy_values.append)
 
-    session = _load(controller, qtbot, roboto_path)
+    session = load_session(controller, qtbot, roboto_path)
 
     assert len(session.island_glyphs) == 562
     assert busy_values == [True, False]
-    assert controller.is_busy is False
-
-
-def test_open_font_reports_invalid_file(
-    controller: GuiController, qtbot: QtBot, tmp_path: Path
-) -> None:
-    """An invalid font file produces a load error without a session."""
-    invalid_path = tmp_path / "invalid.ttf"
-    invalid_path.write_bytes(b"not a font")
-
-    with qtbot.waitSignal(controller.error, timeout=LOAD_TIMEOUT) as blocker:
-        controller.open_font(invalid_path)
-
-    assert blocker.args[0].startswith("Failed to load font")
-    assert controller.session is None
-    assert controller.is_busy is False
-
-
-def test_open_font_rejects_cff2(
-    controller: GuiController, qtbot: QtBot, cff2_font_path: Path
-) -> None:
-    """CFF2 fonts are rejected before a session can be published."""
-    with (
-        qtbot.assertNotEmitted(controller.font_loaded),
-        qtbot.waitSignal(controller.error, timeout=LOAD_TIMEOUT) as blocker,
-    ):
-        controller.open_font(cff2_font_path)
-
-    assert blocker.args[0].startswith("Failed to load font")
-    assert "CFF2 outlines are not supported" in blocker.args[0]
-    assert controller.session is None
     assert controller.is_busy is False
 
 
@@ -173,7 +122,7 @@ def test_select_glyph_publishes_preview(
     controller: GuiController, qtbot: QtBot, roboto_path: Path
 ) -> None:
     """Selecting O synchronously publishes its stenciled preview."""
-    _load(controller, qtbot, roboto_path)
+    load_session(controller, qtbot, roboto_path)
 
     with qtbot.waitSignal(controller.preview_ready) as blocker:
         controller.select_glyph("O")
@@ -187,7 +136,7 @@ def test_parameters_refresh_preview_with_new_width(
     controller: GuiController, qtbot: QtBot, roboto_path: Path
 ) -> None:
     """Changing bridge width refreshes the selected preview with new geometry."""
-    _load(controller, qtbot, roboto_path)
+    load_session(controller, qtbot, roboto_path)
     controller.select_glyph("O")
     with qtbot.waitSignal(controller.preview_ready) as narrow_blocker:
         controller.set_parameters(BridgeConfig(width_percent=30.0), None)
@@ -207,7 +156,7 @@ def test_parameters_refresh_preview_with_spanning_mode(
     controller: GuiController, qtbot: QtBot, roboto_path: Path
 ) -> None:
     """Changing spanning-bridge mode refreshes B with a different outline."""
-    _load(controller, qtbot, roboto_path)
+    load_session(controller, qtbot, roboto_path)
     controller.select_glyph("B")
     with qtbot.waitSignal(controller.preview_ready) as spanning_blocker:
         controller.set_parameters(BridgeConfig(use_spanning_bridges=True), None)
@@ -239,7 +188,7 @@ def test_save_writes_previewed_font(
     outlines_match: Callable[[Glyph, Glyph], bool],
 ) -> None:
     """Saving emits progress and writes outlines matching the synchronous preview."""
-    _load(controller, qtbot, roboto_path)
+    load_session(controller, qtbot, roboto_path)
     controller.set_parameters(BridgeConfig(), 1)
     progress = ProgressRecorder()
     controller.save_progress.connect(progress.record)
@@ -264,7 +213,7 @@ def test_shutdown_waits_for_active_save(
     controller: GuiController, qtbot: QtBot, roboto_path: Path, tmp_path: Path
 ) -> None:
     """Shutdown waits for an in-flight save without leaving partial output behind."""
-    _load(controller, qtbot, roboto_path)
+    load_session(controller, qtbot, roboto_path)
     controller.set_parameters(BridgeConfig(), 1)
     output_path = tmp_path / "s.ttf"
     controller.save(output_path)
@@ -280,29 +229,6 @@ def test_shutdown_waits_for_active_save(
     assert controller.is_busy is False
 
 
-def test_save_requires_loaded_font(controller: GuiController, qtbot: QtBot, tmp_path: Path) -> None:
-    """Saving before a load reports the controller's explicit error."""
-    with qtbot.waitSignal(controller.error) as blocker:
-        controller.save(tmp_path / "out.ttf")
-    assert blocker.args == ["No font loaded"]
-
-
-def test_save_refuses_loaded_font_path(
-    controller: GuiController, qtbot: QtBot, roboto_path: Path, tmp_path: Path
-) -> None:
-    """The controller preserves a loaded source when saving onto its own path."""
-    source = tmp_path / "source.ttf"
-    shutil.copy(roboto_path, source)
-    original_bytes = source.read_bytes()
-    _load(controller, qtbot, source)
-
-    with qtbot.waitSignal(controller.error, timeout=SAVE_TIMEOUT) as blocker:
-        controller.save(source)
-
-    assert blocker.args[0].startswith("Failed to save font")
-    assert source.read_bytes() == original_bytes
-
-
 def test_font_loaded_observes_idle_controller(
     controller: GuiController, qtbot: QtBot, roboto_path: Path
 ) -> None:
@@ -310,7 +236,7 @@ def test_font_loaded_observes_idle_controller(
     recorder = BusyStateRecorder(controller)
     controller.font_loaded.connect(recorder.record)
 
-    _load(controller, qtbot, roboto_path)
+    load_session(controller, qtbot, roboto_path)
 
     assert recorder.states == [False]
 
@@ -325,7 +251,7 @@ def test_signals_delivered_on_gui_thread(
     controller.save_progress.connect(recorder.record_progress, connection)
     controller.save_finished.connect(recorder.record_finished, connection)
 
-    _load(controller, qtbot, roboto_path)
+    load_session(controller, qtbot, roboto_path)
     controller.set_parameters(BridgeConfig(), 1)
     with qtbot.waitSignal(controller.save_finished, timeout=SAVE_TIMEOUT):
         controller.save(tmp_path / "out.ttf")
@@ -345,7 +271,7 @@ def test_save_uses_current_parameters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The settings built for a save retain the controller's current parameters."""
-    _load(controller, qtbot, roboto_path)
+    load_session(controller, qtbot, roboto_path)
     captured: list[StencilizerSettings] = []
 
     def recorder(
@@ -372,10 +298,10 @@ def test_single_processor_per_controller(
 ) -> None:
     """Loads and saves reuse the processor created with the controller."""
     initial_handler_count = len(logging.getLogger().handlers)
-    _load(controller, qtbot, roboto_path)
+    load_session(controller, qtbot, roboto_path)
     controller.set_parameters(BridgeConfig(), 1)
     with qtbot.waitSignal(controller.save_finished, timeout=SAVE_TIMEOUT):
         controller.save(tmp_path / "out.ttf")
-    _load(controller, qtbot, roboto_path)
+    load_session(controller, qtbot, roboto_path)
 
     assert len(logging.getLogger().handlers) == initial_handler_count

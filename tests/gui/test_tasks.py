@@ -3,7 +3,7 @@
 from PySide6.QtCore import QObject, Qt, QThreadPool
 from pytestqt.qtbot import QtBot
 
-from stencilizer.exceptions import StencilizerError
+from stencilizer.exceptions import GlyphNotFoundError, StencilizerError
 from stencilizer.gui.tasks import BackgroundTask, ProgressFn
 
 
@@ -107,3 +107,61 @@ def test_task_disables_auto_delete() -> None:
         assert task.autoDelete() is False
     finally:
         pool.waitForDone()
+
+
+def test_run_directly_emits_finished_with_work_result() -> None:
+    """Calling run() on the test thread still reports the work function's return value."""
+    task = BackgroundTask(lambda _progress: 99)
+    results: list[object] = []
+    task.signals.finished.connect(results.append)
+
+    task.run()
+
+    assert results == [99]
+
+
+def test_run_directly_emits_failed_for_stencilizer_error() -> None:
+    """A StencilizerError subclass raised on the test thread reports its own message."""
+    error = GlyphNotFoundError("nope")
+
+    def work(_progress: ProgressFn) -> object:
+        raise error
+
+    task = BackgroundTask(work)
+    messages: list[str] = []
+    task.signals.failed.connect(messages.append)
+
+    task.run()
+
+    assert messages == [str(error)]
+
+
+def test_run_directly_emits_failed_with_unexpected_prefix_for_runtime_error() -> None:
+    """A plain RuntimeError raised on the test thread gains the unexpected-error prefix."""
+
+    def work(_progress: ProgressFn) -> object:
+        raise RuntimeError("x")
+
+    task = BackgroundTask(work)
+    messages: list[str] = []
+    task.signals.failed.connect(messages.append)
+
+    task.run()
+
+    assert messages == ["Unexpected error: x"]
+
+
+def test_run_directly_forwards_progress_from_work_callback() -> None:
+    """Progress reported by the work function through its callback reaches the signal."""
+
+    def work(progress: ProgressFn) -> object:
+        progress(2, 5)
+        return None
+
+    task = BackgroundTask(work)
+    receiver = ProgressReceiver()
+    task.signals.progress.connect(receiver.receive)
+
+    task.run()
+
+    assert receiver.values == [(2, 5)]
