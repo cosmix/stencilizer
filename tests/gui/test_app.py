@@ -98,7 +98,7 @@ def test_create_window_loads_font(qtbot: QtBot, roboto_path: Path, tmp_path: Pat
     with qtbot.waitSignal(window.controller.font_loaded, timeout=30_000):
         pass
 
-    assert window.grid.count() == 562
+    assert window.grid.count() == 1027
     assert window.comparison.after_canvas.glyph is not None
     window.controller.shutdown()
 

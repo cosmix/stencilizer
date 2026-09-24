@@ -279,6 +279,7 @@ def test_save_uses_current_parameters(
         _output_path: Path,
         settings: StencilizerSettings,
         _progress: ProgressCallback | None = None,
+        **_kwargs: object,
     ) -> ProcessingStats:
         """Record the controller-created settings and finish immediately."""
         captured.append(settings)

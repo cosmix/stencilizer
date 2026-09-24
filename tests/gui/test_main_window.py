@@ -71,7 +71,7 @@ def test_load_font_populates_window_and_selects_first_glyph(
     _load_font(window, qtbot, roboto_path)
 
     current_item = window.grid.currentItem()
-    assert window.grid.count() == 562
+    assert window.grid.count() == 1027
     assert window.controls.save_button.isEnabled()
     assert current_item is not None
     assert current_item.text() == ".notdef"
