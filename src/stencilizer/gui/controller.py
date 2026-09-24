@@ -1,10 +1,11 @@
 """Coordinate font loading, previews, and saves for the desktop GUI."""
 
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from PySide6.QtCore import QObject, Qt, QThreadPool, Signal
+from PySide6.QtCore import QObject, Qt, QThreadPool, QTimer, Signal
 
 from stencilizer.config import (
     BridgeConfig,
@@ -13,6 +14,7 @@ from stencilizer.config import (
     ProcessingConfig,
     StencilizerSettings,
 )
+from stencilizer.config.settings import BridgeDirection
 from stencilizer.core import FontProcessor
 from stencilizer.exceptions import StencilizerError
 from stencilizer.gui.session import FontSession
@@ -20,6 +22,9 @@ from stencilizer.gui.tasks import BackgroundTask, ProgressFn
 
 if TYPE_CHECKING:
     from stencilizer.utils import ProcessingStats
+
+
+SURVEY_DELAY_MS = 250
 
 
 class GuiController(QObject):
@@ -31,6 +36,8 @@ class GuiController(QObject):
     save_finished = Signal(object)
     error = Signal(str)
     busy_changed = Signal(bool)
+    direction_changed = Signal(str, str)
+    unbridged_changed = Signal(object)
 
     def __init__(self, log_file: Path, parent: QObject | None = None) -> None:
         """Create one processor and a private pool for this controller's tasks."""
@@ -49,6 +56,14 @@ class GuiController(QObject):
         self._selected_glyph: str | None = None
         self._bridge: BridgeConfig = BridgeConfig()
         self._max_workers: int | None = None
+        self._directions: dict[str, BridgeDirection] = {}
+        self._survey_timer = QTimer(self)
+        self._survey_timer.setSingleShot(True)
+        self._survey_timer.setInterval(SURVEY_DELAY_MS)
+        self._survey_timer.timeout.connect(self._run_survey)
+        self._survey_generation = 0
+        self._survey_task: BackgroundTask | None = None
+        self._survey_pending = False
 
     @property
     def session(self) -> FontSession | None:
@@ -80,8 +95,10 @@ class GuiController(QObject):
         session = cast("FontSession", result)
         self._session = session
         self._selected_glyph = None
+        self._directions = {}
         self._finish_task()
         self.font_loaded.emit(session)
+        self._schedule_survey()
 
     def _on_save_finished(self, result: object) -> None:
         """Publish save statistics after clearing the busy state."""
@@ -113,6 +130,31 @@ class GuiController(QObject):
         self._bridge = bridge
         self._max_workers = max_workers
         self._refresh_preview()
+        self._schedule_survey()
+
+    def direction_for(self, name: str) -> BridgeDirection:
+        """Return the explicit bridge direction selected for a glyph."""
+        return self._directions.get(name, BridgeDirection.AUTO)
+
+    def set_direction(self, name: str, direction: BridgeDirection) -> None:
+        """Set one island glyph's direction and update dependent state."""
+        session = self._session
+        if session is None:
+            return
+        sources = session.direction_sources(name)
+        if sources != (name,):
+            if sources:
+                self.error.emit(f"The bridge direction of '{name}' follows {', '.join(sources)}")
+            else:
+                self.error.emit(f"'{name}' has no islands to bridge")
+            return
+        if direction is BridgeDirection.AUTO:
+            self._directions.pop(name, None)
+        else:
+            self._directions[name] = direction
+        self.direction_changed.emit(name, direction.value)
+        self._refresh_preview()
+        self._schedule_survey()
 
     def select_glyph(self, name: str) -> None:
         """Select a glyph and refresh its preview."""
@@ -124,7 +166,12 @@ class GuiController(QObject):
         if self._session is None or self._selected_glyph is None:
             return
         try:
-            result = self._session.preview(self._selected_glyph, self._bridge, GeometryConfig())
+            result = self._session.preview(
+                self._selected_glyph,
+                self._bridge,
+                GeometryConfig(),
+                directions=self._directions,
+            )
         except StencilizerError as error:
             self.error.emit(str(error))
         else:
@@ -144,15 +191,59 @@ class GuiController(QObject):
             processing=ProcessingConfig(max_workers=self._max_workers),
             logging=self._processor.config.logging,
         )
+        save = partial(session.save, output_path, settings, directions=dict(self._directions))
 
         def save_font(progress: ProgressFn) -> object:
             def report(completed: int, total: int, _name: str, _success: bool) -> None:
                 progress(completed, total)
 
-            return session.save(output_path, settings, report)
+            return save(report)
 
         self._start(BackgroundTask(save_font), self._on_save_finished)
 
+    def _schedule_survey(self) -> None:
+        """Debounce an unbridged-glyph survey for the current state."""
+        self._survey_generation += 1
+        self._survey_timer.start()
+
+    def _run_survey(self) -> None:
+        """Start one unbridged-glyph survey when none is already running."""
+        session = self._session
+        if session is None:
+            return
+        if self._survey_task is not None:
+            self._survey_pending = True
+            return
+        generation = self._survey_generation
+        bridge = self._bridge
+        directions = dict(self._directions)
+
+        def survey(_progress: ProgressFn) -> object:
+            return generation, session.unbridged(bridge, GeometryConfig(), directions)
+
+        task = BackgroundTask(survey)
+        connection = Qt.ConnectionType.QueuedConnection
+        task.signals.finished.connect(self._on_survey_finished, connection)
+        task.signals.failed.connect(self._on_survey_failed, connection)
+        self._survey_task = task
+        self._pool.start(task)
+
+    def _on_survey_finished(self, result: object) -> None:
+        """Publish a current survey result and run any pending survey."""
+        generation, names = cast("tuple[int, frozenset[str]]", result)
+        self._survey_task = None
+        if generation == self._survey_generation:
+            self.unbridged_changed.emit(names)
+        if self._survey_pending:
+            self._survey_pending = False
+            self._run_survey()
+
+    def _on_survey_failed(self, message: str) -> None:
+        """Release a failed survey task and report its error."""
+        self._survey_task = None
+        self.error.emit(message)
+
     def shutdown(self) -> None:
         """Wait for this controller's active pool work to finish."""
+        self._survey_timer.stop()
         self._pool.waitForDone()

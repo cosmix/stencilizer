@@ -95,6 +95,8 @@ class ComparisonView(QWidget):
             return f"{name}: transform failed: {result.error}"
         unicode = result.original.metadata.unicode
         code = f" (U+{unicode:04X})" if unicode is not None else ""
+        if result.bridges_added == 0:
+            return f"{name}{code} - no bridge could be placed, {result.duration_ms:.1f} ms"
         return (
             f"{name}{code} - {result.bridges_added} island(s) bridged, {result.duration_ms:.1f} ms"
         )

@@ -4,12 +4,13 @@ import hashlib
 import os
 import secrets
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from stencilizer.config import BridgeConfig, StencilizerSettings
-from stencilizer.config.settings import GeometryConfig
+from stencilizer.config.settings import BridgeDirection, GeometryConfig
 from stencilizer.core import FontProcessor, process_glyph
 from stencilizer.core.processor import GlyphClassification, ProgressCallback
 from stencilizer.domain import Glyph
@@ -18,6 +19,12 @@ from stencilizer.exceptions import (
     FontSaveError,
     GlyphNotFoundError,
     StencilizerError,
+)
+from stencilizer.gui.composites import (
+    CompositeGlyph,
+    compose,
+    find_bridged_composites,
+    load_component_outlines,
 )
 from stencilizer.io import FontReader
 from stencilizer.utils import ProcessingStats
@@ -87,11 +94,21 @@ class FontSession:
     classification: GlyphClassification
     processor: FontProcessor
     source_sha256: str
+    composites: tuple[CompositeGlyph, ...]
+    component_outlines: dict[str, Glyph]
+    display_names: tuple[str, ...]
     _glyph_index: dict[str, Glyph] = field(init=False, repr=False)
+    _composite_index: dict[str, CompositeGlyph] = field(init=False, repr=False)
+    _composed: dict[str, Glyph] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        """Index selected glyphs by name for previews."""
+        """Index display glyphs and compose composite outlines once."""
         self._glyph_index = {glyph.name: glyph for glyph in self.island_glyphs}
+        self._composite_index = {composite.name: composite for composite in self.composites}
+        self._composed = {
+            composite.name: compose(composite, self.component_outlines)
+            for composite in self.composites
+        }
 
     @classmethod
     def open(cls, path: Path, processor: FontProcessor) -> "FontSession":
@@ -104,6 +121,14 @@ class FontSession:
                 reason = unsupported_reason(reader.font)
                 if reason is not None:
                     raise FontLoadError(str(path), reason)
+                classification = processor.classify_glyphs(reader)
+                island_names = {glyph.name for glyph in classification.glyphs_to_process}
+                composites = find_bridged_composites(reader, island_names)
+                component_outlines = load_component_outlines(reader, composites)
+                displayed = island_names | {composite.name for composite in composites}
+                display_names = tuple(
+                    name for name in reader.font.getGlyphOrder() if name in displayed
+                )
                 return cls(
                     path=path,
                     font_format=reader.format,
@@ -111,9 +136,12 @@ class FontSession:
                     glyph_count=reader.glyph_count,
                     ascender=int(reader.font["hhea"].ascent),
                     descender=int(reader.font["hhea"].descent),
-                    classification=processor.classify_glyphs(reader),
+                    classification=classification,
                     processor=processor,
                     source_sha256=source_sha256,
+                    composites=composites,
+                    component_outlines=component_outlines,
+                    display_names=display_names,
                 )
         except FontLoadError:
             raise
@@ -126,23 +154,41 @@ class FontSession:
         return self.classification.glyphs_to_process
 
     def glyph(self, name: str) -> Glyph | None:
-        """Return an island glyph by name, if it is selected."""
-        return self._glyph_index.get(name)
+        """Return an island or composed composite glyph by name."""
+        return self._glyph_index.get(name) or self._composed.get(name)
 
-    def preview(self, name: str, bridge: BridgeConfig, geometry: GeometryConfig) -> PreviewResult:
-        """Stencilize one selected glyph synchronously for display."""
-        glyph = self.glyph(name)
-        if glyph is None:
-            raise GlyphNotFoundError(name)
+    @property
+    def display_glyphs(self) -> list[Glyph]:
+        """Return each island and composite glyph in display order."""
+        return [glyph for name in self.display_names if (glyph := self.glyph(name)) is not None]
+
+    def direction_sources(self, name: str) -> tuple[str, ...]:
+        """Return island glyphs whose direction affects ``name``."""
+        if name in self._glyph_index:
+            return (name,)
+        composite = self._composite_index.get(name)
+        return composite.sources if composite is not None else ()
+
+    def _preview_island(
+        self,
+        glyph: Glyph,
+        bridge: BridgeConfig,
+        geometry: GeometryConfig,
+        directions: Mapping[str, BridgeDirection],
+    ) -> PreviewResult:
+        """Stencilize one island glyph with its requested direction."""
+        configured_bridge = bridge.model_copy(
+            update={"direction": directions.get(glyph.name, bridge.direction)}
+        )
         result = process_glyph(
             glyph.to_dict(),
-            bridge.model_dump(),
+            configured_bridge.model_dump(),
             self.units_per_em,
             geometry_dict=geometry.model_dump(),
         )
         if "error" in result:
             return PreviewResult(
-                glyph_name=name,
+                glyph_name=glyph.name,
                 original=glyph,
                 stenciled=None,
                 bridges_added=0,
@@ -150,13 +196,76 @@ class FontSession:
                 duration_ms=float(result["duration_ms"]),
             )
         return PreviewResult(
-            glyph_name=name,
+            glyph_name=glyph.name,
             original=glyph,
             stenciled=Glyph.from_dict(result["glyph"]),
             bridges_added=int(result["bridges_added"]),
             error=None,
             duration_ms=float(result["duration_ms"]),
         )
+
+    def _preview_composite(
+        self,
+        composite: CompositeGlyph,
+        bridge: BridgeConfig,
+        geometry: GeometryConfig,
+        directions: Mapping[str, BridgeDirection],
+    ) -> PreviewResult:
+        """Stencilize each island source and compose the resulting outline."""
+        stenciled_sources: dict[str, Glyph] = {}
+        duration_ms = 0.0
+        bridges_added = 0
+        original = self._composed[composite.name]
+        for source in composite.sources:
+            result = self._preview_island(self._glyph_index[source], bridge, geometry, directions)
+            duration_ms += result.duration_ms
+            if result.error is not None:
+                return PreviewResult(
+                    composite.name, original, None, 0, f"{source}: {result.error}", duration_ms
+                )
+            if result.stenciled is None:
+                return PreviewResult(
+                    composite.name, original, None, 0, f"{source}: no preview outline", duration_ms
+                )
+            stenciled_sources[source] = result.stenciled
+            bridges_added += result.bridges_added
+        stenciled = compose(composite, {**self.component_outlines, **stenciled_sources})
+        return PreviewResult(composite.name, original, stenciled, bridges_added, None, duration_ms)
+
+    def preview(
+        self,
+        name: str,
+        bridge: BridgeConfig,
+        geometry: GeometryConfig,
+        directions: Mapping[str, BridgeDirection] | None = None,
+    ) -> PreviewResult:
+        """Stencilize one island glyph or its composed composite display glyph."""
+        requested_directions = directions or {}
+        glyph = self._glyph_index.get(name)
+        if glyph is not None:
+            return self._preview_island(glyph, bridge, geometry, requested_directions)
+        composite = self._composite_index.get(name)
+        if composite is not None:
+            return self._preview_composite(composite, bridge, geometry, requested_directions)
+        raise GlyphNotFoundError(name)
+
+    def unbridged(
+        self,
+        bridge: BridgeConfig,
+        geometry: GeometryConfig,
+        directions: Mapping[str, BridgeDirection] | None = None,
+    ) -> frozenset[str]:
+        """Return display glyph names for which no bridge could be placed."""
+        requested_directions = directions or {}
+        unbridged_names: set[str] = set()
+        for glyph in self.island_glyphs:
+            result = self._preview_island(glyph, bridge, geometry, requested_directions)
+            if result.error is not None or result.bridges_added == 0:
+                unbridged_names.add(glyph.name)
+        for composite in self.composites:
+            if all(source in unbridged_names for source in composite.sources):
+                unbridged_names.add(composite.name)
+        return frozenset(unbridged_names)
 
     def _assert_source_unchanged(self, output_path: Path) -> None:
         """Raise a save error when the opened source file has changed."""
@@ -173,6 +282,7 @@ class FontSession:
         output_path: Path,
         settings: StencilizerSettings,
         progress: ProgressCallback | None = None,
+        directions: Mapping[str, BridgeDirection] | None = None,
     ) -> ProcessingStats:
         """Stencilize the pinned source font in a private staging directory, then publish it."""
         try:
@@ -194,6 +304,7 @@ class FontSession:
                     max_workers=settings.processing.max_workers,
                     progress_callback=progress,
                     classification=self.classification,
+                    directions=directions,
                 )
                 self._assert_source_unchanged(output_path)
                 _publish(staged, output_path)

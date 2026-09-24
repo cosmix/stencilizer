@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 
-from stencilizer.config.settings import GeometryConfig
+from stencilizer.config.settings import BridgeDirection, GeometryConfig
 from stencilizer.core.analyzer import ContourHierarchy
 from stencilizer.core.merger import ContourMerger
 from stencilizer.domain import Contour, Glyph
@@ -17,6 +17,7 @@ class SurgeryContext:
     geometry: GeometryConfig
     upm: int
     use_spanning: bool
+    direction: BridgeDirection = BridgeDirection.AUTO
     processed: set[int] = field(default_factory=set)
     contours: list[Contour] = field(default_factory=list)
     contour_to_idx: dict[int, int] = field(init=False)
@@ -39,6 +40,9 @@ class SurgeryContext:
         force_horizontal: bool = False,
         force_vertical: bool = False,
     ) -> list[Contour]:
+        if not force_horizontal and not force_vertical:
+            force_horizontal = self.direction is BridgeDirection.HORIZONTAL
+            force_vertical = self.direction is BridgeDirection.VERTICAL
         return self.merger.merge_contours_with_bridges(
             inner,
             outer,

@@ -5,10 +5,19 @@ from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QSplitter, QWidget
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QMainWindow,
+    QMessageBox,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
 
+from stencilizer.config.settings import BridgeDirection
 from stencilizer.gui.controller import GuiController
 from stencilizer.gui.controls import ControlPanel
+from stencilizer.gui.direction_picker import DirectionPicker
 from stencilizer.gui.glyph_grid import GlyphGrid
 from stencilizer.gui.glyph_view import ComparisonView
 from stencilizer.io.writer import FontWriter
@@ -31,12 +40,18 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Horizontal, self)
         self.controls = ControlPanel(splitter)
         self.grid = GlyphGrid(splitter)
-        self.comparison = ComparisonView(splitter)
+        right_pane = QWidget(splitter)
+        right_layout = QVBoxLayout(right_pane)
+        self.comparison = ComparisonView(right_pane)
+        self.direction_picker = DirectionPicker(right_pane)
+        right_layout.addWidget(self.comparison, 1)
+        right_layout.addWidget(self.direction_picker)
         splitter.addWidget(self.controls)
         splitter.addWidget(self.grid)
-        splitter.addWidget(self.comparison)
+        splitter.addWidget(right_pane)
         self.setCentralWidget(splitter)
         self.statusBar()
+        self._current_glyph: str | None = None
 
         self.controls.open_requested.connect(self.open_font_dialog)
         self.controls.save_requested.connect(self.save_font_dialog)
@@ -49,7 +64,15 @@ class MainWindow(QMainWindow):
         self.controller.busy_changed.connect(self.controls.set_busy)
         self.controller.save_finished.connect(self._on_save_finished)
         self.controller.error.connect(self._on_error)
+        self._connect_direction_signals()
         self._update_parameters()
+
+    def _connect_direction_signals(self) -> None:
+        """Connect glyph-direction controls to the controller and grid."""
+        self.grid.glyph_selected.connect(self._on_glyph_selected)
+        self.direction_picker.direction_chosen.connect(self._on_direction_chosen)
+        self.controller.direction_changed.connect(self._on_direction_changed)
+        self.controller.unbridged_changed.connect(self._on_unbridged_changed)
 
     def load_font(self, path: Path) -> None:
         """Ask the controller to load a font from ``path``."""
@@ -100,17 +123,44 @@ class MainWindow(QMainWindow):
     def _on_font_loaded(self, result: object) -> None:
         """Populate the window from a newly loaded font session."""
         session = cast("FontSession", result)
-        island_glyphs = session.island_glyphs
-        self.grid.set_glyphs(island_glyphs, session.ascender, session.descender)
+        self.grid.set_glyphs(session.display_glyphs, session.ascender, session.descender)
         self.controls.set_font_info(
             f"{session.path.name}\n{session.font_format}, {session.units_per_em} UPM\n"
-            f"{session.glyph_count} glyphs, {len(island_glyphs)} with islands"
+            f"{session.glyph_count} glyphs, {len(session.island_glyphs)} with islands, "
+            f"{len(session.composites)} composites using them"
         )
         self.controls.set_font_loaded(True)
         self.comparison.clear()
-        if island_glyphs:
-            self.grid.select_glyph(island_glyphs[0].name)
+        self.direction_picker.clear()
+        self._current_glyph = None
+        if session.display_names:
+            self.grid.select_glyph(session.display_names[0])
         self.statusBar().showMessage(f"Loaded {session.path.name}")
+
+    def _on_glyph_selected(self, name: str) -> None:
+        """Show bridge-direction controls for the selected displayed glyph."""
+        session = self.controller.session
+        if session is None:
+            return
+        self._current_glyph = name
+        sources = session.direction_sources(name)
+        direction = self.controller.direction_for(sources[0]) if sources else BridgeDirection.AUTO
+        self.direction_picker.show_for(name, sources, direction)
+
+    def _on_direction_chosen(self, value: str) -> None:
+        """Apply a user's selected bridge direction to the current glyph."""
+        if self._current_glyph is not None:
+            self.controller.set_direction(self._current_glyph, BridgeDirection(value))
+
+    def _on_direction_changed(self, name: str, value: str) -> None:
+        """Update the direction marker and picker after a direction change."""
+        self.grid.set_direction_marker(name, BridgeDirection(value))
+        if name == self._current_glyph:
+            self._on_glyph_selected(name)
+
+    def _on_unbridged_changed(self, names: object) -> None:
+        """Mark displayed glyphs for which bridge placement failed."""
+        self.grid.set_unbridged(cast("frozenset[str]", names))
 
     def _on_preview_ready(self, result: object) -> None:
         """Show a preview using the current session's vertical metrics."""
