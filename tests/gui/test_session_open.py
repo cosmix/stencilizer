@@ -4,6 +4,8 @@ import hashlib
 from pathlib import Path
 
 import pytest
+from fontTools.fontBuilder import FontBuilder  # type: ignore[import-untyped]
+from fontTools.pens.ttGlyphPen import TTGlyphPen  # type: ignore[import-untyped]
 
 from stencilizer.config import BridgeConfig
 from stencilizer.config.settings import GeometryConfig
@@ -118,3 +120,53 @@ def test_preview_reports_transform_error(
     assert result.error == "boom"
     assert result.bridges_added == 0
     assert result.duration_ms == 1.0
+
+
+def _build_cyclic_component_font(path: Path) -> Path:
+    """Build a tiny TrueType font whose glyphs 'x' and 'y' reference each other."""
+    names = (".notdef", "x", "y")
+    glyph_set: dict[str, None] = dict.fromkeys(names)
+
+    notdef_pen = TTGlyphPen(glyph_set)
+    notdef_pen.moveTo((0, 0))
+    notdef_pen.lineTo((0, 10))
+    notdef_pen.lineTo((10, 10))
+    notdef_pen.lineTo((10, 0))
+    notdef_pen.closePath()
+    notdef_glyph = notdef_pen.glyph()
+    notdef_glyph.xMin, notdef_glyph.yMin, notdef_glyph.xMax, notdef_glyph.yMax = 0, 0, 10, 10
+
+    x_pen = TTGlyphPen(glyph_set)
+    x_pen.addComponent("y", (1, 0, 0, 1, 0, 0))
+    x_glyph = x_pen.glyph()
+    x_glyph.xMin = x_glyph.yMin = x_glyph.xMax = x_glyph.yMax = 0
+
+    y_pen = TTGlyphPen(glyph_set)
+    y_pen.addComponent("x", (1, 0, 0, 1, 0, 0))
+    y_glyph = y_pen.glyph()
+    y_glyph.xMin = y_glyph.yMin = y_glyph.xMax = y_glyph.yMax = 0
+
+    builder = FontBuilder(1000, isTTF=True)
+    builder.setupGlyphOrder(list(names))
+    builder.setupCharacterMap({})
+    # Skip bounds recalculation: fontTools recurses through addComponent
+    # references with no cycle guard, so compiling a self-referencing pair
+    # would hang here instead of ever reaching FontSession.open.
+    builder.font.recalcBBoxes = False
+    builder.setupGlyf({".notdef": notdef_glyph, "x": x_glyph, "y": y_glyph}, calcGlyphBounds=False)
+    builder.setupHorizontalMetrics(dict.fromkeys(names, (600, 0)))
+    builder.setupHorizontalHeader(ascent=800, descent=-200)
+    builder.setupNameTable({"familyName": "Cycle", "styleName": "Regular"})
+    builder.setupOS2()
+    builder.setupPost()
+    builder.setupMaxp()
+    builder.save(path)
+    return path
+
+
+def test_open_wraps_component_cycle(processor: FontProcessor, tmp_path: Path) -> None:
+    """A font whose components form a cycle is reported as a load error, not raised raw."""
+    path = _build_cyclic_component_font(tmp_path / "cycle.ttf")
+
+    with pytest.raises(FontLoadError, match="references itself"):
+        FontSession.open(path, processor)

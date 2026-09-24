@@ -7,10 +7,13 @@ from typing import Any
 from fontTools.misc.transform import Transform  # type: ignore[import-untyped]
 from fontTools.pens.recordingPen import RecordingPen  # type: ignore[import-untyped]
 
-from stencilizer.domain import Contour, Glyph, GlyphMetadata, Point, WindingDirection
+from stencilizer.domain import Contour, Glyph, GlyphMetadata, Point
 from stencilizer.io import FontReader
 
 Affine = tuple[float, float, float, float, float, float]
+
+MAX_COMPONENT_DEPTH = 32
+MAX_COMPONENT_PARTS = 1024
 
 
 @dataclass(frozen=True)
@@ -48,7 +51,11 @@ def _component_parts(
     ``chain`` holds every glyph name on the current expansion path, so a base
     that reappears there is a cycle rather than a diamond (two independent
     components sharing a base stay fine, since each keeps its own chain).
+    Expansion is bounded by ``MAX_COMPONENT_DEPTH`` and ``MAX_COMPONENT_PARTS``
+    so an untrusted font's component graph cannot hang the caller.
     """
+    if len(chain) > MAX_COMPONENT_DEPTH:
+        raise ValueError(f"composite glyph {name!r} nests components too deeply")
     pen = RecordingPen()
     glyph_set[name].draw(pen)
     if not pen.value or any(operation != "addComponent" for operation, _ in pen.value):
@@ -64,6 +71,8 @@ def _component_parts(
             parts.extend(nested)
         else:
             parts.append(ComponentPart(base, total))
+        if len(parts) > MAX_COMPONENT_PARTS:
+            raise ValueError(f"composite glyph {name!r} expands to too many component parts")
     return tuple(parts)
 
 
@@ -112,8 +121,9 @@ def load_component_outlines(
             if part.base in outlines:
                 continue
             glyph = reader.get_glyph(part.base)
-            if glyph is not None:
-                outlines[part.base] = glyph
+            if glyph is None:
+                raise ValueError(f"component base glyph {part.base!r} not found")
+            outlines[part.base] = glyph
     return outlines
 
 
@@ -136,16 +146,6 @@ def _transform_contour(contour: Contour, transform: Any, mirrored: bool) -> Cont
     for point in contour.points:
         x, y = transform.transformPoint((point.x, point.y))
         points.append(Point(float(x), float(y), point.point_type))
-    direction = _mirrored_direction(contour.direction) if mirrored else contour.direction
     if mirrored:
         points.reverse()
-    return Contour(points=points, direction=direction)
-
-
-def _mirrored_direction(direction: WindingDirection | None) -> WindingDirection | None:
-    """Return the winding direction after a reflection."""
-    if direction is WindingDirection.CLOCKWISE:
-        return WindingDirection.COUNTER_CLOCKWISE
-    if direction is WindingDirection.COUNTER_CLOCKWISE:
-        return WindingDirection.CLOCKWISE
-    return None
+    return Contour(points=points, direction=contour.direction)

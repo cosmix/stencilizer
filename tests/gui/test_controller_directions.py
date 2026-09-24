@@ -2,11 +2,13 @@
 
 from pathlib import Path
 
+import pytest
 from pytestqt.qtbot import QtBot
 
 from stencilizer.config import BridgeConfig
 from stencilizer.config.settings import BridgeDirection
 from stencilizer.gui.controller import GuiController
+from stencilizer.gui.session import FontSession
 from stencilizer.io import FontReader
 from stencilizer.utils import ProcessingStats
 from tests.gui.conftest import SAVE_TIMEOUT, load_session
@@ -102,6 +104,58 @@ def test_stale_survey_result_is_dropped(
     with qtbot.waitSignal(controller.unbridged_changed) as blocker:
         controller._on_survey_finished((controller._survey_generation, frozenset({"O"})))
     assert blocker.args == [frozenset({"O"})]
+
+
+def test_shutdown_stops_pending_survey(
+    controller: GuiController, qtbot: QtBot, roboto_path: Path
+) -> None:
+    """Shutting down during the survey's debounce window leaves nothing to run afterward."""
+    load_session(controller, qtbot, roboto_path)
+
+    controller.shutdown()
+
+    assert not controller._survey_timer.isActive()
+    with qtbot.assertNotEmitted(controller.unbridged_changed, wait=600):
+        pass
+
+
+def test_survey_failure_reports_current_and_drains_pending(
+    controller: GuiController, qtbot: QtBot, roboto_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failing survey reports only while current, then runs any pending survey afterward."""
+    calls = {"count": 0}
+
+    def fail_once(_self: FontSession, *_args: object, **_kwargs: object) -> frozenset[str]:
+        """Raise on the first call, then behave as a normal survey would."""
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("boom")
+        return frozenset({"O"})
+
+    monkeypatch.setattr(FontSession, "unbridged", fail_once)
+
+    # Case 1: nothing pending, so the failing survey is reported and leaves no running task.
+    with qtbot.waitSignal(controller.error, timeout=10_000) as blocker:
+        load_session(controller, qtbot, roboto_path)
+    assert "boom" in blocker.args[0]
+    assert controller._survey_task is None
+    assert controller._survey_pending is False
+
+    # Case 2: a newer survey was scheduled while an older generation was still in flight
+    # (as `_run_survey` records when it starts a task and `_schedule_survey` bumps the
+    # generation while that task's `_survey_task` is not yet cleared). The older survey's
+    # failure must not be reported; draining the pending one delivers the newer result.
+    controller._survey_running_generation = controller._survey_generation
+    controller._survey_generation += 1
+    controller._survey_pending = True
+
+    with (
+        qtbot.assertNotEmitted(controller.error),
+        qtbot.waitSignal(controller.unbridged_changed, timeout=10_000) as pending_blocker,
+    ):
+        controller._on_survey_failed("stale boom")
+
+    assert pending_blocker.args == [frozenset({"O"})]
 
 
 def test_save_uses_directions(

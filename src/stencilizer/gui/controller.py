@@ -62,6 +62,7 @@ class GuiController(QObject):
         self._survey_timer.setInterval(SURVEY_DELAY_MS)
         self._survey_timer.timeout.connect(self._run_survey)
         self._survey_generation = 0
+        self._survey_running_generation: int | None = None
         self._survey_task: BackgroundTask | None = None
         self._survey_pending = False
 
@@ -215,6 +216,7 @@ class GuiController(QObject):
             self._survey_pending = True
             return
         generation = self._survey_generation
+        self._survey_running_generation = generation
         bridge = self._bridge
         directions = dict(self._directions)
 
@@ -239,11 +241,16 @@ class GuiController(QObject):
             self._run_survey()
 
     def _on_survey_failed(self, message: str) -> None:
-        """Release a failed survey task and report its error."""
+        """Release a failed survey task, report it unless superseded, and run any pending survey."""
         self._survey_task = None
-        self.error.emit(message)
+        if self._survey_running_generation == self._survey_generation:
+            self.error.emit(message)
+        if self._survey_pending:
+            self._survey_pending = False
+            self._run_survey()
 
     def shutdown(self) -> None:
         """Wait for this controller's active pool work to finish."""
         self._survey_timer.stop()
+        self._survey_pending = False
         self._pool.waitForDone()

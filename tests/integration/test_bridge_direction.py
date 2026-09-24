@@ -2,16 +2,22 @@
 
 from pathlib import Path
 
+import pytest
+
 from stencilizer.config.settings import (
     BridgeConfig,
     BridgeDirection,
+    GeometryConfig,
     LoggingConfig,
     StencilizerSettings,
 )
+from stencilizer.core.merger import ContourMerger
 from stencilizer.core.processor import FontProcessor, process_glyph
-from stencilizer.domain import Glyph
+from stencilizer.domain import Contour, Glyph, GlyphMetadata, Point, WindingDirection
 from stencilizer.io import FontReader
 from tests.integration.conftest import FIXTURES_DIR
+
+MergeCall = tuple[Contour, Contour, bool, bool]
 
 
 def _load_glyph(font_name: str, glyph_name: str) -> tuple[Glyph, int]:
@@ -110,3 +116,101 @@ def test_every_island_glyph_survives_explicit_directions(tmp_path: Path) -> None
                     assert "error" not in result, f"{font_name} {glyph.name}: {result}"
         finally:
             reader.close()
+
+
+def _build_filled_encircled_digit() -> tuple[Glyph, int]:
+    """Build the filled-circle digit-8 fixture with two inverted (nested-outer) bowls.
+
+    Mirrors tests/unit/test_glyph_transformer.py::
+    test_transform_filled_encircled_digit_with_inverted_islands, copied here rather than
+    imported so this integration test does not depend on a frozen unit test module.
+    """
+    outer_circle = Contour(
+        points=[Point(0.0, 0.0), Point(0.0, 200.0), Point(200.0, 200.0), Point(200.0, 0.0)],
+        direction=WindingDirection.CLOCKWISE,
+    )
+    digit_cutout = Contour(
+        points=[Point(50.0, 20.0), Point(150.0, 20.0), Point(150.0, 180.0), Point(50.0, 180.0)],
+        direction=WindingDirection.COUNTER_CLOCKWISE,
+    )
+    top_bowl = Contour(
+        points=[Point(70.0, 110.0), Point(70.0, 160.0), Point(130.0, 160.0), Point(130.0, 110.0)],
+        direction=WindingDirection.CLOCKWISE,
+    )
+    bottom_bowl = Contour(
+        points=[Point(70.0, 40.0), Point(70.0, 90.0), Point(130.0, 90.0), Point(130.0, 40.0)],
+        direction=WindingDirection.CLOCKWISE,
+    )
+    glyph = Glyph(
+        metadata=GlyphMetadata(
+            name="eight.circle", unicode=0x2467, advance_width=200, left_side_bearing=0
+        ),
+        contours=[outer_circle, digit_cutout, top_bowl, bottom_bowl],
+    )
+    return glyph, 1000
+
+
+def _capture_merge_calls(monkeypatch: pytest.MonkeyPatch) -> list[MergeCall]:
+    """Record each call to the merger, then delegate to the real implementation."""
+    calls: list[MergeCall] = []
+    original = ContourMerger.merge_contours_with_bridges
+
+    def spy(
+        self: ContourMerger,
+        inner: Contour,
+        outer: Contour,
+        bridge_width: float,
+        force_horizontal: bool = False,
+        force_vertical: bool = False,
+        all_contours: list[Contour] | None = None,
+        processed_nested: list[Contour] | None = None,
+        *,
+        upm: int = 1000,
+        geometry: GeometryConfig | None = None,
+    ) -> list[Contour]:
+        calls.append((inner, outer, force_horizontal, force_vertical))
+        return original(
+            self,
+            inner,
+            outer,
+            bridge_width,
+            force_horizontal=force_horizontal,
+            force_vertical=force_vertical,
+            all_contours=all_contours,
+            processed_nested=processed_nested,
+            upm=upm,
+            geometry=geometry,
+        )
+
+    monkeypatch.setattr(ContourMerger, "merge_contours_with_bridges", spy)
+    return calls
+
+
+def test_inverted_islands_follow_direction(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Explicit directions reach the merge that resolves a filled encircled digit's islands.
+
+    For this fixture the outer circle's single hole is handled by the ordinary island-group
+    path (surgery_groups._sequential), and that one call's bridge construction already accounts
+    for the two inverted bowls via its ``all_contours``/``processed_nested`` bookkeeping: tracing
+    ``ctx.processed`` shows both bowl indices are marked processed by this call alone, before
+    ``surgery_nested.process_nested``/``_process_inverted`` ever runs, so no separate nested-path
+    call reaches the merger for this glyph's geometry. The single call is identified below by its
+    ``outer`` argument matching the glyph's outer circle, and it is this call's force flags that
+    govern whether the bowls end up bridged, routed around, or passed through unchanged.
+    """
+    glyph, upm = _build_filled_encircled_digit()
+    outer_bbox = glyph.contours[0].bounding_box()
+
+    horizontal_calls = _capture_merge_calls(monkeypatch)
+    horizontal = _process(glyph, BridgeConfig(direction=BridgeDirection.HORIZONTAL), upm)
+    horizontal_outer_calls = [c for c in horizontal_calls if c[1].bounding_box() == outer_bbox]
+    assert horizontal_outer_calls
+    assert all(fh and not fv for _, _, fh, fv in horizontal_outer_calls)
+
+    vertical_calls = _capture_merge_calls(monkeypatch)
+    vertical = _process(glyph, BridgeConfig(direction=BridgeDirection.VERTICAL), upm)
+    vertical_outer_calls = [c for c in vertical_calls if c[1].bounding_box() == outer_bbox]
+    assert vertical_outer_calls
+    assert all(fv and not fh for _, _, fh, fv in vertical_outer_calls)
+
+    assert _contours(horizontal) != _contours(vertical)
