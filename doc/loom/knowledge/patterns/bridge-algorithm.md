@@ -13,7 +13,7 @@ The live placement logic is in `ContourMerger` and its axis-generic contour buil
 
 `ContourMerger.merge_contours_with_bridges` (core/merger.py:12, checks in merger_checks.py, orientation choice in merger_dispatch.py) cuts notches into the outer contour that reach the inner contour instead of adding extra hole contours, which avoids black rendering artifacts. It measures stroke on all four sides, checks real edge crossings (`find_edge_crossing`, core/geometry_crossings.py:124) and clear paths, and picks the thinner-stroke orientation unless the asymmetry rule (ratio > 2.5) or multi-island grouping forces the other.
 
-`GlyphTransformer.transform()` (core/surgery.py:42) protects nested-outer descendants, groups islands by parent, and decides vertical-stack versus side-by-side by comparing gaps (surgery_groups.py, surgery_nested.py) before dispatching.
+`GlyphTransformer.transform()` (core/surgery.py:32) returns the glyph unchanged without islands, otherwise builds a `SurgeryContext` and runs `process_groups` then `process_nested`, then copies unprocessed contours. Correction: an earlier entry placed the protecting, grouping and gap tests in `transform()` itself (and cited surgery.py:42); they live in `core/surgery_groups.py` (`protected_indices` for nested-outer descendants, `group_islands` by parent, `arrangement` choosing vertical, horizontal or single from the bounding-box gaps) and `core/surgery_nested.py` (`process_nested`, nested children and inverted islands).
 
 ## Multi-island cases
 

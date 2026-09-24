@@ -30,3 +30,11 @@ UPM scaling made fonts not at 1000 UPM behave as the 1000-UPM tuning scaled. For
 ## Tests write log files into the working directory
 
 `setup_logging` names the log `stencilizer_%Y%m%d_%H%M%S.log` in the cwd when `log_file` is None (src/stencilizer/utils/logging.py:69-71), and tests that build `FontProcessor(settings)` without a `log_file` hit it (tests/unit/test_processor.py, tests/integration/test_stencilization*.py, test_e2e_output.py, tests/regression/_golden.py:195). One full `uv run pytest` leaves about 12 such files at the repo root; `*.log` is gitignored (.gitignore:65). Fix: give those fixtures a `tmp_path` log file, as the tests/gui `processor` fixture does.
+
+## Composite glyphs read without contours
+
+`fonttools_glyph_to_domain` (io/converter.py) records only outline segments, so a composite glyph (Roboto `Aacute` = `A` + `acute`) has zero contours and `classify_glyphs` files it as "empty glyph". The converter reads `fonttools_glyph._glyph`, which fontTools' `_TTGlyphGlyf` glyph-set objects lack, so `Glyph.is_composite()` is always False and `ProcessingConfig.skip_composite` never fires. The saved font still bridges composites through the glyph they reference.
+
+## Fork warnings when GUI and pool tests share a process
+
+A single `uv run pytest` prints 42 `DeprecationWarning` "multi-threaded, use of fork()" (measured at 111d115): Qt threads started by tests/gui are alive when later tests fork `ProcessPoolExecutor` workers. Running tests/gui alone, or the other test directories alone, prints none.
