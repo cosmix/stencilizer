@@ -1,5 +1,6 @@
 """Configuration settings for Stencilizer."""
 
+from enum import StrEnum
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -72,6 +73,14 @@ class GeometryConfig(BaseModel):
         return self.scale_tolerance(self.min_contour_gap, upm)
 
 
+class BridgeDirection(StrEnum):
+    """Which way a glyph's bridges cut its strokes."""
+
+    AUTO = "auto"  # the analyzer's choice, as before this change
+    VERTICAL = "vertical"  # bridge line at a fixed x: an O loses its top and bottom strokes
+    HORIZONTAL = "horizontal"  # bridge line at a fixed y: an O loses its left and right strokes
+
+
 class BridgeConfig(BaseModel):
     """Configuration for bridge generation."""
 
@@ -84,6 +93,10 @@ class BridgeConfig(BaseModel):
     use_spanning_bridges: bool = Field(
         default=True,
         description="For vertically-stacked islands, use spanning vertical bridges instead of per-island horizontal bridges",
+    )
+    direction: BridgeDirection = Field(
+        default=BridgeDirection.AUTO,
+        description="Bridge direction for every island of the glyph (auto keeps the analyzer's choice)",
     )
 
 
