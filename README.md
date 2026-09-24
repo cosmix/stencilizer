@@ -142,6 +142,14 @@ spanning-bridges toggle, or the worker count. "Stencilize & Save..." writes the 
 progress bar. It refuses to overwrite the input font, and refuses a source file that changed on
 disk since it was opened. Variable fonts and CFF2 fonts are rejected on open.
 
+The grid also lists composite glyphs (accented letters such as `Aacute`) that draw an island
+glyph: they inherit their bridges from the base glyph. The direction picker sets Auto, Vertical
+or Horizontal for the selected glyph (an `O` loses its top and bottom strokes under Vertical, its
+left and right strokes under Horizontal); a composite follows its base glyph's direction and its
+picker is disabled. Choices apply to the preview and the saved font for the session, and are not
+written to a file. Glyphs where no bridge can be placed are marked red in the grid and the
+preview says "no bridge could be placed".
+
 ## Configuration
 
 Configuration is controlled via CLI options (see the usage examples above).

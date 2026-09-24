@@ -79,6 +79,34 @@
 
 ## Codex units and loom tooling inside the stage sandbox
 
-**What happened**: Codex units could not record memories (loom scratch dir read-only in codex's sandbox), and `loom subagents watch` from the sandboxed Bash tool exited 3 ("process is gone") seconds after a codex forward started.
+**What happened**: Codex units could not record memories (loom scratch dir read-only in codex's sandbox), and `loom subagents watch` from the sandboxed Bash tool exited 3 ("process is gone") seconds after a codex forward started. A watch bound only to `codex:<unit>` workers right after the forwarders spawned printed "unknown: worker set does not resolve to one Claude parent UUID" and exited at once; piping it through `tail` hid the exit code.
 **Why**: Codex runs in its own workspace-write sandbox; each Bash call gets its own PID namespace, so the watch cannot see codex's pid.
-**Prevention**: The orchestrator records codex assumptions itself. Treat that watch exit as unknown and wait for the forwarder's own completion.
+**Prevention**: The orchestrator records codex assumptions itself. Treat those watch exits as unknown, run the watch without a pipe so the exit code shows, and wait for the forwarder's own completion.
+
+## Signature change breaks monkeypatched stubs in existing tests
+
+**What happened**: The controller began passing `directions=` to `FontSession.save`; `tests/gui/test_controller.py::test_save_uses_current_parameters` stubbed `save` without that kwarg, the stub raised `TypeError` on the pool, `save_finished` never fired, and the test hit its 30 s timeout.
+**Why**: The plan listed the production callers of `save` but not the test doubles.
+**Prevention**: When a method gains a kwarg, `rg` for monkeypatch stubs of it in existing tests and make them accept `**_kwargs` in the same unit.
+**Fix**: The stub takes `**_kwargs` (tests/gui/test_controller.py:282).
+
+## Error handlers that skip the success path's bookkeeping, and unbounded recursion on font data
+
+**What happened**: Integration review found four defects in the direction work: `_on_survey_failed` neither drained `_survey_pending` nor dropped failures of superseded surveys; `composites._transform_contour` flipped the direction label on mirrored parts although `points.reverse()` already restores the winding; `_component_parts` had no depth or part bound, so a font whose components form a doubling DAG (2^n parts) hung `FontSession.open`; `load_component_outlines` skipped a missing base and `compose` then failed with a bare `KeyError`.
+**Why**: The failure handler was written without the success handler beside it; the recursive walk trusted the font.
+**Prevention**: Brief every failure handler as "mirror the success path's pending and generation handling". Give any recursive walk over untrusted font structures (components, nested contours) an explicit depth and size bound plus a cycle check. Check both a flipped transform and its label, not the label alone.
+**Fix**: Handlers mirrored, `_component_parts` bounded and raising `ValueError` (wrapped as `FontLoadError`), missing bases reported by name.
+
+## Test-writing units fail the repo's lint gate and hide test-helper traps
+
+**What happened**: Codex and sonnet units may run only one static check, so their tests reached the gate with ruff `TC006` (unquoted `cast` type), `ARG001` (unused `self` in a monkeypatched stub), `ruff format` diffs, and a pyright error for `dict.fromkeys(tuple_of_literals)` passed to `TTGlyphPen`. A codex helper also built a component glyph with `TTGlyphPen(None)`, which raises `TypeError` once components exist because `pen.glyph()` checks `name in glyphSet`. A brief said a bbox "spans centre" and the unit read it as strictly between the bounds.
+**Why**: Units cannot run lint or the tests, and the briefs left these rules and definitions implicit.
+**Prevention**: Name the rules in test-writing briefs: quote `cast()` types, prefix unused stub params with `_`, annotate `dict.fromkeys` results as `dict[str, None]`, pass a `glyphSet` mapping to `TTGlyphPen` when adding components. Define geometric predicates exactly (`ymin < y < ymax`, strict). The orchestrator runs lint and format after every wave.
+**Fix**: The orchestrator corrected each test after the gate.
+
+## Plan wiring regexes and local variables
+
+**What happened**: Two units passed their tests but failed `loom check`: one copied directions into a local (`directions = dict(self._directions)`) where the plan's regex expected `directions=dict(self._directions)`, and one held `session.display_glyphs` in a local before `set_glyphs` where the regex expected it inline.
+**Why**: Wiring regexes match literal source shapes and the briefs described the behaviour instead.
+**Prevention**: When a plan pins a wiring regex, quote the literal code shape in the unit brief. Run `loom check <stage> --suggest` after each wave. Note also that loom's unwired-file scan does not match dotted imports (`from stencilizer.gui.<module> import ...`).
+**Fix**: The orchestrator inlined the expressions (`functools.partial(session.save, ..., directions=dict(self._directions))`, `session.display_names[0]`).

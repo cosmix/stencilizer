@@ -7,7 +7,7 @@
 
 ## Bridge algorithm (summary)
 
-Analyzer finds islands (holes whose on-curve points sit inside an outer contour, src/stencilizer/core/analyzer.py:202); `ContourMerger` cuts notches into the outer contour rather than adding contours. Horizontal and vertical bridges share one implementation parameterized by `Axis` (core/axis.py); horizontal_bridge.py, vertical_bridge.py, multi_island.py and horizontal_multi_island.py are thin wrappers. Font-unit thresholds scale with UPM through `GeometryConfig`. Full detail, including the Θ and ⑧ multi-island cases: [patterns/bridge-algorithm](patterns/bridge-algorithm.md).
+Analyzer finds islands (holes whose on-curve points sit inside an outer contour, src/stencilizer/core/analyzer.py:202); `ContourMerger` cuts notches into the outer contour rather than adding contours. Horizontal and vertical bridges share one implementation parameterized by `Axis` (core/axis.py); horizontal_bridge.py, vertical_bridge.py, multi_island.py and horizontal_multi_island.py are thin wrappers. Font-unit thresholds scale with UPM through `GeometryConfig`. `BridgeConfig.direction` forces an axis per glyph, and `bridges_added` counts islands that left the output (0 = no bridge placed). Full detail, including the direction mapping table and the Θ and ⑧ multi-island cases: [patterns/bridge-algorithm](patterns/bridge-algorithm.md).
 
 ## Winding normalization
 

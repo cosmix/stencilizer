@@ -12,9 +12,9 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 21 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 22 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 40 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 84 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 112 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 22 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 40 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 44 |
 
 ## Tier 2 — Topics
 
@@ -22,10 +22,10 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [gui](architecture/gui.md) | GUI package layout, threading model, save safety | 32 |
+| [gui](architecture/gui.md) | GUI package layout, threading model, save safety | 42 |
 
 ### patterns
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [bridge-algorithm](patterns/bridge-algorithm.md) | Island detection, bridge placement, contour surgery, multi-island cases | 29 |
+| [bridge-algorithm](patterns/bridge-algorithm.md) | Island detection, bridge placement, contour surgery, multi-island cases | 49 |
