@@ -1,7 +1,7 @@
 """Tests for resolving and drawing composite glyphs."""
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from fontTools.fontBuilder import FontBuilder  # type: ignore[import-untyped]
@@ -9,8 +9,10 @@ from fontTools.pens.recordingPen import DecomposingRecordingPen  # type: ignore[
 from fontTools.pens.ttGlyphPen import TTGlyphPen  # type: ignore[import-untyped]
 
 from stencilizer.core import FontProcessor
-from stencilizer.domain import Contour, Glyph
+from stencilizer.domain import Contour, Glyph, GlyphMetadata, WindingDirection
 from stencilizer.gui.composites import (
+    ComponentPart,
+    CompositeGlyph,
     component_parts,
     compose,
     find_bridged_composites,
@@ -75,6 +77,12 @@ def test_nested_and_mirrored_components(tmp_path: Path) -> None:
         composites = find_bridged_composites(reader, {"O"})
         mirror = next(composite for composite in composites if composite.name == "Omirror")
         outlines = load_component_outlines(reader, composites)
+        source = outlines["O"]
+        # A freshly read outline carries no computed winding label; assign the labels an
+        # analyzed source would have (matching its actual, already-asserted signed areas)
+        # so composing through a mirror has a real label to preserve, not just None.
+        source.contours[0].direction = WindingDirection.CLOCKWISE
+        source.contours[1].direction = WindingDirection.COUNTER_CLOCKWISE
         mirrored = compose(mirror, outlines)
 
     assert [(part.base, part.transform) for part in nested_parts] == [
@@ -83,6 +91,9 @@ def test_nested_and_mirrored_components(tmp_path: Path) -> None:
     ]
     assert mirrored.contours[0].signed_area() < 0
     assert mirrored.contours[1].signed_area() > 0
+    for actual, expected in zip(mirrored.contours, source.contours, strict=True):
+        assert actual.direction == expected.direction
+        assert (actual.direction is WindingDirection.CLOCKWISE) == (actual.signed_area() < 0)
 
 
 def test_compose_leaves_inputs_untouched(processor: FontProcessor, roboto_path: Path) -> None:
@@ -141,6 +152,45 @@ def test_cyclic_components_raise() -> None:
     }
     parts = component_parts(diamond, "Parent")
     assert [part.base for part in parts] == ["leaf", "leaf"]
+
+
+def test_component_expansion_is_bounded() -> None:
+    """A wide or deep untrusted component graph is rejected instead of exploding or hanging."""
+    doubling = {f"level{i}": _StubComponentGlyph((f"level{i + 1}",) * 2) for i in range(40)}
+    doubling["level40"] = _StubComponentGlyph(outline=True)
+    with pytest.raises(ValueError, match="composite glyph"):
+        component_parts(doubling, "level0")
+
+    chain = {f"chain{i}": _StubComponentGlyph((f"chain{i + 1}",)) for i in range(40)}
+    chain["chain40"] = _StubComponentGlyph(outline=True)
+    with pytest.raises(ValueError, match="composite glyph"):
+        component_parts(chain, "chain0")
+
+    legitimate = {
+        "leaf": _StubComponentGlyph(outline=True),
+        "mid": _StubComponentGlyph(("leaf",)),
+        "top": _StubComponentGlyph(("mid",)),
+    }
+    assert [part.base for part in component_parts(legitimate, "top")] == ["leaf"]
+
+
+class _MissingBaseReader:
+    """A reader stub whose glyph lookup always reports a missing base."""
+
+    def get_glyph(self, _name: str) -> Glyph | None:
+        """Report every requested glyph as missing."""
+        return None
+
+
+def test_missing_component_base_raises() -> None:
+    """A composite whose base glyph cannot be loaded is reported, not silently dropped."""
+    composite = CompositeGlyph(
+        metadata=GlyphMetadata(name="composed", unicode=None, advance_width=0, left_side_bearing=0),
+        parts=(ComponentPart("missing", (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)),),
+        sources=(),
+    )
+    with pytest.raises(ValueError, match="missing"):
+        load_component_outlines(cast("FontReader", _MissingBaseReader()), [composite])
 
 
 def _assert_matching_outlines(actual: Glyph, expected: list[Contour]) -> None:
