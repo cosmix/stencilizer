@@ -1,4 +1,4 @@
-"""Display and select glyph thumbnails in a font's island glyphs."""
+"""Display and select glyph thumbnails for a font's island glyphs and their composites."""
 
 from collections.abc import Collection
 
@@ -22,7 +22,7 @@ BASE_TOOLTIP_ROLE = Qt.ItemDataRole.UserRole + 2
 
 
 class GlyphGrid(QListWidget):
-    """Thumbnail grid of a font's island glyphs."""
+    """Thumbnail grid of a font's island glyphs and the composites that draw them."""
 
     glyph_selected = Signal(str)
 
