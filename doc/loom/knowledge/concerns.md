@@ -33,8 +33,12 @@ UPM scaling made fonts not at 1000 UPM behave as the 1000-UPM tuning scaled. For
 
 ## Composite glyphs read without contours
 
-`fonttools_glyph_to_domain` (io/converter.py) records only outline segments, so a composite glyph (Roboto `Aacute` = `A` + `acute`) has zero contours and `classify_glyphs` files it as "empty glyph". The converter reads `fonttools_glyph._glyph`, which fontTools' `_TTGlyphGlyf` glyph-set objects lack, so `Glyph.is_composite()` is always False and `ProcessingConfig.skip_composite` never fires. The saved font still bridges composites through the glyph they reference.
+`fonttools_glyph_to_domain` (io/converter.py) records only outline segments, so a composite glyph (Roboto `Aacute` = `A` + `acute`) has zero contours and `classify_glyphs` files it as "empty glyph". The converter reads `fonttools_glyph._glyph`, which fontTools' `_TTGlyphGlyf` glyph-set objects lack, so `Glyph.is_composite()` is always False and `ProcessingConfig.skip_composite` never fires (dead setting). The saved font still bridges composites through the glyph they reference. The GUI no longer depends on the reader: `gui/composites.py` resolves composites from the fontTools glyph set and `FontSession.display_glyphs` lists them (see architecture/gui.md "Composites in the grid"); the core and CLI still see them as empty.
 
 ## Fork warnings when GUI and pool tests share a process
 
-A single `uv run pytest` prints 42 `DeprecationWarning` "multi-threaded, use of fork()" (measured at 111d115): Qt threads started by tests/gui are alive when later tests fork `ProcessPoolExecutor` workers. Running tests/gui alone, or the other test directories alone, prints none.
+Measured at 111d115 with coverage on: a single `uv run pytest` printed 42 `DeprecationWarning` "multi-threaded, use of fork()" (Qt threads from tests/gui alive when later tests fork `ProcessPoolExecutor` workers). At the integration-verify commit, `uv run pytest --no-cov -q -p no:cacheprovider tests` in one process (Python 3.13.1, 313 tests, 224 s) printed none, and a short gui-then-pool mix printed none. Not re-measured with coverage on, so the warnings may still appear there.
+
+## CommitMono .notdef renders as a solid box
+
+Under Auto, CommitMono `.notdef` (frame, hole, inverted "404" digits) stencils into overlapping full-width outer rectangles, so preview and saved glyph render as a solid black box (20 contours, output identical to the base before per-glyph directions; sha256 prefix c1f9a7e72f56d125). The defect is in the inverted-island path (`core/surgery_nested.py`) and is outside the direction work because Auto output is pinned. Repro: `process_glyph` on that glyph with `BridgeConfig()`. Which real glyphs reach `_process_inverted` is unknown; the synthetic filled encircled digit never does (patterns/bridge-algorithm.md).
