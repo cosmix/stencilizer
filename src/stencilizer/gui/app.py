@@ -18,6 +18,7 @@ except ImportError as error:  # pragma: no cover
 
 from stencilizer.gui.controller import GuiController
 from stencilizer.gui.main_window import MainWindow
+from stencilizer.gui.theme import apply_theme
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -56,6 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     if multiprocessing.get_start_method(allow_none=True) is None:
         multiprocessing.set_start_method("spawn")
     application = QApplication(sys.argv[:1])
+    apply_theme(application)
     window = create_window(args.font, default_log_file())
     window.show()
     return application.exec()
