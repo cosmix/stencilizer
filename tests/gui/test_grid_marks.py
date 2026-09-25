@@ -3,13 +3,15 @@
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QImage, QPalette
+from PySide6.QtWidgets import QListWidgetItem
 from pytestqt.qtbot import QtBot
 
 from stencilizer.config.settings import BridgeDirection
 from stencilizer.domain import Glyph
 from stencilizer.gui.glyph_grid import (
     BASE_TOOLTIP_ROLE,
+    THUMBNAIL_SIZE,
     UNBRIDGED_ROLE,
     GlyphGrid,
 )
@@ -24,6 +26,18 @@ def _load_glyphs(font_path: Path, names: list[str]) -> list[Glyph]:
         glyphs = [reader.get_glyph(name) for name in names]
     assert all(glyph is not None for glyph in glyphs)
     return [glyph for glyph in glyphs if glyph is not None]
+
+
+def _thumbnail(item: QListWidgetItem | None) -> QImage:
+    """Return the item's thumbnail at its rendered size."""
+    assert item is not None
+    return item.icon().pixmap(THUMBNAIL_SIZE, THUMBNAIL_SIZE).toImage()
+
+
+def _badge_pixels(image: QImage, color: str) -> int:
+    """Count pixels of exactly ``color`` in the thumbnail's top-right badge corner."""
+    corner = range(THUMBNAIL_SIZE - 20, THUMBNAIL_SIZE)
+    return sum(image.pixelColor(x, y) == QColor(color) for x in corner for y in range(20))
 
 
 def test_grid_direction_marker(qtbot: QtBot, roboto_path: Path) -> None:
@@ -103,3 +117,37 @@ def test_preview_text_reports_no_bridge(qtbot: QtBot, roboto_path: Path) -> None
     )
     view.show_preview(bridged, 2146, -555)
     assert "1 island(s) bridged" in view.info_label.text()
+
+
+def test_unbridged_thumbnail_carries_a_badge(qtbot: QtBot, roboto_path: Path) -> None:
+    """A marked glyph's thumbnail shows a red badge, beside the red label, until it is cleared."""
+    grid = GlyphGrid()
+    qtbot.addWidget(grid)
+    grid.set_glyphs(_load_glyphs(roboto_path, ["O", "B"]), 1900, -500)
+
+    grid.set_unbridged({"O"})
+
+    assert _badge_pixels(_thumbnail(grid.item(0)), "#c62828") > 60
+    assert _badge_pixels(_thumbnail(grid.item(1)), "#c62828") == 0
+
+    grid.set_unbridged(set())
+
+    assert _badge_pixels(_thumbnail(grid.item(0)), "#c62828") == 0
+
+
+def test_unbridged_badge_follows_a_dark_palette(qtbot: QtBot, roboto_path: Path) -> None:
+    """A switch to a dark base turns the badge light red and leaves the corner pixel on base."""
+    grid = GlyphGrid()
+    qtbot.addWidget(grid)
+    grid.set_glyphs(_load_glyphs(roboto_path, ["O", "B"]), 1900, -500)
+    grid.set_unbridged({"O"})
+    palette = grid.palette()
+    palette.setColor(QPalette.ColorRole.Base, QColor("#121418"))
+    palette.setColor(QPalette.ColorRole.Text, QColor("#e6e8eb"))
+
+    grid.setPalette(palette)
+
+    image = _thumbnail(grid.item(0))
+    assert _badge_pixels(image, "#ff8a80") > 60
+    assert _badge_pixels(image, "#c62828") == 0
+    assert image.pixelColor(0, 0) == QColor("#121418")
