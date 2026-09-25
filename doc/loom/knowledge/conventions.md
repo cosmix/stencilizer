@@ -25,7 +25,7 @@ Only mistakes.md (and topics under mistakes/) is append-only. Every other knowle
 
 ## Qt and GUI code
 
-- Qt event overrides need `# noqa: N802` (`closeEvent`, `paintEvent`), plus `ARG002` when the event argument is unused (gui/main_window.py:87, gui/glyph_view.py:38).
+- Qt event overrides need `# noqa: N802` (`closeEvent`, `paintEvent`), plus `ARG002` when the event argument is unused (gui/main_window.py:110, gui/glyph_view.py:38). The earlier `main_window.py:87` reference was stale: `closeEvent` sits at line 110.
 - Draw glyphs with `QtPen(None, path=path)` and a PySide6 `QPainterPath`: without `path=`, `fontTools.pens.qtPen` imports PyQt5 (gui/outline.py:50). The import needs `# type: ignore[import-untyped]`.
 - Connect worker signals to controller slots with `Qt.ConnectionType.QueuedConnection` so handlers run on the GUI thread; never touch widgets from a `QRunnable`.
 - `FontSession` and other logic stay Qt-free; only controller, tasks and widgets import PySide6.

@@ -42,3 +42,11 @@ Measured at 111d115 with coverage on: a single `uv run pytest` printed 42 `Depre
 ## CommitMono .notdef renders as a solid box
 
 Under Auto, CommitMono `.notdef` (frame, hole, inverted "404" digits) stencils into overlapping full-width outer rectangles, so preview and saved glyph render as a solid black box (20 contours, output identical to the base before per-glyph directions; sha256 prefix c1f9a7e72f56d125). The defect is in the inverted-island path (`core/surgery_nested.py`) and is outside the direction work because Auto output is pinned. Repro: `process_glyph` on that glyph with `BridgeConfig()`. Which real glyphs reach `_process_inverted` is unknown; the synthetic filled encircled digit never does (patterns/bridge-algorithm.md).
+
+## Full test suite near the acceptance time cap
+
+`uv run pytest --no-cov -q -p no:cacheprovider` ran 319 tests in 225 s at c888109 (tests/gui alone: 144 tests in 151 s), against loom's 300 s limit per acceptance command. pytest-xdist is not installed, so the suite cannot be parallelised; a slower machine or more GUI tests can push the full run past the cap.
+
+## Glyph names rendered as rich text in the direction picker
+
+`DirectionPicker.source_label` (src/stencilizer/gui/direction_picker.py) shows glyph names from the font with QLabel's default `Qt.TextFormat.AutoText`, so a name holding markup renders as rich text. The gui-beautify plan sets `PlainText` on the header labels and the preview info label only, leaving the picker label unchanged.
