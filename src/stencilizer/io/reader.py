@@ -6,12 +6,12 @@ and extracting glyph data into domain models.
 
 from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 
 from stencilizer.domain.glyph import Glyph
-from stencilizer.exceptions import GlyphProcessingError
+from stencilizer.exceptions import FontFormatError, GlyphProcessingError
 from stencilizer.io.converter import fonttools_glyph_to_domain
 
 
@@ -36,6 +36,9 @@ class FontReader:
         """
         self._font_path = font_path
         self._font: TTFont | None = None
+        self._glyph_names: set[str] | None = None
+        self._glyph_set: Any = None
+        self._unicode_by_name: dict[str, int] | None = None
 
     def load(self) -> None:
         """Load the font file.
@@ -47,7 +50,15 @@ class FontReader:
         if not self._font_path.exists():
             raise FileNotFoundError(f"Font file not found: {self._font_path}")
 
-        self._font = TTFont(str(self._font_path))
+        font = TTFont(str(self._font_path))
+        if "fvar" in font or "CFF2" in font:
+            reason = "variable fonts (fvar table)" if "fvar" in font else "CFF2 outlines"
+            font.close()
+            raise FontFormatError(str(self._font_path), f"{reason} are not supported")
+        self._font = font
+        self._glyph_names = None
+        self._glyph_set = None
+        self._unicode_by_name = None
 
     @property
     def format(self) -> str:
@@ -121,13 +132,8 @@ class FontReader:
         if self._font is None:
             raise RuntimeError("Font not loaded. Call load() first.")
 
-        glyph_order = self._font.getGlyphOrder()
-
-        for glyph_name in glyph_order:
-            try:
-                glyph = self.get_glyph(glyph_name)
-            except GlyphProcessingError:
-                continue
+        for glyph_name in self._font.getGlyphOrder():
+            glyph = self.get_glyph(glyph_name)
             if glyph is not None:
                 yield glyph
 
@@ -146,15 +152,24 @@ class FontReader:
         if self._font is None:
             raise RuntimeError("Font not loaded. Call load() first.")
 
-        if name not in self._font.getGlyphOrder():
+        if self._glyph_names is None:
+            self._glyph_names = set(self._font.getGlyphOrder())
+        if name not in self._glyph_names:
             return None
 
-        glyph_set = self._font.getGlyphSet()
-        fonttools_glyph = glyph_set[name]
-
         try:
+            if self._glyph_set is None:
+                self._glyph_set = self._font.getGlyphSet()
+            if self._unicode_by_name is None:
+                self._unicode_by_name = {}
+                for code_point, glyph_name in (self._font.getBestCmap() or {}).items():
+                    self._unicode_by_name.setdefault(glyph_name, code_point)
+            fonttools_glyph = self._glyph_set[name]
             return fonttools_glyph_to_domain(
-                name=name, fonttools_glyph=fonttools_glyph, font=self._font
+                name=name,
+                fonttools_glyph=fonttools_glyph,
+                font=self._font,
+                unicode_by_name=self._unicode_by_name,
             )
         except Exception as e:
             raise GlyphProcessingError(name, str(e)) from e
@@ -164,6 +179,9 @@ class FontReader:
         if self._font is not None:
             self._font.close()
             self._font = None
+            self._glyph_names = None
+            self._glyph_set = None
+            self._unicode_by_name = None
 
     def __enter__(self) -> "FontReader":
         """Context manager entry."""

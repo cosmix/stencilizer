@@ -7,7 +7,7 @@ glyph (character) in a font with its outline contours and metadata.
 from dataclasses import dataclass
 from typing import Any
 
-from stencilizer.domain.contour import Contour, WindingDirection
+from stencilizer.domain.contour import Contour
 
 
 @dataclass
@@ -104,37 +104,16 @@ class Glyph:
         return self._is_composite
 
     def has_islands(self) -> bool:
-        """Check if glyph has inner contours (islands/holes).
-
-        Islands are contours with clockwise winding direction (in TrueType
-        convention) that represent holes in the glyph shape.
-
-        Returns:
-            True if glyph has at least one inner contour, False otherwise
-        """
-        return any(contour.direction == WindingDirection.CLOCKWISE for contour in self.contours)
+        """Check for counter-clockwise hole contours."""
+        return any(contour.signed_area() > 0 for contour in self.contours)
 
     def get_islands(self) -> list[Contour]:
-        """Get list of inner contours (islands/holes).
-
-        Returns:
-            List of contours with clockwise winding direction
-        """
-        return [
-            contour for contour in self.contours if contour.direction == WindingDirection.CLOCKWISE
-        ]
+        """Get counter-clockwise hole contours."""
+        return [contour for contour in self.contours if contour.signed_area() > 0]
 
     def get_outer_contours(self) -> list[Contour]:
-        """Get list of outer contours.
-
-        Returns:
-            List of contours with counter-clockwise winding direction
-        """
-        return [
-            contour
-            for contour in self.contours
-            if contour.direction == WindingDirection.COUNTER_CLOCKWISE
-        ]
+        """Get clockwise filled contours."""
+        return [contour for contour in self.contours if contour.signed_area() < 0]
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary for IPC.

@@ -4,6 +4,8 @@ This module provides user-friendly console output using Rich library
 with progress bars, tables, and formatted messages.
 """
 
+from pathlib import Path
+
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -21,6 +23,19 @@ SYM_STEP = "▸"  # Step indicator
 SYM_OK = "✓"  # Success
 SYM_ERR = "✗"  # Error
 SYM_DOT = "·"  # Separator/secondary info
+
+
+def format_file_size(path: Path) -> str:
+    """Format file size for a processing summary."""
+    try:
+        size_bytes = path.stat().st_size
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        if size_bytes < 1024 * 1024:
+            return f"{size_bytes / 1024:.0f} KB"
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    except OSError:
+        return "unknown"
 
 
 def create_progress() -> Progress:
@@ -120,28 +135,20 @@ def print_success(
     total_time_s: float,
     processed: int,
     bridges: int,
+    unbridged: int,
     errors: int,
     avg_time_ms: float | None = None,
     min_time_ms: float | None = None,
     max_time_ms: float | None = None,
 ) -> None:
-    """Print success message with summary.
-
-    Args:
-        output_path: Path to output file
-        file_size: Human-readable file size string
-        total_time_s: Total processing time in seconds
-        processed: Number of glyphs processed
-        bridges: Total number of bridges added
-        errors: Number of errors encountered
-        avg_time_ms: Average processing time per glyph in milliseconds
-        min_time_ms: Minimum processing time per glyph in milliseconds
-        max_time_ms: Maximum processing time per glyph in milliseconds
-    """
+    """Print output details, bridge outcomes, errors, and optional glyph timings."""
     time_str = _format_time(total_time_s)
 
     # Success header
-    console.print(f"\n[bold green]{SYM_OK} Complete[/bold green] in {time_str}")
+    if unbridged:
+        console.print(f"\n[bold yellow]Complete with unbridged islands[/bold yellow] in {time_str}")
+    else:
+        console.print(f"\n[bold green]{SYM_OK} Complete[/bold green] in {time_str}")
 
     # Output file info
     line = Text("  ")
@@ -155,6 +162,9 @@ def print_success(
         f"  {processed} glyphs {SYM_DOT} {bridges} bridges {SYM_DOT} "
         f"[{error_style}]{errors} errors[/{error_style}]"
     )
+    if unbridged:
+        noun = "island" if unbridged == 1 else "islands"
+        console.print(f"  [yellow]{unbridged} {noun} remained unbridged[/yellow]")
 
     # Per-glyph timing
     if avg_time_ms is not None:

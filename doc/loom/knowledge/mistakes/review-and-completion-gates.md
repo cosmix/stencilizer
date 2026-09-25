@@ -19,3 +19,15 @@
 **What happened**: A codex unit reported fixing ruff `PT013` in `tests/gui/test_header.py` and left an `I001` import-order error (pytest after PySide6).
 **Why**: The unit's one static check ran before its last edit.
 **Prevention**: The orchestrator runs `ruff check --fix` and `ruff format` on every codex wave's files before the tests (see mistakes.md "Test-writing units fail the repo's lint gate").
+
+## Concurrent pull recovery
+
+**What happened:** Tracked review edits disappeared while the branch advanced to the remote GUI changes. Restoring the reviewed archive with a three-way merge temporarily left conflict markers in pyproject.toml, causing settings discovery to fail.
+
+**Why:** Recovery overlapped dependency and processing changes added remotely.
+
+**Prevention:** Preserve a patch before concurrent version-control work and resolve manifests before invoking project tools.
+
+**Fix:** Restore the pulled manifests, reapply stable dependency updates through uv, preserve GUI changes, and verify the combined tree before committing.
+
+The recovered early font-format rejection initially used different wording from the pulled GUI. Preserve the existing GUI wording for CFF2 and variable fonts when rejecting in FontReader; GUI integration tests cover this boundary.

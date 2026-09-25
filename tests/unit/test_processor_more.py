@@ -8,6 +8,12 @@ import pytest
 from stencilizer.config import BridgeConfig, StencilizerSettings
 from stencilizer.core.processor import FontProcessor, process_glyph
 from stencilizer.domain import Glyph
+from stencilizer.exceptions import FontProcessingError
+
+
+@pytest.fixture(autouse=True)
+def _isolate_outputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
 
 
 class TestFontProcessor:
@@ -24,7 +30,7 @@ class TestFontProcessor:
         settings: StencilizerSettings,
         sample_glyph_with_island: Glyph,
     ):
-        """Test that processing errors are handled gracefully."""
+        """Worker failures abort without publishing a font."""
         mock_logging.return_value = Mock()
 
         mock_reader = Mock()
@@ -56,10 +62,11 @@ class TestFontProcessor:
             mock_as_completed.return_value = [mock_future]
 
             processor = FontProcessor(settings)
-            stats = processor.process(Path("input.ttf"), max_workers=1)
+            with pytest.raises(FontProcessingError, match="O: Test error") as error:
+                processor.process(Path("input.ttf"), max_workers=1)
 
-            assert stats.processed_count == 0
-            assert stats.error_count == 1
+            assert error.value.errors == [("O", "Test error")]
+            mock_writer_class.assert_not_called()
 
     @patch("stencilizer.core.processor.FontReader")
     @patch("stencilizer.core.processor.FontWriter")
@@ -70,6 +77,7 @@ class TestFontProcessor:
         mock_writer_class,
         mock_reader_class,
         settings: StencilizerSettings,
+        tmp_path: Path,
     ):
         """Test processing with custom output path."""
         mock_logging.return_value = Mock()
@@ -85,14 +93,20 @@ class TestFontProcessor:
         mock_writer = Mock()
         mock_writer_class.return_value = mock_writer
 
-        custom_output = Path("custom-output.ttf")
+        custom_output = tmp_path / "custom-output.ttf"
+        mock_writer.save.side_effect = lambda: mock_writer_class.call_args[0][1].write_bytes(
+            b"saved font"
+        )
         processor = FontProcessor(settings)
         processor.process(Path("input.ttf"), output_path=custom_output)
 
-        # Verify FontWriter was created with custom path
+        # Save to a sibling temporary file, then publish at the requested path.
         mock_writer_class.assert_called_once()
-        call_args = mock_writer_class.call_args
-        assert call_args[0][1] == custom_output
+        temporary_output = mock_writer_class.call_args[0][1]
+        assert temporary_output.parent == tmp_path
+        assert temporary_output.suffix == ".ttf"
+        assert custom_output.read_bytes() == b"saved font"
+        assert sorted(tmp_path.iterdir()) == [custom_output]
 
     @patch("stencilizer.core.processor.FontReader")
     @patch("stencilizer.core.processor.FontWriter")

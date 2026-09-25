@@ -1,7 +1,8 @@
 """Segment traversal and joining for a fixed-coordinate bridge line."""
 
 from stencilizer.core.axis import Axis
-from stencilizer.domain import Point, PointType
+from stencilizer.core.curve import flatten_contour
+from stencilizer.domain import Contour, Point, PointType
 
 
 def _intersection(p1: Point, p2: Point, line: float, axis: Axis, epsilon: float) -> Point:
@@ -14,6 +15,11 @@ def _intersection(p1: Point, p2: Point, line: float, axis: Axis, epsilon: float)
     return axis.point(line, other, PointType.ON_CURVE)
 
 
+def _on_side(point: Point, line: float, axis: Axis, lower: bool) -> bool:
+    value = axis.coord(point)
+    return value <= line if lower else value >= line
+
+
 def collect_segments(
     points: list[Point],
     line: float,
@@ -24,19 +30,18 @@ def collect_segments(
     require_existing_wrap: bool = False,
 ) -> list[list[Point]]:
     """Collect contour runs on one side, retaining traversal and wrap order."""
-
-    def on_side(point: Point) -> bool:
-        value = axis.coord(point)
-        return value <= line if lower else value >= line
+    points = flatten_contour(Contour(points), epsilon * 250).points
+    if not points:
+        return []
 
     segments: list[list[Point]] = []
     current: list[Point] = []
-    was_on = on_side(points[0])
+    was_on = _on_side(points[0], line, axis, lower)
     previous = points[0]
     if was_on:
         current = [Point(previous.x, previous.y, previous.point_type)]
     for point in points[1:]:
-        now_on = on_side(point)
+        now_on = _on_side(point, line, axis, lower)
         if now_on:
             if not was_on:
                 current = [_intersection(previous, point, line, axis, epsilon)]
@@ -47,7 +52,7 @@ def collect_segments(
             current = []
         was_on = now_on
         previous = point
-    first_on = on_side(points[0])
+    first_on = _on_side(points[0], line, axis, lower)
     if was_on and not first_on:
         current.append(_intersection(previous, points[0], line, axis, epsilon))
         segments.append(current)

@@ -79,6 +79,8 @@ def _split_child(
     ctx.contours.extend(result)
     ctx.processed.add(outer_idx)
     ctx.processed.add(child_idx)
+    ctx.record_bridge(child_idx)
+    ctx.bridged.add(outer_idx)
     return True
 
 
@@ -90,11 +92,10 @@ def _merge_child(ctx: SurgeryContext, outer_idx: int, child_idx: int) -> None:
     if len(merged) >= 1 and merged != [outer, child]:
         ctx.contours.extend(merged)
         ctx.track_nested(nested)
-    else:
-        ctx.contours.append(outer)
-        ctx.contours.append(child)
-    ctx.processed.add(outer_idx)
-    ctx.processed.add(child_idx)
+        ctx.processed.add(outer_idx)
+        ctx.processed.add(child_idx)
+        ctx.record_bridge(child_idx)
+        ctx.bridged.add(outer_idx)
 
 
 def _process_children(
@@ -119,17 +120,14 @@ def _process_inverted(
     outer = ctx.glyph.contours[outer_idx]
     hole, hole_idx = find_containing_hole(bbox, ctx.contours)
     if hole is None or hole_idx is None:
-        ctx.contours.append(outer)
-        ctx.processed.add(outer_idx)
         return
     nested: list[Contour] = []
     merged = ctx.merge(outer, hole, nested)
     if len(merged) >= 1 and merged != [hole, outer]:
         ctx.contours = ctx.contours[:hole_idx] + merged + ctx.contours[hole_idx + 1 :]
         ctx.track_nested(nested)
-    else:
-        ctx.contours.append(outer)
-    ctx.processed.add(outer_idx)
+        ctx.processed.add(outer_idx)
+        ctx.record_bridge(outer_idx)
 
 
 def process_nested(ctx: SurgeryContext) -> None:

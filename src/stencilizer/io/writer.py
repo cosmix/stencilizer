@@ -11,6 +11,7 @@ from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 
 from stencilizer import __version__
 from stencilizer.domain.glyph import Glyph
+from stencilizer.exceptions import FontFormatError, FontSaveError
 from stencilizer.io.converter import domain_glyph_to_fonttools
 
 # Name table IDs we modify
@@ -19,6 +20,13 @@ NAME_ID_FULL_NAME = 4
 NAME_ID_VERSION = 5
 NAME_ID_POSTSCRIPT = 6
 NAME_ID_TYPOGRAPHIC_FAMILY = 16
+
+
+def _check_supported_format(font: TTFont, path: Path) -> None:
+    if "fvar" in font:
+        raise FontFormatError(str(path), "Unsupported variable fonts")
+    if "CFF2" in font:
+        raise FontFormatError(str(path), "Unsupported CFF2 outlines")
 
 
 def update_font_names(font: TTFont, suffix: str = " Stenciled") -> None:
@@ -116,6 +124,7 @@ class FontWriter:
         Raises:
             ValueError: If glyph name not found in font
         """
+        _check_supported_format(self._font, self._output_path)
         glyph_name = glyph.name
 
         if glyph_name not in self._font.getGlyphOrder():
@@ -135,8 +144,12 @@ class FontWriter:
         Raises:
             IOError: If file cannot be written
         """
-        update_font_names(self._font)
-        self._font.save(str(self._output_path))
+        _check_supported_format(self._font, self._output_path)
+        try:
+            update_font_names(self._font)
+            self._font.save(str(self._output_path))
+        except OSError as exc:
+            raise FontSaveError(str(self._output_path), str(exc)) from exc
 
     @staticmethod
     def get_stenciled_path(input_path: Path) -> Path:

@@ -24,3 +24,15 @@ Read: `fonttools_glyph_to_domain()` records any outline with `RecordingPen`; CFF
 ## GUI (summary)
 
 `stencilizer-gui` is a PySide6 window over the unchanged core: `FontSession` (Qt-free) opens, previews and saves; the grid lists island glyphs plus composites that draw one (`gui/composites.py`); `GuiController` runs open and save as `QRunnable`s with queued signals, keeps per-glyph bridge directions, and runs a debounced unbridged-glyph survey on the pool; saves stage in a private temp dir and never write through the output directory. `MainWindow` is a header bar over a splitter of sidebar, glyph grid and preview pane, with save progress in the status bar; `gui/theme.py` styles it in light or dark and follows the system scheme. Layout, theme, threading and save-safety detail: [architecture/gui](architecture/gui.md).
+
+## Font format and error boundary
+
+Review fixes reject variable fonts (fvar) and CFF2 before conversion and expose glyph conversion errors instead of silently omitting glyphs. Unsupported inputs must fail explicitly without publishing an output font.
+
+## Processing outcomes
+
+Operational glyph worker, conversion, and write failures abort font publication. Geometrically unbridgeable islands are explicit incomplete outcomes: count only confirmed hole connections as bridges, retain an unbridged count, and warn in the CLI rather than converting an expected geometric limitation into a worker crash.
+
+## Preserve no-op font glyphs
+
+A worker outcome with zero confirmed bridges must not enqueue a glyph rewrite. Keeping the original font glyph avoids dropping TrueType hint instructions or changing encoding merely because analysis found an unbridgeable island. Its unbridged count remains visible in processing statistics.

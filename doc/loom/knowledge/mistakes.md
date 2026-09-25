@@ -119,3 +119,59 @@ Reviewer rounds recorded malformed because the report went through the hand-back
 
 Place screenshots alongside the instructions they illustrate; avoid stacking large visuals at the top.
 See [README layout](mistakes/readme-layout.md) for the correction and placement rule.
+
+## Review probes must supply complete glyph metadata
+
+**What happened**: A review probe failed before exercising the code because GlyphMetadata was constructed with only a name.
+**Why**: Assumed defaults for required unicode, advance_width, and left_side_bearing fields.
+**Prevention**: Inspect domain constructors before constructing synthetic review inputs.
+**Fix**: Supply all four required metadata fields in probes.
+
+## Preserve imports needed by new regression tests
+
+**What happened**: During review fixes, an IO test import of Contour was removed while a new test still needed it; the agent restored it before verification.
+**Why**: Import cleanup and test additions were edited together.
+**Prevention**: Check imports against all new test references during edits.
+**Fix**: Restored the Contour import.
+
+## Analyzer signature changes must include instrumentation callers
+
+**What happened**: Focused integration verification failed because the CLI analysis-count test monkeypatch accepted analyze(self, glyph), while new curve handling passed an additional UPM argument.
+**Why**: Analyzer signature changes crossed a test instrumentation boundary during parallel implementation.
+**Prevention**: Search wrappers and monkeypatches when extending public method signatures; retain compatibility where a new argument is unnecessary.
+**Fix**: Align analyzer callers and regression instrumentation before full verification.
+
+## New regression tests need the same static checks as source
+
+**What happened**: New review code passed focused behavior checks but lint/type checks flagged import order, explicit zip strictness, context-manager style, Path replacement, and FontTools test annotations. A legacy test still expected the final output path at the writer boundary after transactional save introduced a temporary path.
+**Why**: Leaf agents leave verification to the coordinator; integration changes also affect mocks and instrumentation.
+**Prevention**: Run lint/type checks on new tests and source, and update mocks to assert the new safety guarantees.
+**Fix**: Apply scoped static-check fixes and strengthen the custom-output test to validate temporary-save and final-publication behavior.
+
+## Inspect transactional-save patches after replacement
+
+**What happened**: An initial save-path patch retained an obsolete update_glyph call in the finally block; the agent removed it before verification.
+**Why**: Multi-hunk patch context retained an old statement.
+**Prevention**: Inspect the entire edited function immediately after restructuring cleanup logic.
+**Fix**: Removed the obsolete call; finally only cleans up the temporary file.
+
+## Curve flatness must use a finite chord
+
+**What happened**: Initial adaptive flattening measured distance to the infinite chord line, so collinear control points beyond the endpoints could erase curve overshoot.
+**Why**: Normal distance alone ignores longitudinal backtracking.
+**Prevention**: Use clamped point-to-segment distance, test collinear overshoot, and validate positive finite tolerance with bounded subdivision.
+**Fix**: Geometry agent is applying finite-chord subdivision and targeted regressions.
+
+## Review fixes must preserve structural limits
+
+**What happened**: Structure checks found the expanded CLI at 405 lines and two geometry functions above 50 effective lines.
+**Why**: Correctness fixes added behavior to units already near their size limits.
+**Prevention**: Extract cohesive helpers before adding to nearly full modules and functions; recheck after formatting.
+**Fix**: Agents are decomposing the affected units without removing checks.
+
+## Successful analysis is not necessarily a glyph edit
+
+**What happened**: Result collection initially queued zero-bridge glyphs for serialization, which could remove their original hint instructions.
+**Why**: Successful analysis was treated as successful outline modification.
+**Prevention**: Gate writer updates on confirmed bridge_count greater than zero and retain statistics for analyzed no-ops.
+**Fix**: Zero-bridge glyphs remain untouched in the font; regression tests assert they are absent from the writer queue.

@@ -15,28 +15,13 @@ from stencilizer.domain.contour import Contour, Point, PointType
 from stencilizer.domain.glyph import Glyph, GlyphMetadata
 
 
-def fonttools_glyph_to_domain(name: str, fonttools_glyph: Any, font: TTFont) -> Glyph:
-    """Convert fonttools glyph to domain Glyph model.
-
-    Handles both TrueType (quadratic curves) and OpenType/CFF (cubic curves).
-    Uses a RecordingPen to extract the glyph outline as a series of
-    drawing commands, then converts these to Contour objects.
-
-    Note: CFF fonts use opposite winding convention (CCW=outer, CW=inner)
-    compared to TrueType (CW=outer, CCW=inner). We normalize CFF contours
-    by reversing point order so the analyzer receives consistent winding.
-
-    Args:
-        name: Name of the glyph
-        fonttools_glyph: The fonttools glyph object from GlyphSet
-        font: The TTFont object for accessing metadata
-
-    Returns:
-        Domain Glyph model
-
-    Raises:
-        Exception: If glyph cannot be converted
-    """
+def fonttools_glyph_to_domain(
+    name: str,
+    fonttools_glyph: Any,
+    font: TTFont,
+    unicode_by_name: dict[str, int] | None = None,
+) -> Glyph:
+    """Convert recorded outlines and metadata, normalizing CFF winding to TrueType."""
     pen = RecordingPen()
     fonttools_glyph.draw(pen)
 
@@ -49,7 +34,7 @@ def fonttools_glyph_to_domain(name: str, fonttools_glyph: Any, font: TTFont) -> 
         for contour in contours:
             contour.points = list(reversed(contour.points))
 
-    metadata = _extract_glyph_metadata(name, font)
+    metadata = _extract_glyph_metadata(name, font, unicode_by_name)
 
     glyph = Glyph(metadata=metadata, contours=contours)
 
@@ -88,21 +73,7 @@ def domain_glyph_to_fonttools(glyph: Glyph, original_glyph: Any, font: TTFont) -
 
 
 def _recording_to_contours(recording: list[tuple[str, tuple[Any, ...]]]) -> list[Contour]:
-    """Convert RecordingPen recording to list of Contour objects.
-
-    The RecordingPen records drawing commands like:
-    - ('moveTo', ((x, y),))
-    - ('lineTo', ((x, y),))
-    - ('qCurveTo', ((x1, y1), (x2, y2), ...))  # Quadratic
-    - ('curveTo', ((x1, y1), (x2, y2), (x3, y3)))  # Cubic
-    - ('closePath', ())
-
-    Args:
-        recording: List of drawing commands from RecordingPen
-
-    Returns:
-        List of Contour objects
-    """
+    """Convert RecordingPen commands to contours, preserving curve controls."""
     contours: list[Contour] = []
     current_points: list[Point] = []
 
@@ -120,11 +91,7 @@ def _recording_to_contours(recording: list[tuple[str, tuple[Any, ...]]]) -> list
             current_points.append(Point(x, y, PointType.ON_CURVE))
 
         elif command == "qCurveTo":
-            for i, (x, y) in enumerate(args):
-                if i < len(args) - 1:
-                    current_points.append(Point(x, y, PointType.OFF_CURVE_QUAD))
-                else:
-                    current_points.append(Point(x, y, PointType.ON_CURVE))
+            _append_quadratic_points(current_points, args)
 
         elif command == "curveTo":
             x1, y1 = args[0]
@@ -145,7 +112,25 @@ def _recording_to_contours(recording: list[tuple[str, tuple[Any, ...]]]) -> list
     return contours
 
 
-def _extract_glyph_metadata(name: str, font: TTFont) -> GlyphMetadata:
+def _append_quadratic_points(points: list[Point], args: tuple[Any, ...]) -> None:
+    all_off_curve = args[-1] is None
+    positions = args[:-1] if all_off_curve else args
+    if all_off_curve and not points:
+        first_x, first_y = positions[0]
+        last_x, last_y = positions[-1]
+        points.append(Point((first_x + last_x) / 2, (first_y + last_y) / 2))
+    for index, (x, y) in enumerate(positions):
+        point_type = (
+            PointType.OFF_CURVE_QUAD
+            if all_off_curve or index < len(positions) - 1
+            else PointType.ON_CURVE
+        )
+        points.append(Point(x, y, point_type))
+
+
+def _extract_glyph_metadata(
+    name: str, font: TTFont, unicode_by_name: dict[str, int] | None = None
+) -> GlyphMetadata:
     """Extract glyph metadata from font.
 
     Args:
@@ -162,14 +147,11 @@ def _extract_glyph_metadata(name: str, font: TTFont) -> GlyphMetadata:
     if hmtx and name in hmtx.metrics:
         advance_width, lsb = hmtx.metrics[name]
 
-    cmap = font.getBestCmap()
-    unicode_value = None
-
-    if cmap:
-        for code_point, glyph_name in cmap.items():
-            if glyph_name == name:
-                unicode_value = code_point
-                break
+    if unicode_by_name is None:
+        unicode_by_name = {}
+        for code_point, glyph_name in (font.getBestCmap() or {}).items():
+            unicode_by_name.setdefault(glyph_name, code_point)
+    unicode_value = unicode_by_name.get(name)
 
     return GlyphMetadata(
         name=name, unicode=unicode_value, advance_width=advance_width, left_side_bearing=lsb
@@ -190,43 +172,61 @@ def _update_truetype_glyph(glyph: Glyph, _: Any, font: TTFont) -> None:
     pen = TTGlyphPen(font.getGlyphSet())
 
     for contour in glyph.contours:
-        if not contour.points:
-            continue
-
-        first_point = contour.points[0]
-        pen.moveTo((first_point.x, first_point.y))
-
-        i = 1
-        while i < len(contour.points):
-            point = contour.points[i]
-
-            if point.point_type == PointType.ON_CURVE:
-                pen.lineTo((point.x, point.y))
-                i += 1
-
-            elif point.point_type == PointType.OFF_CURVE_QUAD:
-                quad_points = [(point.x, point.y)]
-                i += 1
-
-                while i < len(contour.points):
-                    next_point = contour.points[i]
-                    if next_point.point_type == PointType.OFF_CURVE_QUAD:
-                        quad_points.append((next_point.x, next_point.y))
-                        i += 1
-                    else:
-                        quad_points.append((next_point.x, next_point.y))
-                        i += 1
-                        break
-
-                pen.qCurveTo(*quad_points)
-
-            else:
-                i += 1
-
-        pen.closePath()
+        _draw_closed_contour(pen, contour.points, PointType.OFF_CURVE_QUAD)
 
     new_glyph = pen.glyph()
     glyf_table[glyph_name] = new_glyph
+
+
+def _cyclic_points(points: list[Point], control_type: PointType) -> list[Point]:
+    """Start a closed contour at an on-curve point without changing its edges."""
+    if not points:
+        return []
+    for index, point in enumerate(points):
+        if point.point_type == PointType.ON_CURVE:
+            return points[index:] + points[:index]
+    if control_type != PointType.OFF_CURVE_QUAD:
+        raise ValueError("Cubic contour has no on-curve point")
+    first, last = points[0], points[-1]
+    implied = Point((first.x + last.x) / 2, (first.y + last.y) / 2)
+    return [implied, *points]
+
+
+def _draw_closed_contour(pen: Any, points: list[Point], control_type: PointType) -> None:
+    ordered = _cyclic_points(points, control_type)
+    if not ordered:
+        return
+    first = ordered[0]
+    pen.moveTo((first.x, first.y))
+    controls: list[tuple[float, float]] = []
+    for point in ordered[1:]:
+        position = (point.x, point.y)
+        if point.point_type == control_type:
+            controls.append(position)
+        elif point.point_type == PointType.ON_CURVE:
+            _emit_segment(pen, controls, position, control_type)
+            controls = []
+        else:
+            raise ValueError(f"Unexpected {point.point_type.value} control in contour")
+    if controls:
+        _emit_segment(pen, controls, (first.x, first.y), control_type)
+    pen.closePath()
+
+
+def _emit_segment(
+    pen: Any,
+    controls: list[tuple[float, float]],
+    endpoint: tuple[float, float],
+    control_type: PointType,
+) -> None:
+    if not controls:
+        pen.lineTo(endpoint)
+    elif control_type == PointType.OFF_CURVE_QUAD:
+        pen.qCurveTo(*controls, endpoint)
+    elif len(controls) == 2:
+        pen.curveTo(*controls, endpoint)
+    else:
+        raise ValueError("Cubic segment requires exactly two control points")
 
 
 def _update_cff_glyph(glyph: Glyph, _: Any, font: TTFont) -> None:
@@ -250,37 +250,8 @@ def _update_cff_glyph(glyph: Glyph, _: Any, font: TTFont) -> None:
     pen = T2CharStringPen(width=glyph.metadata.advance_width, glyphSet=font.getGlyphSet())
 
     for contour in glyph.contours:
-        # Reverse points to restore CFF winding convention
-        points = list(reversed(contour.points))
-        if not points:
-            continue
+        # Reverse points to restore CFF winding convention.
+        _draw_closed_contour(pen, list(reversed(contour.points)), PointType.OFF_CURVE_CUBIC)
 
-        first_point = points[0]
-        pen.moveTo((first_point.x, first_point.y))
-
-        i = 1
-        while i < len(points):
-            point = points[i]
-
-            if point.point_type == PointType.ON_CURVE:
-                pen.lineTo((point.x, point.y))
-                i += 1
-
-            elif point.point_type == PointType.OFF_CURVE_CUBIC:
-                if i + 2 < len(points):
-                    p1 = point
-                    p2 = points[i + 1]
-                    p3 = points[i + 2]
-
-                    pen.curveTo((p1.x, p1.y), (p2.x, p2.y), (p3.x, p3.y))
-                    i += 3
-                else:
-                    i += 1
-
-            else:
-                i += 1
-
-        pen.closePath()
-
-    charstring = pen.getCharString(private=private, globalSubrs=global_subrs)
+    charstring = pen.getCharString(private=private, globalSubrs=global_subrs, optimize=False)
     charstrings[glyph_name] = charstring

@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 
 from stencilizer.core.axis import Axis
+from stencilizer.core.curve import flatten_contour
 from stencilizer.core.geometry import find_all_edge_crossings, find_edge_crossing
 from stencilizer.core.multi_island_nested import append_nested_contours
 from stencilizer.core.multi_island_obstruction import has_spanning_obstruction_axis
@@ -255,6 +256,46 @@ def _obstructed(
 
 
 def merge_multi_island_axis(
+    outer: Contour,
+    inners: list[Contour],
+    bridge_width: float,
+    axis: Axis,
+    all_contours: list[Contour] | None = None,
+    processed_nested: list[Contour] | None = None,
+    *,
+    edge_margin: float = 20.0,
+    epsilon: float = 0.001,
+    connection_tolerance: float = 1.0,
+    duplicate_tolerance: float = 0.5,
+) -> list[Contour]:
+    """Flatten once so crossing indexes and traversal refer to the same edges."""
+    originals = [outer, *inners, *(all_contours or [])]
+    flattened = {id(c): flatten_contour(c, epsilon * 250) for c in originals}
+    reverse = {id(flattened[id(c)]): c for c in originals}
+    flat_outer = flattened[id(outer)]
+    flat_inners = [flattened[id(c)] for c in inners]
+    flat_all = [flattened[id(c)] for c in all_contours] if all_contours is not None else None
+    nested_start = len(processed_nested) if processed_nested is not None else 0
+    result = _merge_multi_island_flat(
+        flat_outer,
+        flat_inners,
+        bridge_width,
+        axis,
+        flat_all,
+        processed_nested,
+        edge_margin=edge_margin,
+        epsilon=epsilon,
+        connection_tolerance=connection_tolerance,
+        duplicate_tolerance=duplicate_tolerance,
+    )
+    if processed_nested is not None:
+        processed_nested[nested_start:] = [
+            reverse.get(id(c), c) for c in processed_nested[nested_start:]
+        ]
+    return [outer, *inners] if result == [flat_outer, *flat_inners] else result
+
+
+def _merge_multi_island_flat(
     outer: Contour,
     inners: list[Contour],
     bridge_width: float,

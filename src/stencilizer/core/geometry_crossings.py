@@ -1,5 +1,6 @@
 """Line, contour, and bridge crossing calculations."""
 
+from stencilizer.core.curve import flatten_contour
 from stencilizer.core.geometry_polygon import signed_area
 from stencilizer.domain import Contour, Point
 
@@ -77,7 +78,7 @@ def segments_intersect(
 
 def line_intersects_contour(x1: float, y1: float, x2: float, y2: float, contour: Contour) -> bool:
     """Check if a line segment intersects a contour."""
-    points = contour.points
+    points = flatten_contour(contour, 0.25).points
     n = len(points)
 
     for i in range(n):
@@ -113,7 +114,7 @@ def is_bridge_path_clear(
             continue
         # Only filled contours (CW = negative signed area) are obstructions.
         # Holes (CCW = positive signed area) can be split by bridge functions.
-        if signed_area(contour.points) >= 0:
+        if signed_area(flatten_contour(contour, 0.25).points) >= 0:
             continue  # This is a hole, not an obstruction
         if line_intersects_contour(start_x, start_y, end_x, end_y, contour):
             return False
@@ -131,21 +132,11 @@ def find_edge_crossing(
     *,
     epsilon: float = 0.001,
 ) -> tuple[int, float, float] | None:
-    """Find where contour edge crosses a coordinate.
+    """Find a crossing on the flattened outline within exclusive coordinate bounds.
 
-    Args:
-        contour: The contour to search
-        coord: The X or Y coordinate to find crossing at
-        is_x: If True, find Y at given X; if False, find X at given Y
-        constraint_min: Only return crossings where the other coord > this
-        constraint_max: Only return crossings where the other coord < this
-        pick_extreme: If True, pick extreme crossing instead of nearest
-        epsilon: Degenerate-segment threshold in font units
-
-    Returns:
-        (edge_index, crossing_coord, t_param) or None
-    """
-    points = contour.points
+    Return (edge_index, crossing_coord, t_param), choosing the nearest eligible
+    crossing or the farthest when pick_extreme is true. epsilon is in font units."""
+    points = flatten_contour(contour, epsilon * 250).points
     n = len(points)
     best = None
     best_other = None
@@ -216,7 +207,7 @@ def find_all_edge_crossings(
     Returns:
         List of (edge_index, crossing_coord, other_coord) sorted by other_coord descending
     """
-    points = contour.points
+    points = flatten_contour(contour, epsilon * 250).points
     n = len(points)
     crossings = []
 

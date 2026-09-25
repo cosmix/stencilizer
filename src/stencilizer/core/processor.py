@@ -1,5 +1,6 @@
 """Parallel processing orchestration for stencilization."""
 
+import tempfile
 import time
 import traceback
 from collections.abc import Callable, Mapping
@@ -13,6 +14,7 @@ from stencilizer.config.settings import BridgeDirection, GeometryConfig
 from stencilizer.core.analyzer import GlyphAnalyzer
 from stencilizer.core.surgery import GlyphTransformer
 from stencilizer.domain import Glyph
+from stencilizer.exceptions import FontFormatError, FontProcessingError, FontSaveError
 from stencilizer.io import FontReader, FontWriter
 from stencilizer.utils import ProcessingLogger, ProcessingStats, configure_logging
 
@@ -55,7 +57,7 @@ def _transform_glyph(
     config_dict: dict[str, Any],
     upm: int,
     geometry_dict: dict[str, Any] | None,
-) -> tuple[Glyph, int]:
+) -> tuple[Glyph, int, int]:
     glyph = Glyph.from_dict(glyph_dict)
     bridge_config = BridgeConfig(**config_dict)
     geometry_config = (
@@ -67,11 +69,8 @@ def _transform_glyph(
         bridge_config=bridge_config,
         geometry_config=geometry_config,
     )
-    before = [glyph.contours[index].to_dict() for index in analyzer.analyze(glyph).get_islands()]
-    transformed = transformer.transform(glyph, upm=upm)
-    after = [contour.to_dict() for contour in transformed.contours]
-    bridges_added = _islands_bridged(before, after)
-    return transformed, bridges_added
+    outcome = transformer.transform_with_outcome(glyph, upm=upm)
+    return outcome.glyph, outcome.bridge_count, outcome.unbridged_count
 
 
 def process_glyph(
@@ -87,12 +86,13 @@ def process_glyph(
     """
     start_time = time.time()
     try:
-        transformed_glyph, bridges_added = _transform_glyph(
+        transformed_glyph, bridges_added, unbridged_count = _transform_glyph(
             glyph_dict, config_dict, upm, geometry_dict
         )
         return {
             "glyph": transformed_glyph.to_dict(),
             "bridges_added": bridges_added,
+            "unbridged_count": unbridged_count,
             "duration_ms": (time.time() - start_time) * 1000,
         }
     except Exception as error:
@@ -118,14 +118,14 @@ def _config_for_glyph(
 class FontProcessor:
     """Orchestrate font stencilization and glyph processing."""
 
-    def __init__(self, config: StencilizerSettings) -> None:
+    def __init__(self, config: StencilizerSettings, quiet: bool = False) -> None:
         """Initialize processing services."""
         self.config = config
         self.logger = configure_logging(
             log_file=config.logging.log_file,
             console_level=config.logging.log_level,
             file_level=config.logging.file_log_level,
-            quiet=False,
+            quiet=quiet,
         )
         self.processing_logger = ProcessingLogger(self.logger)
         self.analyzer = GlyphAnalyzer()
@@ -181,8 +181,8 @@ class FontProcessor:
             max_workers=max_workers,
         )
         reader = FontReader(font_path)
-        reader.load()
         try:
+            reader.load()
             self._process_loaded_font(
                 reader,
                 output_path,
@@ -201,6 +201,7 @@ class FontProcessor:
             skipped=stats.skipped_count,
             errors=stats.error_count,
             bridges_added=stats.bridges_added,
+            unbridged=stats.unbridged_count,
             duration_seconds=round(stats.duration_seconds, 2),
         )
         return stats
@@ -236,6 +237,8 @@ class FontProcessor:
         else:
             self.logger.info("No glyphs to process")
             processed = {}
+        if stats.error_count:
+            raise FontProcessingError(stats.errors)
         self._save_font(reader, output_path, processed)
 
     def _process_glyphs_parallel(
@@ -292,17 +295,26 @@ class FontProcessor:
         try:
             result = future.result()
             if "error" in result:
+                error_message = result["error"]
                 self.processing_logger.log_glyph_error(
-                    glyph_name=result["glyph_name"],
-                    error=Exception(result["error"]),
+                    glyph_name=name,
+                    error=Exception(error_message),
                     traceback=result.get("traceback"),
                 )
                 stats.error_count += 1
+                stats.errors.append((name, error_message))
                 return False
-            processed[name] = Glyph.from_dict(result["glyph"])
             bridges_added = result["bridges_added"]
+            if bridges_added:
+                processed[name] = Glyph.from_dict(result["glyph"])
             stats.processed_count += 1
             stats.bridges_added += bridges_added
+            unbridged_count = result.get("unbridged_count", 0)
+            stats.unbridged_count += unbridged_count
+            if unbridged_count:
+                self.logger.warning(
+                    "Glyph has unbridged islands", glyph=name, count=unbridged_count
+                )
             duration_ms = result.get("duration_ms", 0.0)
             self.processing_logger.log_glyph_complete(
                 glyph_name=name, bridges_added=bridges_added, duration_ms=duration_ms
@@ -314,6 +326,7 @@ class FontProcessor:
                 glyph_name=name, error=error, traceback=traceback.format_exc()
             )
             stats.error_count += 1
+            stats.errors.append((name, str(error)))
             return False
 
     def _save_font(
@@ -323,15 +336,37 @@ class FontProcessor:
         processed_glyphs: dict[str, Glyph],
     ) -> None:
         """Write transformed glyphs into the loaded font and save it."""
-        writer = FontWriter(reader.font, output_path)
-        for glyph_name, glyph in processed_glyphs.items():
+        temporary_name: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                prefix=f".{output_path.stem}-",
+                suffix=output_path.suffix,
+                dir=output_path.parent,
+                delete=False,
+            ) as temporary_file:
+                temporary_name = temporary_file.name
+            writer = FontWriter(reader.font, Path(temporary_name))
+            for glyph_name, glyph in processed_glyphs.items():
+                try:
+                    writer.update_glyph(glyph)
+                except Exception as error:
+                    raise FontSaveError(
+                        str(output_path), f"failed to update glyph '{glyph_name}': {error}"
+                    ) from error
             try:
-                writer.update_glyph(glyph)
+                writer.save()
+            except FontSaveError as error:
+                raise FontSaveError(str(output_path), error.reason) from error
+            except FontFormatError:
+                raise
             except Exception as error:
-                self.logger.error(
-                    "Failed to update glyph in font", glyph=glyph_name, error=str(error)
-                )
-        writer.save()
+                raise FontSaveError(str(output_path), str(error)) from error
+            Path(temporary_name).replace(output_path)
+        except OSError as error:
+            raise FontSaveError(str(output_path), str(error)) from error
+        finally:
+            if temporary_name is not None:
+                Path(temporary_name).unlink(missing_ok=True)
         self.logger.info(
             "Font saved", output=str(output_path), updated_glyphs=len(processed_glyphs)
         )

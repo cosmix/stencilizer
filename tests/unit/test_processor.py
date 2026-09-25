@@ -3,9 +3,16 @@
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
+import pytest
+
 from stencilizer.config import BridgeConfig, StencilizerSettings
 from stencilizer.core.processor import FontProcessor, process_glyph
 from stencilizer.domain import Glyph, GlyphMetadata
+
+
+@pytest.fixture(autouse=True)
+def _isolate_outputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
 
 
 class TestProcessGlyph:

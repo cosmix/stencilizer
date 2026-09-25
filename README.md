@@ -71,11 +71,16 @@ Stencilizer v1.0.0
   8 workers (auto) · Ctrl+C to cancel
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:02
 
-✓ Complete in 2.1s
+Complete with unbridged islands in 2.1s
   Roboto-Regular-stenciled.ttf (156 KB)
   42 glyphs · 38 bridges · 0 errors
+  4 islands remained unbridged
   45.2ms avg (12.1–98.3ms range)
 ```
+
+The bridge count records islands actually connected. Islands that the geometry cannot bridge are
+reported separately, including with `--quiet`. If a glyph worker or font write fails, the command
+exits with an error and does not publish a partial output file.
 
 ## Usage
 

@@ -63,6 +63,18 @@ class GlyphProcessingError(GlyphError):
         super().__init__(f"Error processing glyph '{glyph_name}': {reason}")
 
 
+class FontProcessingError(StencilizerError):
+    """One or more glyph workers failed before a font could be saved."""
+
+    def __init__(self, errors: list[tuple[str, str]]) -> None:
+        self.errors = errors
+        details = "; ".join(f"{name}: {reason}" for name, reason in errors[:3])
+        remaining = len(errors) - 3
+        if remaining > 0:
+            details += f"; and {remaining} more"
+        super().__init__(f"Failed to process {len(errors)} glyph(s): {details}")
+
+
 class GeometryError(StencilizerError):
     """Errors in geometric calculations."""
 

@@ -11,6 +11,7 @@ from stencilizer.cli.output import (
     SYM_OK,
     console,
     create_progress,
+    format_file_size,
     print_cancellation_notice,
     print_cancellation_summary,
     print_error,
@@ -24,7 +25,12 @@ from stencilizer.cli.output import (
 from stencilizer.config import BridgeConfig, LoggingConfig, ProcessingConfig, StencilizerSettings
 from stencilizer.core import FontProcessor, GlyphAnalyzer
 from stencilizer.core.processor import GlyphClassification
-from stencilizer.exceptions import FontLoadError, FontSaveError, StencilizerError
+from stencilizer.exceptions import (
+    FontLoadError,
+    FontProcessingError,
+    FontSaveError,
+    StencilizerError,
+)
 from stencilizer.io import FontReader, FontWriter
 from stencilizer.utils import ProcessingStats
 
@@ -191,6 +197,8 @@ def _classify_font(font_path: Path, processor: FontProcessor, quiet: bool) -> Gl
                 )
                 print_step("Analyzing glyphs")
             return processor.classify_glyphs(reader)
+    except StencilizerError:
+        raise
     except Exception as error:
         raise FontLoadError(str(font_path), str(error)) from error
 
@@ -203,7 +211,7 @@ def _run_standard(
     quiet: bool,
     verbose: bool,
 ) -> None:
-    processor = FontProcessor(settings)
+    processor = FontProcessor(settings, quiet=quiet)
     classification = _classify_font(font_path, processor, quiet)
     island_names = [glyph.name for glyph in classification.glyphs_to_process]
     if not quiet:
@@ -218,6 +226,13 @@ def _run_standard(
         print_processing_info(actual_workers, is_auto=(workers is None))
     output_path = output if output is not None else FontWriter.get_stenciled_path(font_path)
     stats = _process_font(processor, font_path, output_path, workers, quiet, classification)
+    if stats.error_count:
+        raise FontProcessingError(stats.errors)
+    if quiet and stats.unbridged_count:
+        noun = "island" if stats.unbridged_count == 1 else "islands"
+        console.print(
+            f"[yellow]Warning: {stats.unbridged_count} {noun} remained unbridged[/yellow]"
+        )
     if not quiet:
         _report_success(output_path, stats)
 
@@ -269,10 +284,11 @@ def _process_font(
 def _report_success(output_path: Path, stats: ProcessingStats) -> None:
     print_success(
         output_path=str(output_path),
-        file_size=_format_file_size(output_path),
+        file_size=format_file_size(output_path),
         total_time_s=stats.duration_seconds,
         processed=stats.processed_count,
         bridges=stats.bridges_added,
+        unbridged=stats.unbridged_count,
         errors=stats.error_count,
         avg_time_ms=stats.avg_glyph_time_ms,
         min_time_ms=stats.min_glyph_time_ms,
@@ -361,19 +377,6 @@ def _report_dry_run(
         if len(island_glyphs) > 20:
             console.print(f"  ... +{len(island_glyphs) - 20} more")
     console.print(f"\n[bold green]{SYM_OK} Dry run complete[/bold green] – no changes made")  # noqa: RUF001
-
-
-def _format_file_size(path: Path) -> str:
-    """Format file size in human-readable form."""
-    try:
-        size_bytes = path.stat().st_size
-        if size_bytes < 1024:
-            return f"{size_bytes} B"
-        if size_bytes < 1024 * 1024:
-            return f"{size_bytes / 1024:.0f} KB"
-        return f"{size_bytes / (1024 * 1024):.1f} MB"
-    except Exception:
-        return "unknown"
 
 
 def cli() -> None:

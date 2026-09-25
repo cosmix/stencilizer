@@ -19,6 +19,8 @@ class SurgeryContext:
     use_spanning: bool
     direction: BridgeDirection = BridgeDirection.AUTO
     processed: set[int] = field(default_factory=set)
+    bridged: set[int] = field(default_factory=set)
+    bridge_count: int = 0
     contours: list[Contour] = field(default_factory=list)
     contour_to_idx: dict[int, int] = field(init=False)
 
@@ -30,6 +32,11 @@ class SurgeryContext:
             idx = self.contour_to_idx.get(id(contour))
             if idx is not None:
                 self.processed.add(idx)
+
+    def record_bridge(self, *indices: int) -> None:
+        """Record an accepted merge and its connected source contours."""
+        self.bridge_count += len(indices)
+        self.bridged.update(indices)
 
     def merge(
         self,

@@ -17,6 +17,7 @@ class ProcessingStats:
     skipped_count: int = 0
     error_count: int = 0
     bridges_added: int = 0
+    unbridged_count: int = 0
     errors: list[tuple[str, str]] = field(default_factory=list)
     start_time: float | None = None
     end_time: float | None = None
@@ -55,17 +56,7 @@ def configure_logging(
     file_level: str = "DEBUG",
     quiet: bool = False,
 ) -> structlog.stdlib.BoundLogger:
-    """Configure dual-output structured logging.
-
-    Args:
-        log_file: Path to log file (auto-generated if None)
-        console_level: Logging level for console output
-        file_level: Logging level for file output
-        quiet: If True, suppress console output except errors
-
-    Returns:
-        Configured structlog logger
-    """
+    """Configure the stencilizer logger with file and console handlers."""
     if log_file is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         log_file = Path(f"stencilizer_{timestamp}.log")
@@ -76,17 +67,21 @@ def configure_logging(
         logging.Formatter("%(asctime)s | %(levelname)-8s | %(name)s | %(message)s")
     )
 
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.DEBUG)
-    root_logger.addHandler(file_handler)
+    owned_logger = logging.getLogger("stencilizer")
+    owned_logger.setLevel(logging.DEBUG)
+    owned_logger.propagate = False
+    for handler in owned_logger.handlers[:]:
+        owned_logger.removeHandler(handler)
+        handler.close()
+    owned_logger.addHandler(file_handler)
 
-    if not quiet:
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(getattr(logging, console_level.upper()))
-        console_handler.setFormatter(logging.Formatter("%(message)s"))
-        root_logger.addHandler(console_handler)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.ERROR if quiet else getattr(logging, console_level.upper()))
+    console_handler.setFormatter(logging.Formatter("%(message)s"))
+    owned_logger.addHandler(console_handler)
 
-    structlog.configure(
+    logger = structlog.wrap_logger(
+        owned_logger,
         processors=[
             structlog.stdlib.filter_by_level,
             structlog.stdlib.add_logger_name,
@@ -100,11 +95,7 @@ def configure_logging(
         ],
         wrapper_class=structlog.stdlib.BoundLogger,
         context_class=dict,
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        cache_logger_on_first_use=True,
     )
-
-    logger = structlog.get_logger("stencilizer")
     logger.info("Logging initialized", log_file=str(log_file), level=file_level)
 
     return cast("structlog.stdlib.BoundLogger", logger)

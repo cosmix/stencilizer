@@ -3,7 +3,7 @@
 
 ## Island detection
 
-`GlyphAnalyzer.analyze()` (src/stencilizer/core/analyzer.py:94) classifies contours by signed area: `area < 0` (clockwise) is outer, positive (counter-clockwise) is a hole, under TrueType convention (sign definition: `signed_area`, core/geometry_polygon.py:8, re-exported by core/geometry.py). `_build_nesting_tree` (analyzer.py:230) picks the smallest-bbox containing parent, so nested outers such as the R inside ® get their own subtree. An island is an inner contour whose ON_CURVE points (off-curve handles ignored on purpose) all lie inside an outer contour (`_is_island`, analyzer.py:202).
+GlyphAnalyzer flattens curves with UPM-scaled tolerance before measuring signed area and containment. Parents are the smallest strictly enclosing contours; touching or crossing edges are rejected. The nesting tree is reused for island classification and guarded against cycles.
 
 ## Candidate placement
 
@@ -26,7 +26,7 @@ Horizontal and vertical bridges share one implementation parameterized by `Axis`
 
 ## UPM scaling
 
-Every absolute font-unit threshold is defined at 1000 UPM in `GeometryConfig` (src/stencilizer/config/settings.py:20) and scaled with `GeometryConfig.scaled(field, upm)` = value * upm / 1000; dimensionless ratios (1.5, 2.5, 3, 0.9, percents) stay literal because they multiply already-scaled lengths. `upm` flows from `process_glyph` into `GlyphTransformer.transform(glyph, upm)` and down through the merger, bridge and multi-island helpers via keyword params (`epsilon`, `edge_margin`, `min_gap`, tolerances). tests/regression/test_upm_scaling.py requires bit-exact output under 2x and 0.5x scaling; tests/regression/test_behavior_golden.py pins 1000-UPM output against the pre-refactor behavior.
+GeometryConfig thresholds and adaptive curve-flattening tolerance scale with UPM. Scale regression tests require matching normalized geometry. Behavior goldens now pin the corrected curve-aware geometry, regenerated after analytical regression tests and visual inspection.
 
 ## Bridge direction
 
@@ -42,8 +42,28 @@ The group rule is `_spanning_allowed` (core/surgery_groups.py:133); `_split_chil
 
 ## Truthful bridge counts
 
-`process_glyph` (core/processor.py) reports `bridges_added` as the number of analyzer islands that no longer appear verbatim in the output (`_islands_bridged`, multiset matching so duplicate islands each count), not the island count: Roboto `four` and `AE` and 7 more (Lato 7) used to read "1 island(s) bridged" with nothing bridged. 0 means no bridge could be placed; `FontSession.unbridged` and the grid's red mark rely on it, and so do the CLI statistics.
+process_glyph reports bridges_added from accepted surgery operations through TransformOutcome. unbridged_count records unresolved hole contours, including partially successful glyphs. No-op transformations preserve the original outlines. _islands_bridged remains available for compatibility with direction tests.
 
 ## Open issue: CommitMono `.notdef` under Auto
 
 The CommitMono `.notdef` defect is tracked in concerns.md. For the synthetic filled encircled digit (tests/unit/test_glyph_transformer.py:161) `_process_inverted` (core/surgery_nested.py) is never reached at any width or direction: the hole merges with the outer as one island and that merge marks both inverted bowls processed first, so `test_inverted_islands_follow_direction` asserts the force flags of the outer merge.
+
+## Bridge contour parameter grouping
+
+BridgeRequest carries bridge construction parameters throughout the contour helper pipeline, with inner and outer contours explicit. BridgeSide is a frozen dataclass with named line, crossing-list, and lower-side fields. The axis wrapper derives hole detection from the axis; the general entry point preserves its scalar signature and explicit override as a compatibility adapter.
+
+## Curve-aware geometry
+
+Geometry uses adaptive de Casteljau subdivision with a maximum control-point distance to the finite chord segment of 0.25 font units at 1000 UPM, scaled by UPM. Finite-segment distance preserves collinear overshoot; tolerance is positive and finite and subdivision depth is bounded. A no-op returns the original glyph. Successfully modified contours use the flattened working geometry; untouched contours retain their original curves.
+
+## Containment and bridge outcomes
+
+Contour parents require proper boundary containment; intersecting or touching outlines are not parents. Island containment reuses the nesting tree and selects the closest enclosing filled contour. Accepted surgery operations record connected source contours, while unbridged islands are reported separately from operational failures.
+
+## Corrected geometry regression baseline
+
+Golden snapshots are refreshed for adaptive curve geometry and cyclic serialization after analytical curve tests, all 45 real-font integration tests, and all 15 UPM-scaling checks passed. Visual inspection covered 27 representative original/output pairs across Roboto, Lato, and CommitMono. Glyph membership is unchanged; normalized geometry changes for 500 Roboto, 434 Lato, and 397 CommitMono glyphs, and 397 glyphs in the full CommitMono pipeline. Modified curved outlines are line approximations; snapshots grow because they record the additional vertices.
+
+## Preserve CFF preview vertices
+
+CFF command specialization can remove vertices that become collinear after integer rounding. Disable getCharString optimization for rewritten glyphs so saved outlines preserve preview point structure; keep normal coordinate rounding. This costs some output size and is covered by the GUI CFF round-trip regression.

@@ -90,6 +90,7 @@ def _spanning(ctx: SurgeryContext, parent_idx: int, indices: list[int], axis: st
     ctx.contours.extend(result)
     ctx.processed.add(parent_idx)
     ctx.processed.update(indices)
+    ctx.record_bridge(*indices)
     ctx.track_nested(nested)
     return True
 
@@ -106,6 +107,7 @@ def _containing_piece(pieces: list[Contour], inner: Contour) -> int | None:
 
 def _sequential(ctx: SurgeryContext, parent_idx: int, indices: list[int], axis: str) -> None:
     pieces = [ctx.glyph.contours[parent_idx]]
+    changed = False
     for island_idx in indices:
         if island_idx in ctx.processed:
             continue
@@ -125,9 +127,12 @@ def _sequential(ctx: SurgeryContext, parent_idx: int, indices: list[int], axis: 
         if len(result) >= 1 and result != [piece, inner]:
             pieces = pieces[:piece_idx] + result + pieces[piece_idx + 1 :]
             ctx.processed.add(island_idx)
+            ctx.record_bridge(island_idx)
+            changed = True
             ctx.track_nested(nested)
-    ctx.contours.extend(pieces)
-    ctx.processed.add(parent_idx)
+    if changed:
+        ctx.contours.extend(pieces)
+        ctx.processed.add(parent_idx)
 
 
 def _spanning_allowed(ctx: SurgeryContext, axis: str) -> bool:
