@@ -32,6 +32,27 @@ def _load_font(window: MainWindow, qtbot: QtBot, path: Path) -> None:
     qtbot.waitUntil(lambda: window.comparison.after_canvas.glyph is not None, timeout=LOAD_TIMEOUT)
 
 
+def test_progress_starts_hidden(window: MainWindow) -> None:
+    """A fresh window shows neither the progress bar nor its percentage label."""
+    assert not window.progress_bar.isVisibleTo(window)
+    assert not window.progress_label.isVisibleTo(window)
+
+
+def test_progress_percentage_sits_beside_the_bar(window: MainWindow) -> None:
+    """The bar's own text shows in a status label next to a textless bar, hidden on reset."""
+    window.set_progress(3, 10)
+
+    assert not window.progress_bar.isTextVisible()
+    assert window.progress_label.isVisibleTo(window)
+    assert window.progress_label.text() == "30%"
+    assert window.statusBar().isAncestorOf(window.progress_label)
+
+    window.reset_progress()
+
+    assert not window.progress_label.isVisibleTo(window)
+    assert window.progress_label.text() == ""
+
+
 def test_progress_can_be_shown_and_reset(window: MainWindow) -> None:
     """Showing progress reveals the bar with its bounds, resetting hides it again."""
     window.set_progress(3, 10)

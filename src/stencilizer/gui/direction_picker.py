@@ -1,6 +1,6 @@
 """Widget for choosing a glyph's bridge direction."""
 
-from PySide6.QtCore import QSignalBlocker, Signal
+from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import QComboBox, QLabel, QVBoxLayout, QWidget
 
 from stencilizer.config.settings import BridgeDirection
@@ -15,6 +15,7 @@ class DirectionPicker(QWidget):
         """Create the direction controls in their cleared state."""
         super().__init__(parent)
         self.source_label = QLabel("", self)
+        self.source_label.setTextFormat(Qt.TextFormat.PlainText)
         self.combo = QComboBox(self)
         self.combo.addItem("Auto", BridgeDirection.AUTO.value)
         self.combo.addItem("Vertical (cuts top and bottom)", BridgeDirection.VERTICAL.value)

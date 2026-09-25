@@ -102,12 +102,16 @@ class MainWindow(QMainWindow):
         return right_pane
 
     def _build_status_bar(self) -> None:
-        """Add the save progress indicator to the status bar."""
+        """Add the save progress percentage and indicator to the status bar."""
+        self.progress_label = QLabel()
+        self.progress_label.setProperty("role", "status")
+        self.progress_label.hide()
         self.progress_bar = QProgressBar()
         self.progress_bar.setObjectName("saveProgress")
         self.progress_bar.setMaximumWidth(220)
-        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setTextVisible(False)
         self.progress_bar.hide()
+        self.statusBar().addPermanentWidget(self.progress_label)
         self.statusBar().addPermanentWidget(self.progress_bar)
 
     def _connect_signals(self) -> None:
@@ -181,12 +185,16 @@ class MainWindow(QMainWindow):
         """Show save progress for the completed portion of the glyph set."""
         self.progress_bar.setRange(0, total)
         self.progress_bar.setValue(completed)
+        self.progress_label.setText(self.progress_bar.text())
+        self.progress_label.show()
         self.progress_bar.show()
 
     def reset_progress(self) -> None:
-        """Clear and hide the save progress indicator."""
+        """Clear and hide the save progress percentage and indicator."""
         self.progress_bar.reset()
         self.progress_bar.hide()
+        self.progress_label.clear()
+        self.progress_label.hide()
 
     def _on_font_loaded(self, result: object) -> None:
         """Populate the window from a newly loaded font session."""

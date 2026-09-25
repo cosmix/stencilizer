@@ -2,8 +2,8 @@
 
 from collections.abc import Collection
 
-from PySide6.QtCore import QEvent, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QIcon, QPixmap
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -22,6 +22,33 @@ UNBRIDGED_ROLE = Qt.ItemDataRole.UserRole + 1
 BASE_TOOLTIP_ROLE = Qt.ItemDataRole.UserRole + 2
 _UNBRIDGED_ON_LIGHT = "#c62828"
 _UNBRIDGED_ON_DARK = "#ff8a80"
+_BADGE_SIZE = 16.0
+_BADGE_INSET = 3.0
+
+
+def _badged(thumbnail: QPixmap, fill: QColor, mark: QColor) -> QPixmap:
+    """Return a copy of ``thumbnail`` carrying a no-bridge badge in its top-right corner.
+
+    The badge is a ``fill`` disc with an exclamation mark and a thin ring in ``mark``, the
+    thumbnail background, so it reads without colour and stands apart from glyph strokes under
+    it. It stays inside the thumbnail's two-pixel inset.
+    """
+    badged = thumbnail.copy()
+    disc = QRectF(
+        badged.width() - _BADGE_INSET - _BADGE_SIZE, _BADGE_INSET, _BADGE_SIZE, _BADGE_SIZE
+    )
+    centre = disc.center()
+    painter = QPainter(badged)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(QPen(mark, 1.5))
+    painter.setBrush(fill)
+    painter.drawEllipse(disc)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(mark)
+    painter.drawRoundedRect(QRectF(centre.x() - 1.25, disc.top() + 3.0, 2.5, 6.5), 1.0, 1.0)
+    painter.drawEllipse(QPointF(centre.x(), disc.bottom() - 3.25), 1.4, 1.4)
+    painter.end()
+    return badged
 
 
 class GlyphGrid(QListWidget):
@@ -33,6 +60,7 @@ class GlyphGrid(QListWidget):
         """Create a single-selection grid with fixed-size glyph thumbnails."""
         super().__init__(parent)
         self._glyphs: list[Glyph] = []
+        self._thumbnails: list[QPixmap] = []
         self._ascender = 0
         self._descender = 0
         self._icon_colors: tuple[QColor, QColor] | None = None
@@ -78,13 +106,30 @@ class GlyphGrid(QListWidget):
         foreground = self.palette().text().color()
         background = self.palette().base().color()
         self._icon_colors = (foreground, background)
-        for index, glyph in enumerate(self._glyphs):
-            item = self.item(index)
-            if item is None:
-                continue
-            frame = glyph_frame(glyph, self._ascender, self._descender)
-            image = render_glyph_image(glyph, frame, THUMBNAIL_SIZE, foreground, background)
-            item.setIcon(QIcon(QPixmap.fromImage(image)))
+        self._thumbnails = [
+            QPixmap.fromImage(
+                render_glyph_image(
+                    glyph,
+                    glyph_frame(glyph, self._ascender, self._descender),
+                    THUMBNAIL_SIZE,
+                    foreground,
+                    background,
+                )
+            )
+            for glyph in self._glyphs
+        ]
+        for index in range(self.count()):
+            self._update_icon(index)
+
+    def _update_icon(self, index: int) -> None:
+        """Show an item's thumbnail, badged while the item is marked unbridged."""
+        item = self.item(index)
+        if item is None or index >= len(self._thumbnails):
+            return
+        thumbnail = self._thumbnails[index]
+        if item.data(UNBRIDGED_ROLE):
+            thumbnail = _badged(thumbnail, self._unbridged_color(), self.palette().base().color())
+        item.setIcon(QIcon(thumbnail))
 
     def changeEvent(self, event: QEvent) -> None:  # noqa: N802
         """Refresh palette-dependent thumbnails and unbridged marks."""
@@ -116,7 +161,10 @@ class GlyphGrid(QListWidget):
             if item is None:
                 continue
             is_unbridged = item.data(Qt.ItemDataRole.UserRole) in unbridged
+            changed = item.data(UNBRIDGED_ROLE) != is_unbridged
             item.setData(UNBRIDGED_ROLE, is_unbridged)
+            if changed:
+                self._update_icon(index)
             base_tooltip = item.data(BASE_TOOLTIP_ROLE)
             if is_unbridged:
                 item.setToolTip(f"{base_tooltip}\nNo bridge could be placed")
