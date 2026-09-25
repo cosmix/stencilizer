@@ -22,7 +22,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [gui](architecture/gui.md) | GUI package layout, threading model, save safety | 60 |
+| [gui](architecture/gui.md) | GUI package layout, threading model, save safety | 72 |
 
 ### patterns
 

@@ -45,7 +45,7 @@ Accepted residual risks: a non-`OSError` save failure passes `str(error)` to the
 
 ## Theme and styling
 
-`theme.apply_theme(app, scheme=None)` (theme.py:318) sets the Fusion style, then the palette and stylesheet for LIGHT or DARK (`colors_for`, `palette_for`, `stylesheet_for`). `app.main` passes no scheme, so a `_SchemeFollower` (a `QObject` child of the app, theme.py:303) connects `styleHints().colorSchemeChanged` and re-applies the matching theme on a system light/dark switch. An explicit scheme leaves an existing follower connected and installs none. Tokens (LIGHT / DARK): window `#f4f5f7` / `#16181d`, surface `#ffffff` / `#1e2127`, base `#ffffff` / `#121418`, accent `#2563eb` with white `accent_text` in both. `_derived_colors` blends the rest (`border_strong`, hover and pressed fills, selection, focus ring) with `_blend`. Layout modules only set styling hooks (conventions.md "Qt and GUI code"); a contract test pins WCAG contrast: text at least 7.0 on base, surface and window, muted text and accent text at least 4.5.
+`theme.apply_theme(app, scheme=None)` sets the Fusion style, then the palette and stylesheet for LIGHT or DARK (`colors_for`, `palette_for`, `stylesheet_for`). `app.main` passes no scheme, so a `_SchemeFollower` (a `QObject` child of the app) connects `styleHints().colorSchemeChanged` and re-applies the matching theme on a system light/dark switch. On Linux, `portal_theme.PortalTheme` reads the XDG Settings portal with a 250 ms timeout and follows `SettingChanged`; the follower uses that preference whenever Qt reports `Unknown`. An explicit scheme leaves an existing follower connected and installs none. Tokens (LIGHT / DARK): window `#f4f5f7` / `#16181d`, surface `#ffffff` / `#1e2127`, base `#ffffff` / `#121418`, accent `#2563eb` with white `accent_text` in both. `_derived_colors` blends the rest (`border_strong`, hover and pressed fills, selection, focus ring) with `_blend`. Layout modules only set styling hooks (conventions.md "Qt and GUI code"); a contract test pins WCAG contrast: text at least 7.0 on base, surface and window, muted text and accent text at least 4.5.
 
 `GlyphGrid` handles `QEvent.Type.PaletteChange` (glyph_grid.py:137): it re-renders thumbnails and re-colours the unbridged mark, `#c62828` on a light base (lightness 128 or more) and `#ff8a80` on a dark one. Unbridged glyphs also carry a badge (`_badged`, a rounded rect plus dot rather than `drawText`) so the cue does not depend on colour and survives selection.
 
@@ -58,3 +58,15 @@ QSS behaviours found by offscreen renders (Qt 6.11):
 - Focus rings: accent-filled controls (primary button, checked box, slider handle) use the text colour; neutral fills use `_blend(accent, text, 0.3)`. A focused primary button or handle keeps its accent fill on hover and press (press is a 1px content shift): in the light theme no ring colour reaches 3:1 against both the white header and a darkened accent, and lightening the fill drops white text under 4.5:1.
 - Once a stylesheet is set, `app.style()` is the `QStyleSheetStyle` proxy and `name()` is `''`: assert on `palette()` and `styleSheet()`, never on the style name.
 - QSS properties Qt does not know print "Unknown property" on stderr, which fails the launch check.
+
+## Linux desktop theme detection
+
+Decision: use the XDG Settings portal when Qt reports an unknown colour scheme on Linux, including live SettingChanged notifications. Confirmed on COSMIC: the portal returns uint32 1 (dark), while the native Wayland QApplication reports ColorScheme.Unknown with QT_QPA_PLATFORMTHEME=qt5ct. Keep explicit Qt schemes authoritative and bound portal reads so an unavailable service cannot stall startup.
+
+## PySide D-Bus slot signatures
+
+**What happened:** Passing a bytes slot signature to QDBusConnection.connect raised ValueError during the COSMIC theme check. **Why:** The PySide stub advertises bytes, but the runtime requires the Qt SLOT signature helper. **Prevention:** Use SLOT and verify against a real session bus. **Fix:** Register the portal callback using SLOT rather than a raw bytes signature.
+
+## Constructing D-Bus test replies
+
+**What happened:** The portal read test returned Unknown despite a dark fixture. **Why:** PySide overload selection for createReply with a list wraps the list as a single argument. **Prevention:** Build the reply and set its arguments explicitly. **Fix:** Use createReply followed by setArguments in the fake bus. PySide also incorrectly annotates connect slot signatures as bytes; the SLOT string requires a narrow call-overload suppression.

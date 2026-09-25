@@ -1,5 +1,6 @@
 """Light and dark palettes and the stylesheet that give the desktop GUI its look."""
 
+import sys
 from dataclasses import asdict, dataclass
 from string import Template
 
@@ -308,11 +309,26 @@ class _SchemeFollower(QObject):
         super().__init__(app)
         self.setObjectName(_FOLLOWER_NAME)
         self._app = app
+        self._portal_scheme = Qt.ColorScheme.Unknown
+        if sys.platform == "linux":
+            from stencilizer.gui.portal_theme import PortalTheme
+
+            portal = PortalTheme(self)
+            self._portal_scheme = portal.scheme
+            portal.changed.connect(self._on_portal_changed)
         app.styleHints().colorSchemeChanged.connect(self._on_scheme_changed)
+
+    def resolve(self, scheme: Qt.ColorScheme) -> Qt.ColorScheme:
+        """Use the desktop portal when the Qt platform plugin has no preference."""
+        return self._portal_scheme if scheme == Qt.ColorScheme.Unknown else scheme
+
+    def _on_portal_changed(self, scheme: Qt.ColorScheme) -> None:
+        self._portal_scheme = scheme
+        self._on_scheme_changed(self._app.styleHints().colorScheme())
 
     def _on_scheme_changed(self, scheme: Qt.ColorScheme) -> None:
         """Apply the theme matching the new scheme."""
-        _apply_colors(self._app, colors_for(scheme))
+        _apply_colors(self._app, colors_for(self.resolve(scheme)))
 
 
 def apply_theme(app: QApplication, scheme: Qt.ColorScheme | None = None) -> None:
@@ -320,6 +336,8 @@ def apply_theme(app: QApplication, scheme: Qt.ColorScheme | None = None) -> None
     app.setStyle("Fusion")
     if scheme is None:
         scheme = app.styleHints().colorScheme()
-        if app.findChild(_SchemeFollower, _FOLLOWER_NAME) is None:
-            _SchemeFollower(app)
+        follower = app.findChild(_SchemeFollower, _FOLLOWER_NAME)
+        if follower is None:
+            follower = _SchemeFollower(app)
+        scheme = follower.resolve(scheme)
     _apply_colors(app, colors_for(scheme))
