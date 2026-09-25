@@ -1,14 +1,13 @@
-"""Controls for loading, configuring, and saving a stencilized font."""
+"""Sidebar with the bridge and processing parameters."""
 
 import os
 
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
+    QFrame,
     QHBoxLayout,
     QLabel,
-    QProgressBar,
-    QPushButton,
     QSlider,
     QSpinBox,
     QVBoxLayout,
@@ -18,30 +17,34 @@ from PySide6.QtWidgets import (
 from stencilizer.config import BridgeConfig
 
 _BRIDGE_WIDTH_TOOLTIP = "Bridge width as percent of a reference stroke of 10% of font UPM (30-110)"
+_WORKERS_TOOLTIP = "Worker processes used when saving; Auto lets the processor decide"
+
+
+def _section_title(text: str, parent: QWidget) -> QLabel:
+    """Create a styled sidebar section title."""
+    label = QLabel(text, parent)
+    label.setProperty("role", "sectionTitle")
+    return label
 
 
 class ControlPanel(QWidget):
-    """Font selection, parameters, and the save action."""
+    """Bridge and processing parameters for the preview and the save."""
 
-    open_requested = Signal()
-    save_requested = Signal()
     parameters_changed = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """Create the font controls and connect their signals."""
         super().__init__(parent)
-        self._font_loaded = False
-        self._busy = False
+        self.setObjectName("sidebar")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setMinimumWidth(240)
+        self.setMaximumWidth(360)
         self._build_widgets()
         self._build_layout()
         self._connect_signals()
 
     def _build_widgets(self) -> None:
         """Create every control this panel owns, with its initial state."""
-        self.open_button = QPushButton("Open Font...", self)
-        self.font_info_label = QLabel("No font loaded", self)
-        self.font_info_label.setWordWrap(True)
-
         self.width_slider = QSlider(Qt.Orientation.Horizontal, self)
         self.width_slider.setRange(30, 110)
         self.width_slider.setValue(60)
@@ -56,54 +59,78 @@ class ControlPanel(QWidget):
         self.spanning_check = QCheckBox("Spanning bridges for stacked islands", self)
         self.spanning_check.setChecked(True)
 
-        self.workers_spin = QSpinBox(self)
-        self.workers_spin.setRange(0, os.cpu_count() or 1)
-        self.workers_spin.setValue(0)
-        self.workers_spin.setSpecialValueText("Auto")
+        self.workers_slider = QSlider(Qt.Orientation.Horizontal, self)
+        self.workers_slider.setRange(0, os.cpu_count() or 1)
+        self.workers_slider.setValue(0)
+        self.workers_slider.setPageStep(1)
+        self.workers_slider.setToolTip(_WORKERS_TOOLTIP)
 
-        self.save_button = QPushButton("Stencilize && Save...", self)
-        self.save_button.setEnabled(False)
-        self.progress_bar = QProgressBar(self)
-        self.progress_bar.hide()
+        self.workers_value_label = QLabel("Auto", self)
+        self.workers_value_label.setProperty("role", "value")
+        self.workers_value_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
 
     def _build_layout(self) -> None:
-        """Arrange the widgets built by ``_build_widgets`` into the panel layout."""
-        width_row = QHBoxLayout()
-        width_label = QLabel("Bridge width", self)
-        width_label.setBuddy(self.width_spin)
-        width_row.addWidget(width_label)
-        width_row.addWidget(self.width_slider, stretch=1)
-        width_row.addWidget(self.width_spin)
-
-        workers_row = QHBoxLayout()
-        workers_row.addWidget(QLabel("Workers", self))
-        workers_row.addWidget(self.workers_spin)
-
+        """Arrange the bridge and processing controls into styled sections."""
         layout = QVBoxLayout(self)
-        layout.addWidget(self.open_button)
-        layout.addWidget(self.font_info_label)
-        layout.addLayout(width_row)
-        layout.addWidget(self.spanning_check)
-        layout.addLayout(workers_row)
-        layout.addWidget(self.save_button)
-        layout.addWidget(self.progress_bar)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+        layout.addWidget(_section_title("BRIDGES", self))
+        layout.addWidget(self._bridges_card())
+        layout.addSpacing(6)
+        layout.addWidget(_section_title("PROCESSING", self))
+        layout.addWidget(self._processing_card())
         layout.addStretch()
 
+    def _bridges_card(self) -> QFrame:
+        """Build the card containing bridge parameter controls."""
+        card = QFrame(self)
+        card.setProperty("role", "card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        width_row = QHBoxLayout()
+        width_label = QLabel("Width", card)
+        width_label.setBuddy(self.width_spin)
+        width_row.addWidget(width_label)
+        width_row.addStretch()
+        width_row.addWidget(self.width_spin)
+        layout.addLayout(width_row)
+        layout.addWidget(self.width_slider)
+        layout.addWidget(self.spanning_check)
+        return card
+
+    def _processing_card(self) -> QFrame:
+        """Build the card containing worker-process controls."""
+        card = QFrame(self)
+        card.setProperty("role", "card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        workers_row = QHBoxLayout()
+        workers_label = QLabel("Workers", card)
+        workers_label.setBuddy(self.workers_slider)
+        workers_row.addWidget(workers_label)
+        workers_row.addStretch()
+        workers_row.addWidget(self.workers_value_label)
+        layout.addLayout(workers_row)
+        layout.addWidget(self.workers_slider)
+
+        hint = QLabel("Parallel processes used when saving the font", card)
+        hint.setProperty("role", "hint")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        return card
+
     def _connect_signals(self) -> None:
-        """Wire widget signals to the panel's forwarding and syncing slots."""
-        self.open_button.clicked.connect(self._emit_open_requested)
-        self.save_button.clicked.connect(self._emit_save_requested)
+        """Wire widget signals to their syncing and forwarding slots."""
         self.width_spin.valueChanged.connect(self.width_slider.setValue)
         self.width_slider.valueChanged.connect(self._sync_width_spin)
         self.spanning_check.toggled.connect(self._emit_parameters_changed)
-
-    def _emit_open_requested(self, _checked: bool = False) -> None:
-        """Forward the open button click through the request signal."""
-        self.open_requested.emit()
-
-    def _emit_save_requested(self, _checked: bool = False) -> None:
-        """Forward the save button click through the request signal."""
-        self.save_requested.emit()
+        self.workers_slider.valueChanged.connect(self._sync_workers_label)
 
     def _emit_parameters_changed(self, _checked: bool) -> None:
         """Forward a spanning-bridge change through the parameter signal."""
@@ -116,6 +143,10 @@ class ControlPanel(QWidget):
         del blocker
         self.parameters_changed.emit()
 
+    def _sync_workers_label(self, value: int) -> None:
+        """Show automatic processing or the selected worker count."""
+        self.workers_value_label.setText("Auto" if value == 0 else str(value))
+
     def bridge_config(self) -> BridgeConfig:
         """Return the selected bridge parameters."""
         return BridgeConfig(
@@ -125,31 +156,5 @@ class ControlPanel(QWidget):
 
     def max_workers(self) -> int | None:
         """Return the worker limit, or ``None`` when automatic is selected."""
-        value = self.workers_spin.value()
+        value = self.workers_slider.value()
         return None if value == 0 else value
-
-    def set_font_info(self, text: str) -> None:
-        """Display information about the currently loaded font."""
-        self.font_info_label.setText(text)
-
-    def set_font_loaded(self, loaded: bool) -> None:
-        """Track whether a font is loaded and update save availability."""
-        self._font_loaded = loaded
-        self.save_button.setEnabled(loaded and not self._busy)
-
-    def set_busy(self, busy: bool) -> None:
-        """Disable font actions during work and restore their prior state."""
-        self._busy = busy
-        self.open_button.setEnabled(not busy)
-        self.save_button.setEnabled(self._font_loaded and not busy)
-
-    def set_progress(self, completed: int, total: int) -> None:
-        """Show progress for the current operation."""
-        self.progress_bar.setRange(0, total)
-        self.progress_bar.setValue(completed)
-        self.progress_bar.show()
-
-    def reset_progress(self) -> None:
-        """Hide the progress bar and reset its value."""
-        self.progress_bar.reset()
-        self.progress_bar.hide()

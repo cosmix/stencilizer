@@ -72,7 +72,7 @@ def test_load_font_populates_window_and_selects_first_glyph(
 
     current_item = window.grid.currentItem()
     assert window.grid.count() == 1027
-    assert window.controls.save_button.isEnabled()
+    assert window.header.save_button.isEnabled()
     assert current_item is not None
     assert current_item.text() == ".notdef"
     assert window.comparison.after_canvas.glyph is not None
@@ -124,7 +124,7 @@ def test_saved_font_matches_preview(
     """Saving with a 30-percent bridge writes the previewed O outline."""
     _load_font(window, qtbot, roboto_path)
     assert window.grid.select_glyph("O")
-    window.controls.workers_spin.setValue(1)
+    window.controls.workers_slider.setValue(1)
     window.controls.width_slider.setValue(30)
     expected = window.comparison.after_canvas.glyph
     assert expected is not None
@@ -146,7 +146,7 @@ def test_second_save_while_busy_keeps_first_output_path(
 ) -> None:
     """A save requested while another is in flight does not steal the status path."""
     _load_font(window, qtbot, roboto_path)
-    window.controls.workers_spin.setValue(1)
+    window.controls.workers_slider.setValue(1)
     messages = _record_warnings(monkeypatch)
     path_a = tmp_path / "a.ttf"
     path_b = tmp_path / "b.ttf"
@@ -216,7 +216,7 @@ def test_unsupported_font_is_rejected(
     assert "CFF2 outlines are not supported" in messages[0]
     assert window.controller.session is None
     assert window.grid.count() == 0
-    assert not window.controls.save_button.isEnabled()
+    assert not window.header.save_button.isEnabled()
 
 
 def test_open_font_dialog_loads_selection_and_ignores_cancel(
@@ -254,7 +254,7 @@ def test_save_font_dialog_saves_selected_path(
 ) -> None:
     """The save dialog forwards its selected path to the saving workflow."""
     _load_font(window, qtbot, roboto_path)
-    window.controls.workers_spin.setValue(1)
+    window.controls.workers_slider.setValue(1)
     output_path = tmp_path / "dialog.ttf"
     monkeypatch.setattr(
         QFileDialog,
@@ -316,18 +316,18 @@ def test_save_busy_state_disables_and_restores_actions(
 ) -> None:
     """A save immediately disables actions and restores them after completion."""
     _load_font(window, qtbot, roboto_path)
-    window.controls.workers_spin.setValue(1)
+    window.controls.workers_slider.setValue(1)
     output_path = tmp_path / "out.ttf"
 
     with qtbot.waitSignal(window.controller.save_finished, timeout=SAVE_TIMEOUT) as blocker:
         window.save_font(output_path)
-        assert not window.controls.save_button.isEnabled()
-        assert not window.controls.open_button.isEnabled()
+        assert not window.header.save_button.isEnabled()
+        assert not window.header.open_button.isEnabled()
 
     _assert_roboto_save(blocker.args[0], output_path)
-    assert window.controls.save_button.isEnabled()
-    assert window.controls.open_button.isEnabled()
-    assert not window.controls.progress_bar.isVisibleTo(window.controls)
+    assert window.header.save_button.isEnabled()
+    assert window.header.open_button.isEnabled()
+    assert not window.progress_bar.isVisibleTo(window)
 
 
 def test_close_while_busy_is_refused(
@@ -335,7 +335,7 @@ def test_close_while_busy_is_refused(
 ) -> None:
     """Closing during a save is refused until the asynchronous work finishes."""
     _load_font(window, qtbot, roboto_path)
-    window.controls.workers_spin.setValue(1)
+    window.controls.workers_slider.setValue(1)
     window.show()
     output_path = tmp_path / "out.ttf"
 
@@ -348,7 +348,7 @@ def test_close_while_busy_is_refused(
     assert window.close()
 
 
-def test_workers_spin_updates_controller_parameters(
+def test_workers_slider_updates_controller_parameters(
     window: MainWindow, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Changing the worker limit reaches the controller with that limit."""
@@ -359,6 +359,6 @@ def test_workers_spin_updates_controller_parameters(
         calls.append((bridge, max_workers))
 
     monkeypatch.setattr(window.controller, "set_parameters", recorder)
-    window.controls.workers_spin.setValue(1)
+    window.controls.workers_slider.setValue(1)
 
     assert calls[-1][1] == 1

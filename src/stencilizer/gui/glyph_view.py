@@ -2,7 +2,7 @@
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QPainter, QPaintEvent, QPen
-from PySide6.QtWidgets import QGridLayout, QLabel, QWidget
+from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QVBoxLayout, QWidget
 
 from stencilizer.domain import Glyph
 from stencilizer.gui.outline import font_to_widget_transform, glyph_frame, glyph_path
@@ -57,21 +57,34 @@ class ComparisonView(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         """Create the paired glyph canvases and their shared detail label."""
         super().__init__(parent)
-        layout = QGridLayout(self)
-        before_title = QLabel("Original", self)
-        after_title = QLabel("Stencilized", self)
-        before_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        after_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.before_canvas = GlyphCanvas(self)
         self.after_canvas = GlyphCanvas(self)
         self.info_label = QLabel(self)
         self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(before_title, 0, 0)
-        layout.addWidget(after_title, 0, 1)
-        layout.addWidget(self.before_canvas, 1, 0)
-        layout.addWidget(self.after_canvas, 1, 1)
-        layout.addWidget(self.info_label, 2, 0, 1, 2)
-        layout.setRowStretch(1, 1)
+        self.info_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.info_label.setProperty("role", "status")
+        layout = QGridLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setHorizontalSpacing(12)
+        layout.setVerticalSpacing(10)
+        layout.addWidget(self._card("ORIGINAL", self.before_canvas), 0, 0)
+        layout.addWidget(self._card("STENCILIZED", self.after_canvas), 0, 1)
+        layout.addWidget(self.info_label, 1, 0, 1, 2)
+        layout.setRowStretch(0, 1)
+
+    def _card(self, title: str, canvas: GlyphCanvas) -> QFrame:
+        """Build a titled card around one glyph canvas."""
+        card = QFrame(self)
+        card.setProperty("role", "card")
+        label = QLabel(title, card)
+        label.setProperty("role", "sectionTitle")
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        box = QVBoxLayout(card)
+        box.setContentsMargins(12, 10, 12, 12)
+        box.setSpacing(6)
+        box.addWidget(label)
+        box.addWidget(canvas, 1)
+        return card
 
     def show_preview(self, result: PreviewResult, ascender: int, descender: int) -> None:
         """Display one preview result at a shared scale in both canvases."""

@@ -69,7 +69,7 @@ def test_grid_lists_bridged_composites(window: MainWindow, qtbot: QtBot, roboto_
     }
     assert window.grid.count() == 1027
     assert "Aacute" in names
-    assert "465 composites" in window.controls.font_info_label.text()
+    assert "465 composites" in window.header.font_details_label.text()
 
 
 def test_choosing_direction_updates_preview_and_marker(
@@ -119,7 +119,7 @@ def test_saved_font_uses_chosen_direction(
 ) -> None:
     """A save writes the direction chosen in the window, and composites keep referencing it."""
     _load_font(window, qtbot, roboto_path)
-    window.controls.workers_spin.setValue(1)
+    window.controls.workers_slider.setValue(1)
     assert window.grid.select_glyph("O")
     _choose_direction(window, BridgeDirection.HORIZONTAL)
     output_path = tmp_path / "out.ttf"
