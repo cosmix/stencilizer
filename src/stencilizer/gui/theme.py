@@ -86,13 +86,12 @@ QStatusBar { background: $surface; color: $muted_text; border-top: 1px solid $bo
 QStatusBar::item { border: none; }
 QProgressBar#saveProgress {
     background: $base;
-    color: $text;
     border: 1px solid $border;
-    border-radius: 5px;
-    text-align: center;
-    min-height: 14px;
+    border-radius: 4px;
+    min-height: 8px;
+    max-height: 8px;
 }
-QProgressBar#saveProgress::chunk { background: $accent; border-radius: 4px; }
+QProgressBar#saveProgress::chunk { background: $accent; border-radius: 3px; }
 QToolTip { background: $surface; color: $text; border: 1px solid $border; padding: 4px 8px; }
 """
 
@@ -118,6 +117,13 @@ QPushButton[role="secondary"] {
 QPushButton[role="secondary"]:hover { background: $hover; }
 QPushButton[role="secondary"]:pressed { background: $pressed; }
 QPushButton[role="secondary"]:disabled { color: $muted_text; border-color: $border; }
+QPushButton[role="primary"]:focus {
+    background: $accent;
+    border: 2px solid $focus_on_accent;
+    padding: 5px 13px;
+}
+QPushButton[role="primary"]:focus:pressed { padding: 6px 13px 4px 13px; }
+QPushButton[role="secondary"]:focus { border: 2px solid $focus; padding: 5px 13px; }
 """
 
 _INPUT_QSS = """
@@ -125,14 +131,17 @@ QSlider:horizontal { min-height: 22px; }
 QSlider::groove:horizontal { height: 4px; background: $border; border-radius: 2px; }
 QSlider::sub-page:horizontal { background: $accent; border-radius: 2px; }
 QSlider::handle:horizontal {
-    width: 14px;
+    width: 10px;
     margin: -5px 0;
     background: $accent;
+    border: 2px solid $accent;
     border-radius: 7px;
 }
-QSlider::handle:horizontal:hover { background: $accent_hover; }
+QSlider::handle:horizontal:hover { background: $accent_hover; border-color: $accent_hover; }
+QSlider::handle:horizontal:focus { background: $accent; border-color: $focus_on_accent; }
 QSlider::handle:horizontal:disabled, QSlider::sub-page:horizontal:disabled {
     background: $muted_text;
+    border-color: $muted_text;
 }
 QCheckBox { spacing: 8px; }
 QCheckBox::indicator {
@@ -145,6 +154,8 @@ QCheckBox::indicator {
 QCheckBox::indicator:hover { border-color: $accent; }
 QCheckBox::indicator:checked { background: $accent; border-color: $accent; }
 QCheckBox::indicator:checked:disabled { background: $muted_text; border-color: $muted_text; }
+QCheckBox::indicator:focus { width: 16px; height: 16px; border: 2px solid $focus; }
+QCheckBox::indicator:checked:focus { border-color: $focus_on_accent; }
 QSpinBox {
     background: $base;
     color: $text;
@@ -211,6 +222,7 @@ QListWidget#glyphGrid::item:selected {
     border-color: $selection;
     color: $text;
 }
+QListWidget#glyphGrid::item:focus { border-color: $focus; }
 QScrollBar:vertical { background: transparent; width: 10px; margin: 2px 2px 2px 0; }
 QScrollBar::handle:vertical { background: $border; border-radius: 4px; min-height: 24px; }
 QScrollBar::handle:vertical:hover { background: $muted_text; }
@@ -248,23 +260,38 @@ def _blend(first: str, second: str, amount: float) -> str:
     ).name()
 
 
-def stylesheet_for(colors: ThemeColors) -> str:
-    """Build the application stylesheet from the tokens and a few colours derived from them.
+def _derived_colors(colors: ThemeColors) -> dict[str, str]:
+    """Return the colours the stylesheet derives from the tokens, keyed by placeholder name.
 
-    Arrows are border triangles whose side edges take the field colour: QSS skips the mitre
-    next to a transparent edge. ``selection`` is the accent at 30 % over the base, the wash Qt
-    lays over a selected thumbnail, so a selected grid cell painted with it swallows the
-    thumbnail's edges.
+    ``border_strong`` bounds the secondary button, the check box and the input fields at 3:1 or
+    more against surface, base and window. ``selection`` is the accent at 30 % over the base, the
+    wash Qt lays over a selected thumbnail, so a selected grid cell painted with it swallows the
+    thumbnail's edges. ``focus`` rings a focused control on a neutral fill at 3:1 or more in both
+    themes, where the plain accent falls short on dark hover and selection fills.
+    ``focus_on_accent`` rings a control filled with the accent (the primary button, a checked
+    box, a slider handle), which no accent-like ring stands out from.
     """
-    derived = {
-        "border_strong": _blend(colors.border, colors.text, 0.25),
+    return {
+        "border_strong": _blend(colors.border, colors.text, 0.45),
         "hover": _blend(colors.surface, colors.text, 0.06),
         "pressed": _blend(colors.surface, colors.text, 0.12),
         "accent_hover": _blend(colors.accent, colors.text, 0.15),
         "accent_pressed": _blend(colors.accent, colors.text, 0.3),
         "selection": _blend(colors.base, colors.accent, 0.3),
+        "focus": _blend(colors.accent, colors.text, 0.3),
+        "focus_on_accent": colors.text,
     }
-    return _STYLESHEET.substitute(asdict(colors), **derived)
+
+
+def stylesheet_for(colors: ThemeColors) -> str:
+    """Build the application stylesheet from the tokens and the colours derived from them.
+
+    Arrows are border triangles whose side edges take the field colour: QSS skips the mitre
+    next to a transparent edge. Focus rings are 2 px: a focus rule over a 1 px border takes 1 px
+    off the padding or the size so the content stays in place, and the slider handle keeps a
+    2 px accent border at rest for the same reason.
+    """
+    return _STYLESHEET.substitute(asdict(colors), **_derived_colors(colors))
 
 
 def _apply_colors(app: QApplication, colors: ThemeColors) -> None:
