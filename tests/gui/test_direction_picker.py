@@ -1,6 +1,7 @@
 """Tests for per-glyph bridge direction selection."""
 
 import pytest
+from PySide6.QtCore import Qt
 from pytestqt.qtbot import QtBot
 
 from stencilizer.config.settings import BridgeDirection
@@ -53,3 +54,11 @@ def picker(qtbot: QtBot) -> DirectionPicker:
     direction_picker = DirectionPicker()
     qtbot.addWidget(direction_picker)
     return direction_picker
+
+
+def test_picker_shows_glyph_names_as_plain_text(picker: DirectionPicker) -> None:
+    """Markup in a font's glyph name is shown literally, never rendered."""
+    picker.show_for("<b>x</b>", ("<b>x</b>",), BridgeDirection.AUTO)
+
+    assert picker.source_label.textFormat() == Qt.TextFormat.PlainText
+    assert "<b>x</b>" in picker.source_label.text()
