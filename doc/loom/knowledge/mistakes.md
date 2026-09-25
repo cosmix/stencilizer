@@ -175,3 +175,7 @@ See [README layout](mistakes/readme-layout.md) for the correction and placement 
 **Why**: Successful analysis was treated as successful outline modification.
 **Prevention**: Gate writer updates on confirmed bridge_count greater than zero and retain statistics for analyzed no-ops.
 **Fix**: Zero-bridge glyphs remain untouched in the font; regression tests assert they are absent from the writer queue.
+
+## Offscreen GUI screenshots need a large screen
+
+A 2x offscreen grab clamps the window to the tiny default offscreen screen, so the UI comes out cropped and magnified. Pass a 3840x2160 screen through `offscreen:configfile=` and keep `QT_SCALE_FACTOR=2`. See [offscreen-screenshots](mistakes/offscreen-screenshots.md).
