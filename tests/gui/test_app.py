@@ -143,8 +143,12 @@ def _stub_startup(
         created_fonts.append(font)
         return WindowStub()
 
+    def skip_theme(_application: object) -> None:
+        """Leave the application stub unthemed: theming needs a real QApplication."""
+
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setattr(app, "QApplication", ApplicationStub)
+    monkeypatch.setattr(app, "apply_theme", skip_theme)
     monkeypatch.setattr(app, "create_window", create_window)
     return events, created_fonts
 

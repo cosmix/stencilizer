@@ -7,9 +7,13 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QFileDialog,
+    QFrame,
+    QLabel,
     QMainWindow,
     QMessageBox,
+    QProgressBar,
     QSplitter,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -20,6 +24,7 @@ from stencilizer.gui.controls import ControlPanel
 from stencilizer.gui.direction_picker import DirectionPicker
 from stencilizer.gui.glyph_grid import GlyphGrid
 from stencilizer.gui.glyph_view import ComparisonView
+from stencilizer.gui.header import HeaderBar
 from stencilizer.io.writer import FontWriter
 
 if TYPE_CHECKING:
@@ -35,37 +40,89 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
         self.controller = controller
         self._output_path: Path | None = None
-
-        self.setWindowTitle("Stencilizer")
-        splitter = QSplitter(Qt.Orientation.Horizontal, self)
-        self.controls = ControlPanel(splitter)
-        self.grid = GlyphGrid(splitter)
-        right_pane = QWidget(splitter)
-        right_layout = QVBoxLayout(right_pane)
-        self.comparison = ComparisonView(right_pane)
-        self.direction_picker = DirectionPicker(right_pane)
-        right_layout.addWidget(self.comparison, 1)
-        right_layout.addWidget(self.direction_picker)
-        splitter.addWidget(self.controls)
-        splitter.addWidget(self.grid)
-        splitter.addWidget(right_pane)
-        self.setCentralWidget(splitter)
-        self.statusBar()
         self._current_glyph: str | None = None
+        self.setWindowTitle("Stencilizer")
+        self.resize(1280, 800)
+        self.setMinimumSize(960, 600)
+        self._build_panes()
+        self._build_status_bar()
+        self._connect_signals()
+        self._connect_direction_signals()
+        self._update_parameters()
 
-        self.controls.open_requested.connect(self.open_font_dialog)
-        self.controls.save_requested.connect(self.save_font_dialog)
+    def _build_panes(self) -> None:
+        """Create the header and three-pane main content area."""
+        self.header = HeaderBar()
+        self.controls = ControlPanel()
+        self.grid = GlyphGrid()
+        self.empty_state = QLabel("Open a font to see the glyphs that need bridges")
+        self.empty_state.setObjectName("emptyState")
+        self.empty_state.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_state.setWordWrap(True)
+        self.grid_stack = QStackedWidget()
+        self.grid_stack.addWidget(self.empty_state)
+        self.grid_stack.addWidget(self.grid)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self.controls)
+        splitter.addWidget(self.grid_stack)
+        splitter.addWidget(self._build_preview_pane())
+        splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(1)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setStretchFactor(2, 0)
+        splitter.setSizes([300, 520, 460])
+
+        central = QWidget()
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self.header)
+        layout.addWidget(splitter, 1)
+        self.setCentralWidget(central)
+
+    def _build_preview_pane(self) -> QWidget:
+        """Create the comparison and bridge-direction controls pane."""
+        right_pane = QWidget()
+        right_pane.setObjectName("previewPane")
+        right_pane.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        right_layout = QVBoxLayout(right_pane)
+        right_layout.setContentsMargins(16, 16, 16, 16)
+        right_layout.setSpacing(12)
+        self.comparison = ComparisonView(right_pane)
+        picker_card = QFrame(right_pane)
+        picker_card.setProperty("role", "card")
+        picker_layout = QVBoxLayout(picker_card)
+        picker_layout.setContentsMargins(4, 4, 4, 4)
+        self.direction_picker = DirectionPicker(picker_card)
+        picker_layout.addWidget(self.direction_picker)
+        right_layout.addWidget(self.comparison, 1)
+        right_layout.addWidget(picker_card)
+        return right_pane
+
+    def _build_status_bar(self) -> None:
+        """Add the save progress indicator to the status bar."""
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setObjectName("saveProgress")
+        self.progress_bar.setMaximumWidth(220)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.hide()
+        self.statusBar().addPermanentWidget(self.progress_bar)
+
+    def _connect_signals(self) -> None:
+        """Connect pane actions and controller updates."""
+        self.header.open_requested.connect(self.open_font_dialog)
+        self.header.save_requested.connect(self.save_font_dialog)
         self.controls.parameters_changed.connect(self._update_parameters)
-        self.controls.workers_spin.valueChanged.connect(self._update_parameters)
+        self.controls.workers_slider.valueChanged.connect(self._update_parameters)
         self.grid.glyph_selected.connect(self.controller.select_glyph)
         self.controller.font_loaded.connect(self._on_font_loaded)
         self.controller.preview_ready.connect(self._on_preview_ready)
-        self.controller.save_progress.connect(self.controls.set_progress)
-        self.controller.busy_changed.connect(self.controls.set_busy)
+        self.controller.save_progress.connect(self.set_progress)
+        self.controller.busy_changed.connect(self.header.set_busy)
         self.controller.save_finished.connect(self._on_save_finished)
         self.controller.error.connect(self._on_error)
-        self._connect_direction_signals()
-        self._update_parameters()
 
     def _connect_direction_signals(self) -> None:
         """Connect glyph-direction controls to the controller and grid."""
@@ -120,16 +177,28 @@ class MainWindow(QMainWindow):
         """Send the control panel's selected processing parameters to the controller."""
         self.controller.set_parameters(self.controls.bridge_config(), self.controls.max_workers())
 
+    def set_progress(self, completed: int, total: int) -> None:
+        """Show save progress for the completed portion of the glyph set."""
+        self.progress_bar.setRange(0, total)
+        self.progress_bar.setValue(completed)
+        self.progress_bar.show()
+
+    def reset_progress(self) -> None:
+        """Clear and hide the save progress indicator."""
+        self.progress_bar.reset()
+        self.progress_bar.hide()
+
     def _on_font_loaded(self, result: object) -> None:
         """Populate the window from a newly loaded font session."""
         session = cast("FontSession", result)
         self.grid.set_glyphs(session.display_glyphs, session.ascender, session.descender)
-        self.controls.set_font_info(
-            f"{session.path.name}\n{session.font_format}, {session.units_per_em} UPM\n"
-            f"{session.glyph_count} glyphs, {len(session.island_glyphs)} with islands, "
-            f"{len(session.composites)} composites using them"
+        self.header.set_font_info(
+            session.path.name,
+            f"{session.font_format} · {session.units_per_em} UPM · {session.glyph_count} glyphs · "
+            f"{len(session.island_glyphs)} with islands · {len(session.composites)} composites",
         )
-        self.controls.set_font_loaded(True)
+        self.header.set_font_loaded(True)
+        self.grid_stack.setCurrentWidget(self.grid)
         self.comparison.clear()
         self.direction_picker.clear()
         self._current_glyph = None
@@ -172,7 +241,7 @@ class MainWindow(QMainWindow):
 
     def _on_save_finished(self, result: object) -> None:
         """Clear progress and describe a completed save in the status bar."""
-        self.controls.reset_progress()
+        self.reset_progress()
         output_path = self._output_path
         if output_path is not None:
             stats = cast("ProcessingStats", result)
@@ -183,5 +252,5 @@ class MainWindow(QMainWindow):
 
     def _on_error(self, message: str) -> None:
         """Clear pending progress and present a controller error to the user."""
-        self.controls.reset_progress()
+        self.reset_progress()
         QMessageBox.warning(self, "Stencilizer", message)

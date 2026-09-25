@@ -3,11 +3,12 @@
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QListWidgetItem
 from pytestqt.qtbot import QtBot
 
 from stencilizer.domain import Glyph
-from stencilizer.gui.glyph_grid import GlyphGrid
+from stencilizer.gui.glyph_grid import THUMBNAIL_SIZE, GlyphGrid
 from stencilizer.io import FontReader
 
 
@@ -116,3 +117,58 @@ def test_keyboard_navigation_emits_selection(qtbot: QtBot, roboto_path: Path) ->
     qtbot.keyClick(grid, Qt.Key.Key_Right)  # type: ignore[no-untyped-call]
 
     assert selected == ["B"]
+
+
+def test_thumbnails_rerender_when_palette_changes(qtbot: QtBot, roboto_path: Path) -> None:
+    """Palette changes redraw thumbnails with the new background colour."""
+    grid = GlyphGrid()
+    qtbot.addWidget(grid)
+    grid.set_glyphs(_load_glyphs(roboto_path, ["O", "B"]), 1900, -500)
+    palette = grid.palette()
+    palette.setColor(QPalette.ColorRole.Base, QColor("#121418"))
+    palette.setColor(QPalette.ColorRole.Text, QColor("#e6e8eb"))
+
+    grid.setPalette(palette)
+
+    item = grid.item(0)
+    assert item is not None
+    image = item.icon().pixmap(THUMBNAIL_SIZE, THUMBNAIL_SIZE).toImage()
+    assert image.pixelColor(0, 0) == QColor("#121418")
+
+
+def test_unbridged_mark_is_light_red_on_dark_base(qtbot: QtBot, roboto_path: Path) -> None:
+    """Unbridged glyphs use a visible red against a dark background."""
+    grid = GlyphGrid()
+    qtbot.addWidget(grid)
+    grid.set_glyphs(_load_glyphs(roboto_path, ["O", "B"]), 1900, -500)
+    palette = grid.palette()
+    palette.setColor(QPalette.ColorRole.Base, QColor("#121418"))
+    palette.setColor(QPalette.ColorRole.Text, QColor("#e6e8eb"))
+    grid.setPalette(palette)
+
+    grid.set_unbridged(["O"])
+
+    item = grid.item(0)
+    assert item is not None
+    assert item.data(Qt.ItemDataRole.ForegroundRole) == QColor("#ff8a80")
+
+
+def test_unbridged_mark_recolours_on_palette_switch(qtbot: QtBot, roboto_path: Path) -> None:
+    """Palette changes update marked glyphs without styling unmarked ones."""
+    grid = GlyphGrid()
+    qtbot.addWidget(grid)
+    grid.set_glyphs(_load_glyphs(roboto_path, ["O", "B"]), 1900, -500)
+    grid.set_unbridged(["O"])
+    marked_item = grid.item(0)
+    assert marked_item is not None
+    assert marked_item.data(Qt.ItemDataRole.ForegroundRole) == QColor("#c62828")
+    palette = grid.palette()
+    palette.setColor(QPalette.ColorRole.Base, QColor("#121418"))
+    palette.setColor(QPalette.ColorRole.Text, QColor("#e6e8eb"))
+
+    grid.setPalette(palette)
+
+    assert marked_item.data(Qt.ItemDataRole.ForegroundRole) == QColor("#ff8a80")
+    unmarked_item = grid.item(1)
+    assert unmarked_item is not None
+    assert unmarked_item.data(Qt.ItemDataRole.ForegroundRole) is None
