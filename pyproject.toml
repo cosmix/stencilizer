@@ -17,6 +17,12 @@ dependencies = [
 
 [project.scripts]
 stencilizer = "stencilizer.cli.app:main"
+stencilizer-gui = "stencilizer.gui.app:main"
+
+[project.optional-dependencies]
+gui = [
+    "pyside6-essentials>=6.11.2",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -26,8 +32,10 @@ build-backend = "hatchling.build"
 dev = [
     "hypothesis>=6.168.1",
     "mypy>=2.3.1",
+    "pyside6-essentials>=6.11.2",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
+    "pytest-qt>=4.5.0",
     "ruff>=0.16.8",
 ]
 
@@ -104,6 +112,7 @@ testpaths = ["tests"]
 addopts = "-v --cov=stencilizer --cov-report=term-missing --cov-report=html"
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+qt_api = "pyside6"
 
 [tool.coverage.run]
 source = ["src/stencilizer"]

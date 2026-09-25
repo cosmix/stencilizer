@@ -20,3 +20,7 @@ Per glyph: `GlyphAnalyzer` → `GlyphTransformer.transform()` → `ContourMerger
 ## Font format I/O
 
 Read: `fonttools_glyph_to_domain()` records any outline with `RecordingPen`; CFF contours are point-reversed to TrueType winding (src/stencilizer/io/converter.py:48-54). Write: `domain_glyph_to_fonttools()` branches on `"glyf"` → `_update_truetype_glyph`, `"CFF "` → `_update_cff_glyph` (reverses back, converter.py:243-265), anything else raises `NotImplementedError` (converter.py:89-95). CFF2 is only named in format detection (src/stencilizer/io/reader.py:63); there is no CFF2 write path.
+
+## GUI (summary)
+
+`stencilizer-gui` is a PySide6 window over the unchanged core: `FontSession` (Qt-free) opens, previews and saves; the grid lists island glyphs plus composites that draw one (`gui/composites.py`); `GuiController` runs open and save as `QRunnable`s with queued signals, keeps per-glyph bridge directions, and runs a debounced unbridged-glyph survey on the pool; saves stage in a private temp dir and never write through the output directory. `MainWindow` is a header bar over a splitter of sidebar, glyph grid and preview pane, with save progress in the status bar; `gui/theme.py` styles it in light or dark and follows the system scheme. Layout, theme, threading and save-safety detail: [architecture/gui](architecture/gui.md).

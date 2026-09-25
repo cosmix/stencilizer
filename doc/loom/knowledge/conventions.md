@@ -22,3 +22,26 @@
 ## Knowledge files hold current state
 
 Only mistakes.md (and topics under mistakes/) is append-only. Every other knowledge file lists current facts: delete a concern once it is fixed and correct or remove stale claims, rather than marking them "Resolved".
+
+## Qt and GUI code
+
+- Qt event overrides need `# noqa: N802` (`closeEvent`, `paintEvent`, `changeEvent`), plus `ARG002` when the event argument is unused (gui/main_window.py:171, gui/glyph_view.py:38, gui/glyph_grid.py:134).
+- Draw glyphs with `QtPen(None, path=path)` and a PySide6 `QPainterPath`: without `path=`, `fontTools.pens.qtPen` imports PyQt5 (gui/outline.py:50). The import needs `# type: ignore[import-untyped]`.
+- Connect worker signals to controller slots with `Qt.ConnectionType.QueuedConnection` so handlers run on the GUI thread; never touch widgets from a `QRunnable`.
+- `FontSession` and other logic stay Qt-free; only controller, tasks and widgets import PySide6.
+- The domain `Point` field is `point_type`, not `type` (src/stencilizer/domain/contour.py:58).
+- Styling hooks: `theme.py` owns every colour and QSS rule; layout modules only set hooks. A unique widget gets an `objectName` (`headerBar`, `appTitle`, `fontName`, `fontDetails`, `sidebar`, `glyphGrid`, `emptyState`, `previewPane`, `saveProgress`); a class of widgets gets a dynamic `role` property (`card`, `sectionTitle`, `hint`, `value`, `status`, `primary`, `secondary`) set with `setProperty("role", ...)` in the constructor, before the widget is shown. Never hard-code a colour outside theme.py; a widget that draws its own pixels (`GlyphGrid`) reads `palette()` and re-renders on `PaletteChange`.
+- A `QLabel` whose text comes from a font (glyph names, font name and details) sets `Qt.TextFormat.PlainText`; the default `AutoText` renders markup in a name as rich text (header.py:42, glyph_view.py:64, direction_picker.py:18).
+- Test assertions on styling use `palette()` and `styleSheet()`, never `app.style().name()` (architecture/gui.md "Theme and styling").
+
+## GUI tests
+
+- Under `tests/gui/`: pytest-qt `qtbot`, no `skip`/`xfail`/`importorskip`; build unsupported fonts (CFF2, variable) in `tmp_path` fixtures; never build a `FontProcessor` without a `tmp_path` `log_file`.
+- Error-message asserts must match the reason text, and fixture filenames must not contain the words a test searches for (`FontLoadError` embeds the path).
+- To check a thread, compare `QThread.currentThread() == controller.thread()` inside the slot and store the bool; stored PySide6 `QThread` wrappers compare unequal or raise `libshiboken: Internal C++ object already deleted` under suite load.
+- Mutation spot-checks: re-apply one `str.replace` per mutant, run the named node ids, restore the bytes. Run with `PYTHONDONTWRITEBYTECODE=1` and clear `__pycache__` with `fd -H -I` afterwards; a same-length mutant restored within one mtime second keeps its stale `.pyc`.
+- In a loom stage sandbox, set `COVERAGE_FILE=$TMPDIR/cov.data` for `uv run pytest`: an existing `.coverage` is bind-mounted and coverage.py fails with EBUSY. `UV_LINK_MODE=copy` silences the hardlink warning on a fresh worktree venv.
+- Under `QT_QPA_PLATFORM=offscreen`, `hasFocus()` stays False after `setFocus()` until `window.activateWindow()` runs and events are pumped. A render or pixel check of a `:focus` rule needs `activateWindow()` and `QApplication.processEvents()` first, or it silently samples the `:hover`/`:pressed` rule instead.
+- Offscreen visual checks: a throwaway script in the scratchpad (all code in `main()`, `multiprocessing.set_start_method("spawn")` under `__main__`) that calls `apply_theme(app, Qt.ColorScheme.Light)` then `Dark`, builds the window with `create_window`, and saves `window.grab()` as PNG; stderr must stay empty (a QSS parse warning shows there).
+- Contract tests import `stencilizer.gui.theme` and `header` inside the test functions and add no `type: ignore`: while the surface is missing mypy reports import errors, and an ignore would become an unused-ignore error under `--strict` once it exists. A test that changes the theme restores palette and stylesheet (offscreen style is already Fusion).
+- The `window` fixture and `_load_font` helper are duplicated across `tests/gui` files; see concerns.md "Duplicated GUI test fixtures".

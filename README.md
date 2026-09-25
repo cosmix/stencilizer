@@ -35,6 +35,14 @@ cd stencilizer
 uv pip install -e .
 ```
 
+### Graphical interface (optional)
+
+The desktop GUI needs PySide6, which ships in the optional `gui` extra:
+
+```bash
+uv pip install -e ".[gui]"
+```
+
 ## Quick Start
 
 ```bash
@@ -119,6 +127,36 @@ stencilizer input.ttf --log-file stencilizer.log
 # Set log level
 stencilizer input.ttf --log-level DEBUG
 ```
+
+### Graphical Interface
+
+![Stencilizer GUI with Lato-Black loaded, bridge controls, a glyph grid, and the original and stencilized B side by side](doc/images/stencilizer-gui-lato-black.png)
+
+*Lato-Black with a live preview of the bridges added to B.*
+
+```bash
+# Launch the window, optionally opening a font straight away
+stencilizer-gui [font]
+```
+
+A top bar holds "Open Font…" and "Stencilize & Save…", next to the name and details of the open
+font. Open a TTF/OTF font through it (or the command-line argument) and the window lists its island
+glyphs as thumbnails. Selecting one shows the glyph before and after stencilization side by side
+at one shared scale, recomputed as you change the bridge width (30-110 %) or the spanning-bridges
+toggle in the sidebar. The worker slider below them sets the number of processes used for the
+save; its left end is "Auto". "Stencilize & Save…" writes the full font and shows its progress as
+a percentage and bar in the status bar. It refuses to overwrite the input font, and refuses a
+source file that changed on disk since it was opened. Variable fonts and CFF2 fonts are rejected
+on open. The window uses a light or a dark theme and follows the system setting, switching when
+the system does.
+
+The grid also lists composite glyphs (accented letters such as `Aacute`) that draw an island
+glyph: they inherit their bridges from the base glyph. The direction picker sets Auto, Vertical
+or Horizontal for the selected glyph (an `O` loses its top and bottom strokes under Vertical, its
+left and right strokes under Horizontal); a composite follows its base glyph's direction and its
+picker is disabled. Choices apply to the preview and the saved font for the session, and are not
+written to a file. Glyphs where no bridge can be placed are marked red in the grid and the
+preview says "no bridge could be placed".
 
 ## Configuration
 

@@ -1,5 +1,6 @@
 """Group and process ordinary island contours."""
 
+from stencilizer.config.settings import BridgeDirection
 from stencilizer.core.horizontal_multi_island import merge_multi_island_horizontal
 from stencilizer.core.multi_island import merge_multi_island_vertical
 from stencilizer.core.surgery_context import SurgeryContext
@@ -129,6 +130,13 @@ def _sequential(ctx: SurgeryContext, parent_idx: int, indices: list[int], axis: 
     ctx.processed.add(parent_idx)
 
 
+def _spanning_allowed(ctx: SurgeryContext, axis: str) -> bool:
+    """Span along ``axis`` when the glyph's explicit direction matches it, else follow the setting."""
+    if ctx.direction is BridgeDirection.AUTO:
+        return ctx.use_spanning
+    return ctx.direction.value == axis
+
+
 def process_groups(ctx: SurgeryContext) -> None:
     """Process each parent in insertion order and islands in axis order."""
     for parent_idx, indices in group_islands(ctx).items():
@@ -137,12 +145,12 @@ def process_groups(ctx: SurgeryContext) -> None:
         sorted_y = sorted(indices, key=lambda idx: -ctx.glyph.contours[idx].bounding_box()[3])
         axis = arrangement(ctx, sorted_y)
         if axis == "horizontal":
-            if ctx.use_spanning and _spanning(ctx, parent_idx, indices, axis):
+            if _spanning_allowed(ctx, axis) and _spanning(ctx, parent_idx, indices, axis):
                 continue
             by_x = sorted(indices, key=lambda idx: ctx.glyph.contours[idx].bounding_box()[0])
             _sequential(ctx, parent_idx, by_x, axis)
         elif axis == "vertical":
-            if ctx.use_spanning and _spanning(ctx, parent_idx, sorted_y, axis):
+            if _spanning_allowed(ctx, axis) and _spanning(ctx, parent_idx, sorted_y, axis):
                 continue
             _sequential(ctx, parent_idx, sorted_y, axis)
         else:

@@ -9,8 +9,8 @@
 
 ## Stale root CLAUDE.md claims
 
-**What happened**: The root CLAUDE.md (as of 6e9f891) states TrueType is "CCW=outer, CW=inner" and lists a `_update_cff2_glyph()` writer with static CFF2 support.
-**Why**: Docs written ahead of, or inverted from, the implementation; `cff2.md` is an unimplemented plan.
+**What happened**: The root CLAUDE.md states TrueType is "CCW=outer, CW=inner" (CLAUDE.md:52) and lists a `_update_cff2_glyph()` writer with static CFF2 support (CLAUDE.md:36).
+**Why**: Docs written ahead of, or inverted from, the implementation; no CFF2 writer was ever implemented.
 **Prevention**: Trust code over CLAUDE.md for winding and format support: TrueType is CW outer / CCW hole (src/stencilizer/core/analyzer.py:122-135); only `glyf` and `CFF ` are writable (src/stencilizer/io/converter.py:89-95).
 **Fix**: Correct CLAUDE.md when next editing it (knowledge bootstrap may not touch it).
 
@@ -48,3 +48,74 @@
 **Why**: loom resolves the knowledge root relative to the working directory.
 **Prevention**: Run loom knowledge commands from the repository root (`cd <repo> && loom knowledge ...`).
 **Fix**: Deleted the nested tree and re-ran from the root.
+
+## Codex worker briefs told to verify with uv run
+
+**What happened**: The GUI plan's worker briefs (doc/plans/briefs/stencilizer-gui/) had every codex unit run `uv run pytest/mypy/ruff` as its proof command; the 2026-09-23 pressure test found none of them could run.
+**Why**: The codex companion runs write jobs in codex's workspace-write sandbox: no network, a read-only ~/.cache/uv, and `exclude_slash_tmp = true` in ~/.codex/config.toml, so `uv run` fails and pytest's tmp_path is unwritable. The codex preamble (codex-forward.sh) also forbids verification.
+**Prevention**: A codex unit's single check calls the worktree venv directly and stays static: `.venv/bin/mypy <files> && .venv/bin/ruff check <files> && .venv/bin/python -m pytest --no-cov -q -p no:cacheprovider --collect-only <test>`. The orchestrator runs the real tests with `uv run` after each wave. The stage's FOUNDATION step must create .venv first.
+**Fix**: Briefs and plan amended in the pressure pass.
+
+## Codex unit proof command misses the function-length limit
+
+**What happened**: A codex-written `ControlPanel.__init__` came out at 59 effective lines and failed `tests/regression/test_code_structure.py::test_function_line_limit`.
+**Why**: The static proof command (mypy, ruff, collect-only) does not run that test.
+**Prevention**: Include `tests/regression/test_code_structure.py` in every wave's orchestrator pytest run. It covers `src/` only: check `wc -l` on test files by hand (see concerns.md).
+**Fix**: Split the constructor.
+
+## Path-based writer aimed at a directory others can write
+
+**What happened**: The first GUI save fix had `FontProcessor` write to an `O_EXCL` temp sibling in the output directory and closed the descriptor. `FontWriter.save` reopens the path with `open(path, 'wb')` after the whole glyph run, so a local user with write access to that directory could swap the file for a symlink to the input.
+**Why**: `O_EXCL` protects creation only, not a later path-based reopen.
+**Prevention**: Stage in a private `mkdtemp` directory and publish into the destination through the descriptor `O_EXCL` returned, then rename. Found by the adversarial review.
+**Fix**: `FontSession.save` now stages privately (architecture/gui.md).
+
+## Existence check ordered before a resolve()-based check
+
+**What happened**: A new `output_path.parent.is_dir()` check placed before the overwrite-input check failed `test_save_refuses_input_path`, which passes `tmp_path/'sub'/'..'/name` with `sub` absent.
+**Why**: `Path.is_dir()` stats through the missing `sub`; `Path.resolve()` normalizes `..` without requiring it to exist.
+**Prevention**: Put stat-based checks (`is_dir`, `exists`) after a `resolve()`-based check.
+**Fix**: `save` checks the input, then the resolve()/samefile overwrite guard, then `parent.is_dir()`.
+
+## Codex units and loom tooling inside the stage sandbox
+
+**What happened**: Codex units could not record memories (loom scratch dir read-only in codex's sandbox), and `loom subagents watch` from the sandboxed Bash tool exited 3 ("process is gone") seconds after a codex forward started. A watch bound only to `codex:<unit>` workers right after the forwarders spawned printed "unknown: worker set does not resolve to one Claude parent UUID" and exited at once; piping it through `tail` hid the exit code.
+**Why**: Codex runs in its own workspace-write sandbox; each Bash call gets its own PID namespace, so the watch cannot see codex's pid.
+**Prevention**: The orchestrator records codex assumptions itself. Treat those watch exits as unknown, run the watch without a pipe so the exit code shows, and wait for the forwarder's own completion.
+
+## Signature change breaks monkeypatched stubs in existing tests
+
+**What happened**: The controller began passing `directions=` to `FontSession.save`; `tests/gui/test_controller.py::test_save_uses_current_parameters` stubbed `save` without that kwarg, the stub raised `TypeError` on the pool, `save_finished` never fired, and the test hit its 30 s timeout.
+**Why**: The plan listed the production callers of `save` but not the test doubles.
+**Prevention**: When a method gains a kwarg, `rg` for monkeypatch stubs of it in existing tests and make them accept `**_kwargs` in the same unit.
+**Fix**: The stub takes `**_kwargs` (tests/gui/test_controller.py:282).
+
+## Error handlers that skip the success path's bookkeeping, and unbounded recursion on font data
+
+**What happened**: Integration review found four defects in the direction work: `_on_survey_failed` neither drained `_survey_pending` nor dropped failures of superseded surveys; `composites._transform_contour` flipped the direction label on mirrored parts although `points.reverse()` already restores the winding; `_component_parts` had no depth or part bound, so a font whose components form a doubling DAG (2^n parts) hung `FontSession.open`; `load_component_outlines` skipped a missing base and `compose` then failed with a bare `KeyError`.
+**Why**: The failure handler was written without the success handler beside it; the recursive walk trusted the font.
+**Prevention**: Brief every failure handler as "mirror the success path's pending and generation handling". Give any recursive walk over untrusted font structures (components, nested contours) an explicit depth and size bound plus a cycle check. Check both a flipped transform and its label, not the label alone.
+**Fix**: Handlers mirrored, `_component_parts` bounded and raising `ValueError` (wrapped as `FontLoadError`), missing bases reported by name.
+
+## Test-writing units fail the repo's lint gate and hide test-helper traps
+
+**What happened**: Codex and sonnet units may run only one static check, so their tests reached the gate with ruff `TC006` (unquoted `cast` type), `ARG001` (unused `self` in a monkeypatched stub), `ruff format` diffs, and a pyright error for `dict.fromkeys(tuple_of_literals)` passed to `TTGlyphPen`. A codex helper also built a component glyph with `TTGlyphPen(None)`, which raises `TypeError` once components exist because `pen.glyph()` checks `name in glyphSet`. A brief said a bbox "spans centre" and the unit read it as strictly between the bounds.
+**Why**: Units cannot run lint or the tests, and the briefs left these rules and definitions implicit.
+**Prevention**: Name the rules in test-writing briefs: quote `cast()` types, prefix unused stub params with `_`, annotate `dict.fromkeys` results as `dict[str, None]`, pass a `glyphSet` mapping to `TTGlyphPen` when adding components. Define geometric predicates exactly (`ymin < y < ymax`, strict). The orchestrator runs lint and format after every wave.
+**Fix**: The orchestrator corrected each test after the gate.
+
+## Plan wiring regexes and local variables
+
+**What happened**: Two units passed their tests but failed `loom check`: one copied directions into a local (`directions = dict(self._directions)`) where the plan's regex expected `directions=dict(self._directions)`, and one held `session.display_glyphs` in a local before `set_glyphs` where the regex expected it inline.
+**Why**: Wiring regexes match literal source shapes and the briefs described the behaviour instead.
+**Prevention**: When a plan pins a wiring regex, quote the literal code shape in the unit brief. Run `loom check <stage> --suggest` after each wave. Note also that loom's unwired-file scan does not match dotted imports (`from stencilizer.gui.<module> import ...`).
+**Fix**: The orchestrator inlined the expressions (`functools.partial(session.save, ..., directions=dict(self._directions))`, `session.display_names[0]`).
+
+## Review and gate failures in sandboxed stages
+
+Reviewer rounds recorded malformed because the report went through the hand-back tool, and the review fingerprint computed inside the Bash sandbox differing from the hook one because of `/dev/null` dotfile mounts, blocked the finish of both gui-beautify stages. Rules and details: [mistakes/review-and-completion-gates](mistakes/review-and-completion-gates.md).
+
+## README image placement
+
+Place screenshots alongside the instructions they illustrate; avoid stacking large visuals at the top.
+See [README layout](mistakes/readme-layout.md) for the correction and placement rule.

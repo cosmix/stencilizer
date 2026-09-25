@@ -45,6 +45,7 @@ class GlyphTransformer:
             self.geometry_config,
             upm,
             use_spanning,
+            direction=self.bridge_config.direction,
         )
         process_groups(ctx)
         process_nested(ctx)

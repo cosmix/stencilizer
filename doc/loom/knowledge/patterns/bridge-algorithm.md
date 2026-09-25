@@ -13,7 +13,7 @@ The live placement logic is in `ContourMerger` and its axis-generic contour buil
 
 `ContourMerger.merge_contours_with_bridges` (core/merger.py:12, checks in merger_checks.py, orientation choice in merger_dispatch.py) cuts notches into the outer contour that reach the inner contour instead of adding extra hole contours, which avoids black rendering artifacts. It measures stroke on all four sides, checks real edge crossings (`find_edge_crossing`, core/geometry_crossings.py:124) and clear paths, and picks the thinner-stroke orientation unless the asymmetry rule (ratio > 2.5) or multi-island grouping forces the other.
 
-`GlyphTransformer.transform()` (core/surgery.py:42) protects nested-outer descendants, groups islands by parent, and decides vertical-stack versus side-by-side by comparing gaps (surgery_groups.py, surgery_nested.py) before dispatching.
+`GlyphTransformer.transform()` (core/surgery.py:32) returns the glyph unchanged without islands, otherwise builds a `SurgeryContext` and runs `process_groups` then `process_nested`, then copies unprocessed contours. Correction: an earlier entry placed the protecting, grouping and gap tests in `transform()` itself (and cited surgery.py:42); they live in `core/surgery_groups.py` (`protected_indices` for nested-outer descendants, `group_islands` by parent, `arrangement` choosing vertical, horizontal or single from the bounding-box gaps) and `core/surgery_nested.py` (`process_nested`, nested children and inverted islands).
 
 ## Multi-island cases
 
@@ -27,3 +27,23 @@ Horizontal and vertical bridges share one implementation parameterized by `Axis`
 ## UPM scaling
 
 Every absolute font-unit threshold is defined at 1000 UPM in `GeometryConfig` (src/stencilizer/config/settings.py:20) and scaled with `GeometryConfig.scaled(field, upm)` = value * upm / 1000; dimensionless ratios (1.5, 2.5, 3, 0.9, percents) stay literal because they multiply already-scaled lengths. `upm` flows from `process_glyph` into `GlyphTransformer.transform(glyph, upm)` and down through the merger, bridge and multi-island helpers via keyword params (`epsilon`, `edge_margin`, `min_gap`, tolerances). tests/regression/test_upm_scaling.py requires bit-exact output under 2x and 0.5x scaling; tests/regression/test_behavior_golden.py pins 1000-UPM output against the pre-refactor behavior.
+
+## Bridge direction
+
+`BridgeConfig.direction` (`BridgeDirection` AUTO / VERTICAL / HORIZONTAL, config/settings.py:76) is per glyph: the GUI builds one config per previewed or saved glyph and `FontProcessor.process(directions=...)` overrides it by glyph name. `SurgeryContext.direction` (core/surgery_context.py) reaches the merge as follows:
+
+| Case | AUTO | Explicit D |
+| --- | --- | --- |
+| Single island, nested child, inverted island | `MergeDispatch.preferred()` picks the axis | `SurgeryContext.merge` forces D through `force_horizontal`/`force_vertical`; `MergeDispatch.forced_*` falls back to the other axis when D cannot be built |
+| Island group, arrangement equals D | spanning iff `use_spanning_bridges` | spanning always tried, sequential if it fails |
+| Island group, arrangement differs from D | as AUTO | sequential only |
+
+The group rule is `_spanning_allowed` (core/surgery_groups.py:133); `_split_child` is unchanged. A glyph unbuildable on both axes stays unbridged, with no further fallback. Auto output is pinned bit for bit by tests/regression.
+
+## Truthful bridge counts
+
+`process_glyph` (core/processor.py) reports `bridges_added` as the number of analyzer islands that no longer appear verbatim in the output (`_islands_bridged`, multiset matching so duplicate islands each count), not the island count: Roboto `four` and `AE` and 7 more (Lato 7) used to read "1 island(s) bridged" with nothing bridged. 0 means no bridge could be placed; `FontSession.unbridged` and the grid's red mark rely on it, and so do the CLI statistics.
+
+## Open issue: CommitMono `.notdef` under Auto
+
+The CommitMono `.notdef` defect is tracked in concerns.md. For the synthetic filled encircled digit (tests/unit/test_glyph_transformer.py:161) `_process_inverted` (core/surgery_nested.py) is never reached at any width or direction: the hole merges with the outer as one island and that merge marks both inverted bowls processed first, so `test_inverted_islands_follow_direction` asserts the force flags of the outer merge.

@@ -2,14 +2,14 @@
 
 import time
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from stencilizer.config import BridgeConfig, StencilizerSettings
-from stencilizer.config.settings import GeometryConfig
+from stencilizer.config.settings import BridgeDirection, GeometryConfig
 from stencilizer.core.analyzer import GlyphAnalyzer
 from stencilizer.core.surgery import GlyphTransformer
 from stencilizer.domain import Glyph
@@ -32,6 +32,24 @@ class GlyphClassification:
         return len(self.skipped_reasons)
 
 
+def _islands_bridged(before: list[dict[str, Any]], after: list[dict[str, Any]]) -> int:
+    """Count entries in ``before`` with no matching entry left in ``after``.
+
+    An unbridged island is appended verbatim to the transformed contours, so it
+    consumes one matching entry from ``after`` per occurrence; contour dicts are
+    unhashable, so matching uses list membership (multiset semantics) rather than
+    a ``Counter``.
+    """
+    remaining = list(after)
+    unmatched = 0
+    for island in before:
+        if island in remaining:
+            remaining.remove(island)
+        else:
+            unmatched += 1
+    return unmatched
+
+
 def _transform_glyph(
     glyph_dict: dict[str, Any],
     config_dict: dict[str, Any],
@@ -49,8 +67,11 @@ def _transform_glyph(
         bridge_config=bridge_config,
         geometry_config=geometry_config,
     )
-    island_count = len(analyzer.analyze(glyph).get_islands())
-    return transformer.transform(glyph, upm=upm), island_count
+    before = [glyph.contours[index].to_dict() for index in analyzer.analyze(glyph).get_islands()]
+    transformed = transformer.transform(glyph, upm=upm)
+    after = [contour.to_dict() for contour in transformed.contours]
+    bridges_added = _islands_bridged(before, after)
+    return transformed, bridges_added
 
 
 def process_glyph(
@@ -81,6 +102,17 @@ def process_glyph(
             "traceback": traceback.format_exc(),
             "duration_ms": (time.time() - start_time) * 1000,
         }
+
+
+def _config_for_glyph(
+    config_dict: dict[str, Any],
+    directions: Mapping[str, BridgeDirection] | None,
+    name: str,
+) -> dict[str, Any]:
+    """Return the shared config or a glyph-specific direction override."""
+    if directions is None or name not in directions:
+        return config_dict
+    return {**config_dict, "direction": directions[name]}
 
 
 class FontProcessor:
@@ -133,6 +165,7 @@ class FontProcessor:
         max_workers: int | None = None,
         progress_callback: ProgressCallback | None = None,
         classification: GlyphClassification | None = None,
+        directions: Mapping[str, BridgeDirection] | None = None,
     ) -> ProcessingStats:
         """Process a font, optionally reusing a prior glyph classification."""
         stats = ProcessingStats()
@@ -151,7 +184,13 @@ class FontProcessor:
         reader.load()
         try:
             self._process_loaded_font(
-                reader, output_path, max_workers, stats, progress_callback, classification
+                reader,
+                output_path,
+                max_workers,
+                stats,
+                progress_callback,
+                classification,
+                directions,
             )
         finally:
             reader.close()
@@ -174,6 +213,7 @@ class FontProcessor:
         stats: ProcessingStats,
         progress_callback: ProgressCallback | None,
         classification: GlyphClassification | None,
+        directions: Mapping[str, BridgeDirection] | None,
     ) -> None:
         upm = reader.units_per_em
         self.logger.info(
@@ -191,6 +231,7 @@ class FontProcessor:
                 max_workers=max_workers,
                 stats=stats,
                 progress_callback=progress_callback,
+                directions=directions,
             )
         else:
             self.logger.info("No glyphs to process")
@@ -204,6 +245,7 @@ class FontProcessor:
         max_workers: int | None,
         stats: ProcessingStats,
         progress_callback: ProgressCallback | None = None,
+        directions: Mapping[str, BridgeDirection] | None = None,
     ) -> dict[str, Glyph]:
         """Dispatch glyphs to workers and collect their results."""
         processed: dict[str, Glyph] = {}
@@ -219,7 +261,7 @@ class FontProcessor:
                 future = executor.submit(
                     process_glyph,
                     glyph_dict,
-                    config_dict,
+                    _config_for_glyph(config_dict, directions, name),
                     upm,
                     geometry_dict=geometry_dict,
                 )
