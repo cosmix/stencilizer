@@ -135,12 +135,16 @@ stencilizer input.ttf --log-level DEBUG
 stencilizer-gui [font]
 ```
 
-The window opens a TTF/OTF font through a file dialog (or the command-line argument) and lists
-its island glyphs as thumbnails. Selecting one shows the glyph before and after stencilization
-side by side at one shared scale, recomputed as you change the bridge width (30-110 %), the
-spanning-bridges toggle, or the worker count. "Stencilize & Save..." writes the full font with a
-progress bar. It refuses to overwrite the input font, and refuses a source file that changed on
-disk since it was opened. Variable fonts and CFF2 fonts are rejected on open.
+A top bar holds "Open Font…" and "Stencilize & Save…", next to the name and details of the open
+font. Open a TTF/OTF font through it (or the command-line argument) and the window lists its island
+glyphs as thumbnails. Selecting one shows the glyph before and after stencilization side by side
+at one shared scale, recomputed as you change the bridge width (30-110 %) or the spanning-bridges
+toggle in the sidebar. The worker slider below them sets the number of processes used for the
+save; its left end is "Auto". "Stencilize & Save…" writes the full font and shows its progress as
+a percentage and bar in the status bar. It refuses to overwrite the input font, and refuses a
+source file that changed on disk since it was opened. Variable fonts and CFF2 fonts are rejected
+on open. The window uses a light or a dark theme and follows the system setting, switching when
+the system does.
 
 The grid also lists composite glyphs (accented letters such as `Aacute`) that draw an island
 glyph: they inherit their bridges from the base glyph. The direction picker sets Auto, Vertical

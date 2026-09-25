@@ -110,3 +110,7 @@
 **Why**: Wiring regexes match literal source shapes and the briefs described the behaviour instead.
 **Prevention**: When a plan pins a wiring regex, quote the literal code shape in the unit brief. Run `loom check <stage> --suggest` after each wave. Note also that loom's unwired-file scan does not match dotted imports (`from stencilizer.gui.<module> import ...`).
 **Fix**: The orchestrator inlined the expressions (`functools.partial(session.save, ..., directions=dict(self._directions))`, `session.display_names[0]`).
+
+## Review and gate failures in sandboxed stages
+
+Reviewer rounds recorded malformed because the report went through the hand-back tool, and the review fingerprint computed inside the Bash sandbox differing from the hook one because of `/dev/null` dotfile mounts, blocked the finish of both gui-beautify stages. Rules and details: [mistakes/review-and-completion-gates](mistakes/review-and-completion-gates.md).

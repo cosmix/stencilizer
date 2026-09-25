@@ -45,8 +45,16 @@ Under Auto, CommitMono `.notdef` (frame, hole, inverted "404" digits) stencils i
 
 ## Full test suite near the acceptance time cap
 
-`uv run pytest --no-cov -q -p no:cacheprovider` ran 319 tests in 225 s at c888109 (tests/gui alone: 144 tests in 151 s), against loom's 300 s limit per acceptance command. pytest-xdist is not installed, so the suite cannot be parallelised; a slower machine or more GUI tests can push the full run past the cap.
+`uv run pytest --no-cov -q -p no:cacheprovider` ran 366 tests in 240 s pytest / 241 s wall on the gui-beautify tree (364 tests took 265 s in an earlier run: run-to-run spread is about 25 s), against loom's 300 s limit per acceptance command; it was 319 tests in 225 s at c888109. pytest-xdist is not installed, so the suite cannot be parallelised. The margin is 35-60 s: the next plan that adds GUI tests should split `tests/gui` across acceptance commands or ask for a higher cap.
 
-## Glyph names rendered as rich text in the direction picker
+## Duplicated GUI test fixtures
 
-`DirectionPicker.source_label` (src/stencilizer/gui/direction_picker.py) shows glyph names from the font with QLabel's default `Qt.TextFormat.AutoText`, so a name holding markup renders as rich text. The gui-beautify plan sets `PlainText` on the header labels and the preview info label only, leaving the picker label unchanged.
+The `window` fixture (`GuiController` plus `MainWindow`, tests/gui/conftest.py:143) is repeated across five `tests/gui` files and `_load_font` across three; one of them is the frozen `test_beautify_contracts.py`, which nothing may edit. Move both into `conftest.py` in a plan that owns those files.
+
+## Untested theme details
+
+`apply_theme`'s `app.setStyle("Fusion")` (theme.py:320) has no direct test, because `style().name()` is `''` once a stylesheet is set. `HeaderBar` tooltips, the placeholder `font_details_label` text and the cursor shape are untested (cosmetic). The direction picker's source label is blank before a font loads (an empty-state placeholder was deferred because `direction_picker.py` was out of scope). Card frames use `$border` while interactive controls use `$border_strong` on purpose (theme.py:79): grouping chrome is quieter than control edges; keep that distinction if either changes. The grid has no `::item:focus` rule: the selection tint doubles as the focus indicator (theme.py:206). `accent_pressed` and `focus` in `_derived_colors` (theme.py:274) share one `_blend(accent, text, 0.3)` expression and are equal in both themes; they are separate roles, so deriving one from the other would couple them.
+
+## Sandbox fingerprint and reviewer hand-back need loom fixes
+
+Two plan stages hit the same two gate failures (mistakes/review-and-completion-gates.md), so prose rules are not enough. Proposals: the finish and contract-freeze fingerprint should ignore non-regular files in the worktree root, or those commands should run outside the sandbox; the review-harvest hook should read a review block from a hand-back message, or the reviewer agent definition should drop that tool. Until then a version 2 stage run from a sandboxed session stalls on the review gate.
