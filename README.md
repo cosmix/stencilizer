@@ -130,6 +130,10 @@ stencilizer input.ttf --log-level DEBUG
 
 ### Graphical Interface
 
+![Stencilizer GUI with Lato-Black loaded, bridge controls, a glyph grid, and the original and stencilized B side by side](doc/images/stencilizer-gui-lato-black.png)
+
+*Lato-Black with a live preview of the bridges added to B.*
+
 ```bash
 # Launch the window, optionally opening a font straight away
 stencilizer-gui [font]

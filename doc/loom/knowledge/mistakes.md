@@ -114,3 +114,8 @@
 ## Review and gate failures in sandboxed stages
 
 Reviewer rounds recorded malformed because the report went through the hand-back tool, and the review fingerprint computed inside the Bash sandbox differing from the hook one because of `/dev/null` dotfile mounts, blocked the finish of both gui-beautify stages. Rules and details: [mistakes/review-and-completion-gates](mistakes/review-and-completion-gates.md).
+
+## README image placement
+
+Place screenshots alongside the instructions they illustrate; avoid stacking large visuals at the top.
+See [README layout](mistakes/readme-layout.md) for the correction and placement rule.

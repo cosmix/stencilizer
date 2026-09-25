@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 21 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 22 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 47 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 116 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 121 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 22 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 60 |
 
@@ -34,4 +34,5 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
+| [readme-layout](mistakes/readme-layout.md) | Place README screenshots beside the content they illustrate | 13 |
 | [review-and-completion-gates](mistakes/review-and-completion-gates.md) | Malformed reviewer rounds, sandbox fingerprint drift, codex lint leftovers | 21 |
