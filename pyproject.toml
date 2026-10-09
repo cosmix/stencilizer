@@ -11,6 +11,7 @@ dependencies = [
     "fonttools>=4.66.0",
     "pydantic>=2.13.5",
     "rich>=15.0.0",
+    "skia-pathops>=0.9.2",
     "structlog>=26.1.0",
     "typer>=0.27.2",
 ]

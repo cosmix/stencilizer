@@ -63,6 +63,15 @@ class GlyphProcessingError(GlyphError):
         super().__init__(f"Error processing glyph '{glyph_name}': {reason}")
 
 
+class VariationDataError(GlyphError):
+    """A glyph's variation data cannot be used by the variable engine."""
+
+    def __init__(self, glyph_name: str, reason: str) -> None:
+        self.glyph_name = glyph_name
+        self.reason = reason
+        super().__init__(f"Variation error for '{glyph_name}': {reason}")
+
+
 class FontProcessingError(StencilizerError):
     """One or more glyph workers failed before a font could be saved."""
 
