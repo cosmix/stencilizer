@@ -179,3 +179,7 @@ See [README layout](mistakes/readme-layout.md) for the correction and placement 
 ## Offscreen GUI screenshots need a large screen
 
 A 2x offscreen grab clamps the window to the tiny default offscreen screen, so the UI comes out cropped and magnified. Pass a 3840x2160 screen through `offscreen:configfile=` and keep `QT_SCALE_FACTOR=2`. See [offscreen-screenshots](mistakes/offscreen-screenshots.md).
+
+## CI action refs and release version bumps
+
+setup-uv has no floating major tags, so `@v10` fails at job setup; verify every action ref with `gh api`. A version bump must also run `uv lock`, or `uv sync --locked` fails. See [ci-release](mistakes/ci-release.md).

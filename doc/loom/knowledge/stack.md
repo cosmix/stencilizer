@@ -20,3 +20,7 @@ TrueType (glyf) and static OpenType/CFF (CFF ) fonts are supported. FontReader r
 ## Dependency release policy
 
 Use the latest stable releases for dependency updates; exclude prereleases. User confirmed this policy during the September 2026 dependency update and review.
+
+## Build and release
+
+PyInstaller (dependency group `build`, synced with `--no-dev`) freezes the CLI (onefile, PySide6 excluded) and the GUI (onedir on Linux, `Stencilizer.app` on macOS) through `packaging/build.sh`; `--smoke` runs the frozen binaries under the inherited `QT_QPA_PLATFORM` (CI uses `xvfb-run` on Linux). The entry scripts in `packaging/` call `multiprocessing.freeze_support()` first, because frozen spawn-mode ProcessPoolExecutor workers otherwise re-run main. CI (`.github/workflows/ci.yml`) calls the reusable `.github/workflows/checks.yml` and `.github/workflows/build.yml` (ubuntu-26.04 x86_64, macos-15 arm64); actions are pinned to commit SHAs and Dependabot updates them. The Linux GUI bundle copies system libraries from the build image, so its glibc floor equals the runner's (2.43 on 26.04); the CLI needs 2.35. The version has one source, `__version__` in `src/stencilizer/__init__.py` (hatch dynamic version; uv.lock does not record it). `.github/workflows/release.yml` runs on `v*` tags: it rejects a tag whose commit is not on main or that differs from `__version__`, runs `uv lock --check`, then publishes a GitHub release with the archives and SHA256SUMS.
