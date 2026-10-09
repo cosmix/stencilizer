@@ -200,3 +200,11 @@ setup-uv has no floating major tags, so `@v10` fails at job setup; verify every 
 **Why**: `tests/gui/conftest.py:24` sets `os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")`, and the desktop session exports `QT_QPA_PLATFORM=wayland;xcb`, so the default never applies.
 **Prevention**: Run every Qt command with `QT_QPA_PLATFORM=offscreen` set explicitly on the command line; probes and acceptance commands must not rely on the conftest default. Assign the variable instead of setdefault-ing it in conftest.
 **Fix**: The variable-font plan forces offscreen in `tests/gui/conftest.py` (stage cff2-static) and prefixes its GUI acceptance commands with `QT_QPA_PLATFORM=offscreen`.
+
+## Integration-verify process traps
+
+A hardening round on non-blocking suggestions, workers skipping format and type checks, refactors that break earlier wiring patterns, and relay and watch quirks. See [review-and-completion-gates](mistakes/review-and-completion-gates.md).
+
+## Variable-font engine and pool mistakes
+
+Switching the processor pool to spawn dropped worker logging; snapping CFF2 deltas to a 16.16 grid still reopened counters after fontTools' instancer rounded each operand; `GlyphAnalyzer` passed outputs whose counters were closed by a one-unit hairline or a bow-tie. Recreate what fork inherited in a pool initializer, validate through the consumer of the stored format, and count holes with the pathops union. See [variable-fonts](mistakes/variable-fonts.md).

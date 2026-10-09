@@ -7,19 +7,23 @@
 
 ## Processing pipeline
 
-`cli/app.py:stencilize()` validates flags, builds `StencilizerSettings`, classifies glyphs once via `FontProcessor.classify_glyphs(reader)` for the island list, and passes that `GlyphClassification` to `FontProcessor.process(..., classification=...)`.
+`cli/app.py:stencilize()` validates flags, builds `StencilizerSettings`, optionally pins a variable font to a static instance (`--instance`, `io/instance.py`; see entry-points.md "CLI"), classifies glyphs once via `FontProcessor.classify_glyphs(reader)` for the island list, and passes that `GlyphClassification` (core/processor.py:28) to `FontProcessor.process(..., classification=...)`. The `--list-islands` and `--dry-run` handlers live in `cli/handlers.py`.
 
-`FontProcessor.process()` classifies (or reuses the classification), dispatches selected glyphs to worker processes with `BridgeConfig` and `GeometryConfig` dictionaries, then writes through `FontWriter` using `FontReader.font`. It does not measure a font-wide stroke width.
+`FontProcessor.process()` classifies (or reuses the classification), dispatches selected glyphs to worker processes with `BridgeConfig` and `GeometryConfig` dictionaries, then writes through `FontWriter` using `FontReader.font`. It does not measure a font-wide stroke width. When `is_variable(reader.font)` (an `fvar` table), `classify_glyphs` and `process` delegate to `variable/processing.py` (`classify_variable_glyphs`, `process_variable_font`), which reuse `_process_glyphs_parallel` with `process_variable_glyph` as the worker and `_save_font(variable=True)`; glyphs the engine cannot use are skipped with reason "unsupported variation data" and their default islands counted as unbridged. The variable path always skips composites and ignores `ProcessingConfig.skip_composite`.
 
-Per glyph: `GlyphAnalyzer` → `GlyphTransformer.transform()` → `ContourMerger` → axis-generic contour builders. Bridge width is `width_percent / 100 * (upm * 0.1)`. Algorithm detail: [patterns/bridge-algorithm](patterns/bridge-algorithm.md).
+Per glyph: `GlyphAnalyzer` → `GlyphTransformer.transform()` → `ContourMerger` → axis-generic contour builders. Bridge width is `width_percent / 100 * (upm * 0.1)`. Algorithm detail: [patterns/bridge-algorithm](patterns/bridge-algorithm.md); variable glyphs replay the default-master surgery on every master: [patterns/variable-replay](patterns/variable-replay.md).
 
 ## Process-pool IPC
 
-`process_glyph()` is module-level so `ProcessPoolExecutor` can pickle it. Production workers receive `Glyph.to_dict()`, `BridgeConfig.model_dump()`, UPM, and `GeometryConfig.model_dump()` as a keyword argument. The fourth positional argument remains accepted for frozen callers but is ignored. The worker rebuilds the glyph and configs, constructs an analyzer and transformer, and returns `{"glyph", "bridges_added", "duration_ms"}` or `{"error", "traceback"}`. KeyboardInterrupt cancels pending futures. `Glyph`, `Contour`, `Point`, and `GlyphMetadata` serialize for worker IPC.
+`process_glyph()` is module-level so `ProcessPoolExecutor` can pickle it. Production workers receive `Glyph.to_dict()`, `BridgeConfig.model_dump()`, UPM, and `GeometryConfig.model_dump()` as a keyword argument. The fourth positional argument remains accepted for frozen callers but is ignored. The worker rebuilds the glyph and configs, constructs an analyzer and transformer, and returns `{"glyph", "bridges_added", "duration_ms"}` or `{"error", "traceback"}`; the variable worker `process_variable_glyph` also returns `unbridged_count`. KeyboardInterrupt cancels pending futures. `Glyph`, `Contour`, `Point`, `GlyphMetadata` and `VariableGlyph` serialize for worker IPC.
+
+Every pool starts its workers with a spawn context: `core/pool.py` `pool_options()` returns `mp_context=multiprocessing.get_context("spawn")` plus `utils/logging.py` `worker_pool_options()`, whose initializer `init_worker_logging` rebuilds the `stencilizer` logger's handlers (append-mode file handler, `delay=True`) because a spawned child inherits none of the parent's. Forking would run from a multi-threaded parent in the CLI (the rich progress bar runs a refresh thread) and the GUI. Entry points call `multiprocessing.freeze_support()`. Lesson: [mistakes/variable-fonts.md "Changing the pool start method dropped worker logging"](mistakes/variable-fonts.md).
 
 ## Font format I/O
 
-Read: `fonttools_glyph_to_domain()` records any outline with `RecordingPen`; contours are point-reversed to TrueType winding only when `"CFF " in font` (src/stencilizer/io/converter.py:30-35), so CFF2 is not normalized. Write: `domain_glyph_to_fonttools()` (converter.py:51) checks `"glyf"` first → `_update_truetype_glyph` (converter.py:161), then `"CFF "` → `_update_cff_glyph` (converter.py:232, reverses back), anything else raises `NotImplementedError` (converter.py:65-72). The `glyf`-first check means a variable TrueType glyph written through this path would get a new glyf entry with its gvar left stale. There is no CFF2 write path; `FontReader.format` labels CFF2 "OpenType" (src/stencilizer/io/reader.py:76).
+Read: `fonttools_glyph_to_domain()` records any outline with `RecordingPen`; contours are point-reversed to TrueType winding when `"CFF " in font or "CFF2" in font` (src/stencilizer/io/converter.py:33-36). Write: `domain_glyph_to_fonttools()` (converter.py:52) checks `"glyf"` first → `_update_truetype_glyph`, then `"CFF "` → `_update_cff_glyph`, then `"CFF2"` → `_update_cff2_glyph`; anything else raises `GlyphProcessingError`. The CFF writers share `_store_cff_charstring` (draws the contours reversed back to CFF winding) and differ in table key, private dict and width: `_fd_private_dict` resolves the private dict through FDSelect for CID-keyed CFF (no top-level Private; a font without FDSelect uses FDArray[0]), `_update_cff_glyph` subtracts `private.nominalWidthX` from the advance because `T2CharStringPen(width=w)` stores `w` verbatim, and CFF2 charstrings carry no width. `FontReader.format` labels CFF and CFF2 "OpenType".
+
+Fonts with an `fvar` table take a second route: `FontWriter.update_glyph` rejects them and `update_variable_glyph` writes through `variable/write_gvar.py` (glyf plus rebuilt gvar tuples) or `variable/write_cff2.py` (charstring with `blend` operands). Detail: [patterns/variable-replay](patterns/variable-replay.md).
 
 ## GUI (summary)
 
@@ -27,7 +31,7 @@ Read: `fonttools_glyph_to_domain()` records any outline with `RecordingPen`; con
 
 ## Font format and error boundary
 
-`FontReader.load` and `FontWriter` reject variable fonts (fvar) and CFF2 before conversion with `FontFormatError`, and glyph conversion errors are raised instead of silently omitting glyphs. Unsupported inputs must fail explicitly without publishing an output font.
+`FontReader.load` opens TrueType, static CFF, static CFF2 and variable fonts. `FontWriter.update_glyph` raises on an `fvar` font and `update_variable_glyph` writes it; an `fvar` font with `CFF ` outlines loads but fails at save with "unsupported variable outline format" once a glyph needs writing. Glyph conversion errors are raised instead of silently omitting glyphs, and a failed write publishes no output font.
 
 ## Processing outcomes
 

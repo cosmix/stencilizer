@@ -7,11 +7,11 @@
 
 ## Runtime and tooling
 
-Python >=3.11; hatchling builds the src/stencilizer package. Use uv for packages. Runtime dependencies include fonttools>=4.66.0, pydantic>=2.13.5, rich>=15.0.0, structlog>=26.1.0 and typer>=0.27.2. Development tooling includes ruff>=0.16.9, mypy, pytest, hypothesis and pytest-cov. Run uv run pytest, uv run mypy src, and uv run ruff check src tests.
+Python >=3.11; hatchling builds the src/stencilizer package. Use uv for packages. Runtime dependencies are fonttools>=4.66.0, pydantic>=2.13.5, rich>=15.0.0, skia-pathops>=0.9.2 (overlap removal and the enclosed-counter count in `variable/`), structlog>=26.1.0 and typer>=0.27.2. Development tooling includes ruff>=0.16.9, mypy, pytest, hypothesis, pytest-cov and pytest-xdist>=3.8.0 (`-n auto`; concerns.md "Full test suite near the acceptance time cap"). Run uv run pytest, uv run mypy src, and uv run ruff check src tests.
 
 ## Supported font formats
 
-TrueType (glyf) and static OpenType/CFF (CFF ) fonts are supported. FontReader rejects variable fonts (fvar) and CFF2 fonts with FontFormatError before processing; FontWriter enforces the same boundary.
+Supported: TrueType (`glyf`), static OpenType/CFF (`CFF `), static CFF2, variable TrueType (`fvar` + `glyf`, gvar rewritten) and variable CFF2 (`fvar` + `CFF2`, charstrings rewritten with `blend`). Not supported: `fvar` with `CFF ` outlines (loads, fails at save), and glyphs whose variation data the engine cannot use (left unchanged, counted as skipped with their islands counted as unbridged). `--instance` pins a variable font to a static instance first. How each route reads and writes: architecture.md "Font format I/O".
 
 ## GUI dependencies
 
