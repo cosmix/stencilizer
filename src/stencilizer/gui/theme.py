@@ -157,7 +157,7 @@ QCheckBox::indicator:checked { background: $accent; border-color: $accent; }
 QCheckBox::indicator:checked:disabled { background: $muted_text; border-color: $muted_text; }
 QCheckBox::indicator:focus { width: 16px; height: 16px; border: 2px solid $focus; }
 QCheckBox::indicator:checked:focus { border-color: $focus_on_accent; }
-QSpinBox {
+QSpinBox, QDoubleSpinBox {
     background: $base;
     color: $text;
     border: 1px solid $border_strong;
@@ -166,18 +166,20 @@ QSpinBox {
     selection-background-color: $accent;
     selection-color: $accent_text;
 }
-QSpinBox:focus { border-color: $accent; }
-QSpinBox::up-button, QSpinBox::down-button { width: 18px; border: none; background: transparent; }
-QSpinBox::up-arrow, QSpinBox::down-arrow {
+QSpinBox:focus, QDoubleSpinBox:focus { border-color: $accent; }
+QSpinBox::up-button, QSpinBox::down-button,
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button { width: 18px; border: none; background: transparent; }
+QSpinBox::up-arrow, QSpinBox::down-arrow,
+QDoubleSpinBox::up-arrow, QDoubleSpinBox::down-arrow {
     width: 0;
     height: 0;
     border-left: 4px solid $base;
     border-right: 4px solid $base;
 }
-QSpinBox::up-arrow { border-bottom: 5px solid $muted_text; }
-QSpinBox::down-arrow { border-top: 5px solid $muted_text; }
-QSpinBox::up-arrow:hover { border-bottom-color: $text; }
-QSpinBox::down-arrow:hover { border-top-color: $text; }
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow { border-bottom: 5px solid $muted_text; }
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow { border-top: 5px solid $muted_text; }
+QSpinBox::up-arrow:hover, QDoubleSpinBox::up-arrow:hover { border-bottom-color: $text; }
+QSpinBox::down-arrow:hover, QDoubleSpinBox::down-arrow:hover { border-top-color: $text; }
 QComboBox {
     background: $base;
     color: $text;

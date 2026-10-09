@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from stencilizer.config import BridgeConfig
+from stencilizer.gui.axis_controls import AxisPanel
 
 _BRIDGE_WIDTH_TOOLTIP = "Bridge width as percent of a reference stroke of 10% of font UPM (30-110)"
 _WORKERS_TOOLTIP = "Worker processes used when saving; Auto lets the processor decide"
@@ -71,6 +72,8 @@ class ControlPanel(QWidget):
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
 
+        self.axes_panel = AxisPanel(self)
+
     def _build_layout(self) -> None:
         """Arrange the bridge and processing controls into styled sections."""
         layout = QVBoxLayout(self)
@@ -81,6 +84,11 @@ class ControlPanel(QWidget):
         layout.addSpacing(6)
         layout.addWidget(_section_title("PROCESSING", self))
         layout.addWidget(self._processing_card())
+        layout.addSpacing(6)
+        self._axes_title = _section_title("AXES", self)
+        self._axes_title.hide()
+        layout.addWidget(self._axes_title)
+        layout.addWidget(self.axes_panel)
         layout.addStretch()
 
     def _bridges_card(self) -> QFrame:
@@ -131,6 +139,7 @@ class ControlPanel(QWidget):
         self.width_slider.valueChanged.connect(self._sync_width_spin)
         self.spanning_check.toggled.connect(self._emit_parameters_changed)
         self.workers_slider.valueChanged.connect(self._sync_workers_label)
+        self.axes_panel.axes_changed.connect(self._axes_title.setVisible)
 
     def _emit_parameters_changed(self, _checked: bool) -> None:
         """Forward a spanning-bridge change through the parameter signal."""

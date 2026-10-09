@@ -15,7 +15,7 @@ from stencilizer.config.settings import GeometryConfig
 from stencilizer.core import FontProcessor
 from stencilizer.core.processor import GlyphClassification
 from stencilizer.domain import Glyph
-from stencilizer.exceptions import FontLoadError, FontSaveError
+from stencilizer.exceptions import FontSaveError
 from stencilizer.gui.session import FontSession, source_digest, unsupported_reason
 from stencilizer.io import FontReader
 from stencilizer.utils import ProcessingStats
@@ -63,7 +63,7 @@ def test_open_rejects_unsupported_fonts(
     commit_mono_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Unsupported tables are rejected before glyph classification."""
+    """A variable font opens with its axes; fonts without outlines are rejected."""
     calls: list[FontReader] = []
 
     def record_classification(reader: FontReader) -> GlyphClassification:
@@ -73,8 +73,8 @@ def test_open_rejects_unsupported_fonts(
 
     monkeypatch.setattr(processor, "classify_glyphs", record_classification)
 
-    with pytest.raises(FontLoadError, match="variable fonts \\(fvar table\\) are not supported"):
-        FontSession.open(variable_font_path, processor)
+    session = FontSession.open(variable_font_path, processor)
+    assert [(axis.tag, axis.name) for axis in session.axes] == [("wght", "wght")]
 
     assert unsupported_reason(TTFont()) is not None
     assert "glyf, CFF or CFF2" in (unsupported_reason(TTFont()) or "")

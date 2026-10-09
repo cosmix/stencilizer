@@ -6,6 +6,7 @@ with progress bars, tables, and formatted messages.
 
 from pathlib import Path
 
+from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -73,7 +74,9 @@ def print_step(message: str) -> None:
     console.print(f"\n{SYM_STEP} {message}")
 
 
-def print_font_info(font_path: str, font_type: str, glyph_count: int, upm: int) -> None:
+def print_font_info(
+    font_path: str, font_type: str, glyph_count: int, upm: int, axes: str | None = None
+) -> None:
     """Print font information.
 
     Args:
@@ -81,6 +84,7 @@ def print_font_info(font_path: str, font_type: str, glyph_count: int, upm: int) 
         font_type: Font format type (e.g., "TrueType", "OpenType")
         glyph_count: Total number of glyphs in font
         upm: Units per em value
+        axes: Variable font axis ranges, if present
     """
     # Use Text to safely handle paths with special characters
     line1 = Text("  ")
@@ -88,6 +92,22 @@ def print_font_info(font_path: str, font_type: str, glyph_count: int, upm: int) 
     line1.append(f" ({font_type})")
     console.print(line1)
     console.print(f"  {glyph_count:,} glyphs {SYM_DOT} {upm:,} UPM")
+    if axes is not None:
+        console.print(f"  Variable axes: {axes}")
+
+
+def variable_axes(font: TTFont) -> str | None:
+    """Return a compact description of a variable font's axes."""
+    if "fvar" not in font:
+        return None
+    return ", ".join(
+        f"{axis.axisTag} {_axis_value(axis.minValue)}\N{EN DASH}{_axis_value(axis.maxValue)}"
+        for axis in font["fvar"].axes
+    )
+
+
+def _axis_value(value: float) -> str:
+    return str(int(value)) if value.is_integer() else str(value)
 
 
 def print_islands_found(count: int, glyph_names: list[str], verbose: bool) -> None:

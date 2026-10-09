@@ -4,6 +4,7 @@ import hashlib
 import os
 import secrets
 import tempfile
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,8 +27,18 @@ from stencilizer.gui.composites import (
     find_bridged_composites,
     load_component_outlines,
 )
+from stencilizer.gui.variable_session import (
+    OUTCOME_CACHE_ENTRIES,
+    AxisInfo,
+    VariableOutcomeCache,
+    VariableSurface,
+    read_avar,
+    read_axes,
+)
 from stencilizer.io import FontReader
+from stencilizer.io.converter import fonttools_glyph_to_domain
 from stencilizer.utils import ProcessingStats
+from stencilizer.variable.processing import classify_variable_glyphs
 
 
 def source_digest(path: Path) -> str:
@@ -60,8 +71,6 @@ def _save_failure_reason(error: Exception) -> str:
 
 def unsupported_reason(font: Any) -> str | None:
     """Why the core cannot stencilize this TTFont, or None when it can."""
-    if "fvar" in font:
-        return "variable fonts (fvar table) are not supported"
     if "glyf" not in font and "CFF " not in font and "CFF2" not in font:
         return "no supported outline table (glyf, CFF or CFF2)"
     return None
@@ -95,6 +104,7 @@ class FontSession:
     composites: tuple[CompositeGlyph, ...]
     component_outlines: dict[str, Glyph]
     display_names: tuple[str, ...]
+    variable: VariableSurface | None = None
     _glyph_index: dict[str, Glyph] = field(init=False, repr=False)
     _composite_index: dict[str, CompositeGlyph] = field(init=False, repr=False)
     _composed: dict[str, Glyph] = field(init=False, repr=False)
@@ -102,6 +112,8 @@ class FontSession:
     def __post_init__(self) -> None:
         """Index display glyphs and compose composite outlines once."""
         self._glyph_index = {glyph.name: glyph for glyph in self.island_glyphs}
+        if self.variable is not None:
+            self._glyph_index.update(self.variable.unsupported)
         self._composite_index = {composite.name: composite for composite in self.composites}
         self._composed = {
             composite.name: compose(composite, self.component_outlines)
@@ -119,11 +131,17 @@ class FontSession:
                 reason = unsupported_reason(reader.font)
                 if reason is not None:
                     raise FontLoadError(str(path), reason)
-                classification = processor.classify_glyphs(reader)
+                surface: VariableSurface | None = None
+                if "fvar" in reader.font:
+                    classification, surface = cls._classify_variable(reader, processor)
+                else:
+                    classification = processor.classify_glyphs(reader)
                 island_names = {glyph.name for glyph in classification.glyphs_to_process}
                 composites = find_bridged_composites(reader, island_names)
                 component_outlines = load_component_outlines(reader, composites)
                 displayed = island_names | {composite.name for composite in composites}
+                if surface is not None:
+                    displayed |= set(surface.unsupported)
                 display_names = tuple(
                     name for name in reader.font.getGlyphOrder() if name in displayed
                 )
@@ -140,11 +158,42 @@ class FontSession:
                     composites=composites,
                     component_outlines=component_outlines,
                     display_names=display_names,
+                    variable=surface,
                 )
         except FontLoadError:
             raise
         except Exception as error:
             raise FontLoadError(str(path), str(error)) from error
+
+    @staticmethod
+    def _classify_variable(
+        reader: FontReader, processor: FontProcessor
+    ) -> tuple[GlyphClassification, VariableSurface]:
+        """Classify a variable font and gather its axes and glyph data."""
+        classification, glyphs = classify_variable_glyphs(processor, reader)
+        glyph_set = reader.font.getGlyphSet()
+        unsupported = {
+            name: fonttools_glyph_to_domain(name, glyph_set[name], reader.font)
+            for name in classification.unsupported_islands
+        }
+        surface = VariableSurface(
+            read_axes(reader.font),
+            read_avar(reader.font),
+            glyphs,
+            unsupported,
+            reader.units_per_em,
+            VariableOutcomeCache(max_entries=OUTCOME_CACHE_ENTRIES),
+        )
+        return classification, surface
+
+    @property
+    def axes(self) -> tuple[AxisInfo, ...]:
+        """Return the fvar axes, empty for static fonts."""
+        return self.variable.axes if self.variable is not None else ()
+
+    def is_composite(self, name: str) -> bool:
+        """Report whether ``name`` is a composite display glyph."""
+        return name in self._composite_index
 
     @property
     def island_glyphs(self) -> list[Glyph]:
@@ -173,8 +222,20 @@ class FontSession:
         bridge: BridgeConfig,
         geometry: GeometryConfig,
         directions: Mapping[str, BridgeDirection],
+        location: Mapping[str, float] | None = None,
     ) -> PreviewResult:
         """Stencilize one island glyph with its requested direction."""
+        if self.variable is not None:
+            started = time.perf_counter()
+            shown = self.variable.preview(glyph.name, bridge, geometry, directions, location)
+            return PreviewResult(
+                glyph.name,
+                shown.original,
+                shown.stenciled,
+                shown.bridges_added,
+                shown.error,
+                (time.perf_counter() - started) * 1000.0,
+            )
         configured_bridge = bridge.model_copy(
             update={"direction": directions.get(glyph.name, bridge.direction)}
         )
@@ -236,12 +297,16 @@ class FontSession:
         bridge: BridgeConfig,
         geometry: GeometryConfig,
         directions: Mapping[str, BridgeDirection] | None = None,
+        location: Mapping[str, float] | None = None,
     ) -> PreviewResult:
-        """Stencilize one island glyph or its composed composite display glyph."""
+        """Stencilize one island glyph or its composed composite display glyph.
+
+        ``location`` is a user-space ``{tag: value}``; composites ignore it.
+        """
         requested_directions = directions or {}
         glyph = self._glyph_index.get(name)
         if glyph is not None:
-            return self._preview_island(glyph, bridge, geometry, requested_directions)
+            return self._preview_island(glyph, bridge, geometry, requested_directions, location)
         composite = self._composite_index.get(name)
         if composite is not None:
             return self._preview_composite(composite, bridge, geometry, requested_directions)
@@ -257,9 +322,18 @@ class FontSession:
         requested_directions = directions or {}
         unbridged_names: set[str] = set()
         for glyph in self.island_glyphs:
+            if self.variable is not None:
+                count = self.variable.bridge_count(
+                    glyph.name, bridge, geometry, requested_directions
+                )
+                if count == 0:
+                    unbridged_names.add(glyph.name)
+                continue
             result = self._preview_island(glyph, bridge, geometry, requested_directions)
             if result.error is not None or result.bridges_added == 0:
                 unbridged_names.add(glyph.name)
+        if self.variable is not None:
+            unbridged_names.update(self.variable.unsupported)
         for composite in self.composites:
             if all(source in unbridged_names for source in composite.sources):
                 unbridged_names.add(composite.name)

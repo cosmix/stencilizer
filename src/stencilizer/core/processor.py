@@ -3,7 +3,7 @@
 import tempfile
 import time
 import traceback
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,6 +17,8 @@ from stencilizer.domain import Glyph
 from stencilizer.exceptions import FontFormatError, FontProcessingError, FontSaveError
 from stencilizer.io import FontReader, FontWriter
 from stencilizer.utils import ProcessingLogger, ProcessingStats, configure_logging
+from stencilizer.variable.model import VariableGlyph
+from stencilizer.variable.reader import is_variable
 
 ProgressCallback = Callable[[int, int, str, bool], None]
 
@@ -27,6 +29,7 @@ class GlyphClassification:
 
     glyphs_to_process: list[Glyph] = field(default_factory=list)
     skipped_reasons: dict[str, str] = field(default_factory=dict)
+    unsupported_islands: dict[str, int] = field(default_factory=dict)
 
     @property
     def skipped_count(self) -> int:
@@ -132,6 +135,10 @@ class FontProcessor:
 
     def classify_glyphs(self, reader: FontReader) -> GlyphClassification:
         """Classify loaded glyphs once for processing."""
+        if is_variable(reader.font):
+            from stencilizer.variable.processing import classify_variable_glyphs
+
+            return classify_variable_glyphs(self, reader)[0]
         result = GlyphClassification()
         total = 0
         for glyph in reader.iter_glyphs():
@@ -223,6 +230,20 @@ class FontProcessor:
             upm=upm,
             glyph_count=reader.glyph_count,
         )
+        if is_variable(reader.font):
+            from stencilizer.variable.processing import process_variable_font
+
+            process_variable_font(
+                self,
+                reader,
+                output_path,
+                max_workers,
+                stats,
+                progress_callback,
+                classification,
+                directions,
+            )
+            return
         selected = classification if classification is not None else self.classify_glyphs(reader)
         stats.skipped_count = selected.skipped_count
         if selected.glyphs_to_process:
@@ -243,26 +264,27 @@ class FontProcessor:
 
     def _process_glyphs_parallel(
         self,
-        glyphs: list[Glyph],
+        glyphs: Sequence[Glyph | VariableGlyph],
         upm: int,
         max_workers: int | None,
         stats: ProcessingStats,
         progress_callback: ProgressCallback | None = None,
         directions: Mapping[str, BridgeDirection] | None = None,
-    ) -> dict[str, Glyph]:
-        """Dispatch glyphs to workers and collect their results."""
-        processed: dict[str, Glyph] = {}
+        *,
+        worker: Callable[..., dict[str, Any]] = process_glyph,
+        rebuild: Callable[[dict[str, Any]], Any] = Glyph.from_dict,
+    ) -> dict[str, Any]:
+        """Dispatch glyphs to ``worker`` processes and collect rebuilt results."""
+        processed: dict[str, Any] = {}
         config_dict = self.config.bridge.model_dump()
         geometry_dict = self.config.geometry.model_dump()
         tasks = {glyph.name: glyph.to_dict() for glyph in glyphs}
-        self.logger.info(
-            "Starting parallel processing", glyph_count=len(tasks), max_workers=max_workers
-        )
+        self.logger.info("Starting parallel run", glyph_count=len(tasks), max_workers=max_workers)
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             pending: dict[Any, str] = {}
             for name, glyph_dict in tasks.items():
                 future = executor.submit(
-                    process_glyph,
+                    worker,
                     glyph_dict,
                     _config_for_glyph(config_dict, directions, name),
                     upm,
@@ -272,7 +294,7 @@ class FontProcessor:
             try:
                 for completed, future in enumerate(as_completed(pending), 1):
                     name = pending.pop(future)
-                    success = self._collect_result(future, name, stats, processed)
+                    success = self._collect_result(future, name, stats, processed, rebuild=rebuild)
                     if progress_callback is not None:
                         progress_callback(completed, len(tasks), name, success)
             except KeyboardInterrupt:
@@ -290,7 +312,9 @@ class FontProcessor:
         future: Any,
         name: str,
         stats: ProcessingStats,
-        processed: dict[str, Glyph],
+        processed: dict[str, Any],
+        *,
+        rebuild: Callable[[dict[str, Any]], Any] = Glyph.from_dict,
     ) -> bool:
         try:
             result = future.result()
@@ -306,7 +330,7 @@ class FontProcessor:
                 return False
             bridges_added = result["bridges_added"]
             if bridges_added:
-                processed[name] = Glyph.from_dict(result["glyph"])
+                processed[name] = rebuild(result["glyph"])
             stats.processed_count += 1
             stats.bridges_added += bridges_added
             unbridged_count = result.get("unbridged_count", 0)
@@ -333,9 +357,11 @@ class FontProcessor:
         self,
         reader: FontReader,
         output_path: Path,
-        processed_glyphs: dict[str, Glyph],
+        processed_glyphs: dict[str, Any],
+        *,
+        variable: bool = False,
     ) -> None:
-        """Write transformed glyphs into the loaded font and save it."""
+        """Write transformed glyphs (``VariableGlyph`` when ``variable``) and save the font."""
         temporary_name: str | None = None
         try:
             with tempfile.NamedTemporaryFile(
@@ -346,9 +372,10 @@ class FontProcessor:
             ) as temporary_file:
                 temporary_name = temporary_file.name
             writer = FontWriter(reader.font, Path(temporary_name))
+            update = writer.update_variable_glyph if variable else writer.update_glyph
             for glyph_name, glyph in processed_glyphs.items():
                 try:
-                    writer.update_glyph(glyph)
+                    update(glyph)
                 except Exception as error:
                     raise FontSaveError(
                         str(output_path), f"failed to update glyph '{glyph_name}': {error}"

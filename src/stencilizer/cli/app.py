@@ -1,14 +1,17 @@
 """CLI application entry point for stencilizer."""
 
 import os
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from stencilizer import __version__
+from stencilizer.cli.handlers import _handle_dry_run, _handle_list_islands
 from stencilizer.cli.output import (
-    SYM_OK,
     console,
     create_progress,
     format_file_size,
@@ -21,9 +24,10 @@ from stencilizer.cli.output import (
     print_processing_info,
     print_step,
     print_success,
+    variable_axes,
 )
 from stencilizer.config import BridgeConfig, LoggingConfig, ProcessingConfig, StencilizerSettings
-from stencilizer.core import FontProcessor, GlyphAnalyzer
+from stencilizer.core import FontProcessor
 from stencilizer.core.processor import GlyphClassification
 from stencilizer.exceptions import (
     FontLoadError,
@@ -32,6 +36,7 @@ from stencilizer.exceptions import (
     StencilizerError,
 )
 from stencilizer.io import FontReader, FontWriter
+from stencilizer.io.instance import instantiate_static
 from stencilizer.utils import ProcessingStats
 
 app = typer.Typer(
@@ -59,6 +64,12 @@ BridgeWidthOption = Annotated[
         max=110.0,
     ),
 ]
+InstanceOption = Annotated[
+    str | None,
+    typer.Option(
+        "--instance", help="Pin a variable font to a static instance, e.g. wght=700,wdth=90"
+    ),
+]
 VersionOption = Annotated[
     bool | None,
     typer.Option(
@@ -80,6 +91,7 @@ def stencilize(
         Path | None,
         typer.Option("--output", "-o", help="Output path (default: {name}-Stenciled.{ext})"),
     ] = None,
+    instance: InstanceOption = None,
     bridge_width: BridgeWidthOption = 60.0,
     workers: Annotated[
         int | None,
@@ -110,6 +122,7 @@ def stencilize(
     _run_command(
         input_font,
         output,
+        instance,
         bridge_width,
         workers,
         list_islands,
@@ -124,6 +137,7 @@ def stencilize(
 def _run_command(
     input_font: Path,
     output: Path | None,
+    instance: str | None,
     bridge_width: float,
     workers: int | None,
     list_islands: bool,
@@ -142,13 +156,15 @@ def _run_command(
         logging=LoggingConfig(log_file=log_file, log_level=log_level if not quiet else "WARNING"),
     )
     try:
-        if list_islands:
-            _handle_list_islands(input_font, quiet)
-            raise typer.Exit(code=0)
-        if dry_run:
-            _handle_dry_run(input_font, settings, quiet, verbose)
-            raise typer.Exit(code=0)
-        _run_standard(input_font, output, settings, workers, quiet, verbose)
+        with _instance_font(input_font, instance) as font_path:
+            output_path = output or FontWriter.get_stenciled_path(input_font)
+            if list_islands:
+                _handle_list_islands(font_path, quiet)
+                raise typer.Exit(code=0)
+            if dry_run:
+                _handle_dry_run(font_path, settings, quiet, verbose)
+                raise typer.Exit(code=0)
+            _run_standard(font_path, output_path, settings, workers, quiet, verbose)
     except FontLoadError as error:
         print_error(f"Could not load font: {error.reason}")
         raise typer.Exit(code=1) from error
@@ -183,6 +199,15 @@ def _validate_input(input_font: Path, verbose: bool, quiet: bool) -> None:
         raise typer.Exit(code=1)
 
 
+@contextmanager
+def _instance_font(input_font: Path, instance: str | None) -> Iterator[Path]:
+    if instance is None:
+        yield input_font
+        return
+    with tempfile.TemporaryDirectory(prefix="stencilizer-instance-") as tmp:
+        yield instantiate_static(input_font, instance, Path(tmp))
+
+
 def _classify_font(font_path: Path, processor: FontProcessor, quiet: bool) -> GlyphClassification:
     if not quiet:
         print_step("Loading font")
@@ -194,6 +219,7 @@ def _classify_font(font_path: Path, processor: FontProcessor, quiet: bool) -> Gl
                     font_type=reader.format,
                     glyph_count=reader.glyph_count,
                     upm=reader.units_per_em,
+                    axes=variable_axes(reader.font),
                 )
                 print_step("Analyzing glyphs")
             return processor.classify_glyphs(reader)
@@ -205,7 +231,7 @@ def _classify_font(font_path: Path, processor: FontProcessor, quiet: bool) -> Gl
 
 def _run_standard(
     font_path: Path,
-    output: Path | None,
+    output_path: Path,
     settings: StencilizerSettings,
     workers: int | None,
     quiet: bool,
@@ -224,7 +250,6 @@ def _run_standard(
         actual_workers = workers if workers else os.cpu_count() or 1
         print_step("Processing")
         print_processing_info(actual_workers, is_auto=(workers is None))
-    output_path = output if output is not None else FontWriter.get_stenciled_path(font_path)
     stats = _process_font(processor, font_path, output_path, workers, quiet, classification)
     if stats.error_count:
         raise FontProcessingError(stats.errors)
@@ -294,89 +319,6 @@ def _report_success(output_path: Path, stats: ProcessingStats) -> None:
         min_time_ms=stats.min_glyph_time_ms,
         max_time_ms=stats.max_glyph_time_ms,
     )
-
-
-def _handle_list_islands(font_path: Path, quiet: bool) -> None:
-    """List each glyph with islands."""
-    if not quiet:
-        print_step("Loading font")
-    try:
-        with FontReader(font_path) as reader:
-            if not quiet:
-                print_font_info(
-                    font_path=str(font_path),
-                    font_type=reader.format,
-                    glyph_count=reader.glyph_count,
-                    upm=reader.units_per_em,
-                )
-                print_step("Scanning for islands")
-            island_glyphs = _scan_islands(reader)
-        if not quiet:
-            console.print(f"\n[bold]{len(island_glyphs)} glyphs with islands[/bold]\n")
-        for glyph_name, island_count in island_glyphs:
-            plural = "island" if island_count == 1 else "islands"
-            console.print(f"  {glyph_name}: {island_count} {plural}")
-    except Exception as error:
-        print_error(f"Could not analyze font: {error}")
-        raise typer.Exit(code=1) from error
-
-
-def _scan_islands(reader: FontReader) -> list[tuple[str, int]]:
-    analyzer = GlyphAnalyzer()
-    island_glyphs: list[tuple[str, int]] = []
-    for glyph in reader.iter_glyphs():
-        if glyph.is_empty() or glyph.is_composite():
-            continue
-        hierarchy = analyzer.analyze(glyph)
-        if hierarchy.has_islands():
-            island_glyphs.append((glyph.name, len(hierarchy.get_islands())))
-    return island_glyphs
-
-
-def _handle_dry_run(
-    font_path: Path, settings: StencilizerSettings, quiet: bool, verbose: bool
-) -> None:
-    """Analyze a font without changing it."""
-    if not quiet:
-        print_step("Loading font")
-    try:
-        with FontReader(font_path) as reader:
-            if not quiet:
-                print_font_info(
-                    font_path=str(font_path),
-                    font_type=reader.format,
-                    glyph_count=reader.glyph_count,
-                    upm=reader.units_per_em,
-                )
-                print_step("Analyzing (dry run)")
-            island_glyphs = _scan_islands(reader)
-        if not quiet:
-            _report_dry_run(island_glyphs, settings, verbose)
-    except Exception as error:
-        print_error(f"Could not analyze font: {error}")
-        raise typer.Exit(code=1) from error
-
-
-def _report_dry_run(
-    island_glyphs: list[tuple[str, int]], settings: StencilizerSettings, verbose: bool
-) -> None:
-    total_islands = sum(count for _, count in island_glyphs)
-    console.print("\n[bold]Analysis[/bold]\n")
-    console.print(f"  Glyphs with islands   {len(island_glyphs)}")
-    console.print(f"  Total islands         {total_islands}")
-    console.print(f"  Estimated bridges     {total_islands}")
-    console.print(
-        f"  Bridge width          {settings.bridge.width_percent}% of a reference stroke "
-        "of 10% of font UPM"
-    )
-    if verbose and island_glyphs:
-        console.print("\n[bold]Glyphs[/bold]")
-        for glyph_name, island_count in island_glyphs[:20]:
-            plural = "island" if island_count == 1 else "islands"
-            console.print(f"  {glyph_name}: {island_count} {plural}")
-        if len(island_glyphs) > 20:
-            console.print(f"  ... +{len(island_glyphs) - 20} more")
-    console.print(f"\n[bold green]{SYM_OK} Dry run complete[/bold green] – no changes made")  # noqa: RUF001
 
 
 def cli() -> None:
