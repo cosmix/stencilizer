@@ -223,9 +223,13 @@ Switching the processor pool to spawn dropped worker logging; snapping CFF2 delt
 **Prevention**: Check any change to bridge placement with a nonzero-winding raster count of enclosed paper per glyph, plus HEAD-versus-new rendered sheets of every glyph whose output changed. Counts alone do not show a regression.
 **Fix**: _band_line_clear rejects a candidate band whose lines cross any other contour, holes included.
 
+## GUI font-info mistakes
+
+Iterating a fontTools `TTFont` with `for tag in font` (ruff SIM118 suggests it) raises `KeyError('0')` and broke every GUI open; iterate `font.keys()` and test with real fixtures through `FontSession.open`. A parentless widget used as a temporary in a test is collected mid-call. See [gui](mistakes/gui.md).
+
 ## Whole-file staging committed another session's uncommitted edits
 
-**What happened**: Committing the triangular-counter fix, git add on whole files staged a concurrent session's unfinished edits in tests/gui/test_main_window_directions.py (an assertion on its new font_info panel) and doc/loom/knowledge/mistakes.md (a section linking a file it had not committed). The committed tree failed mypy, one GUI test and loom knowledge check.
-**Why**: Only two of the shared files were diffed before staging. The others were assumed to hold only this change because a subagent had edited them.
-**Prevention**: When another session works in the same checkout, run git diff on every file before staging it, not a sample. Stage only your hunks (git apply --cached with your own patch), and run the gate on a detached worktree of the new commit before calling it done.
-**Fix**: A follow-up commit removed the foreign hunks from the committed files and left the working copies untouched.
+**What happened**: Committing the triangular-counter fix, git add on whole files staged a concurrent session's unfinished edits in tests/gui/test_main_window_directions.py (an assertion on its new font_info panel) and doc/loom/knowledge/mistakes.md (a section linking a file it had not committed). A follow-up commit stripped those hunks, but the other session had committed its font-info work in between, relying on them, so that follow-up broke its test and dropped its section until a third commit restored them.
+**Why**: Only two of the shared files were diffed before staging. The others were assumed to hold only this change because a subagent had edited them. The cleanup was then written against a stale picture of HEAD, without checking git log for commits made in the meantime.
+**Prevention**: When another session works in the same checkout, run git diff on every file before staging it, not a sample, and stage only your own hunks (git apply --cached with your own patch). Before any corrective commit, run git log to see what landed since, and run the gate on a detached worktree of the new HEAD before calling it done.
+**Fix**: Commit 63c5615 removed the hunks, and the next commit restored them once the other session's commits were found to need them.

@@ -69,7 +69,7 @@ def test_grid_lists_bridged_composites(window: MainWindow, qtbot: QtBot, roboto_
     }
     assert window.grid.count() == 1027
     assert "Aacute" in names
-    assert "465 composites" in window.header.font_details_label.text()
+    assert "465" in [label.text() for label in window.controls.font_info.value_labels]
 
 
 def test_choosing_direction_updates_preview_and_marker(
