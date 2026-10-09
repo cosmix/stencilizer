@@ -57,3 +57,17 @@ The recovered early font-format rejection initially used different wording from 
 - Untracked dotfiles at the worktree root (`.bashrc`, `.zshrc`, `.gitconfig`, `.idea`, `.vscode`, `.mcp.json`, ...) are sandbox mount points; stage named files only (see "Review fingerprint differs inside and outside the Bash sandbox").
 - The Read tool is blocked for files under `$TMPDIR`; copy the file into the scratchpad directory or read it with `rg -n '' <file>`.
 - A codex unit that times out at 540 s leaves its fix unfinished (fontTools `instantiateVariableFont(downgradeCFF2=True)` raises "Input font does not contain a CFF2 table" on glyf fonts; pass `downgradeCFF2="CFF2" in font`); the orchestrator finishes it or re-splits the unit.
+
+## Docstring rewrap left a 120-character line
+
+**What happened**: Rewrapping `transform_variable_glyph`'s docstring split only the line before the long one, leaving a 120-character line that review round 2 caught.
+**Why**: The edit was not followed by a re-read of the lines after it, and the format check does not wrap docstring prose.
+**Prevention**: After rewrapping prose, run `rg '^.{101,}' <file>` on the file before the gate.
+**Fix**: Rewrapped the paragraph and re-ran the gate.
+
+## Watching a codex unit before its wrapper started
+
+**What happened**: `loom subagents watch --worker codex:<unit-id>` exited 5 ("worker set does not resolve to one Claude parent UUID") when the unit id was named before the forwarder had started its wrapper.
+**Why**: The unit id binds only once the wrapper writes its start record (`.loom/work/subagents/<stage>/starts.jsonl`).
+**Prevention**: Watch the forwarder's own `claude:<agent-id>` from the spawn result; name a `codex:` worker only after its start record exists.
+**Fix**: Re-armed the watch on the forwarder's agent id.
