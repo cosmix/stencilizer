@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 25 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 26 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 57 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 210 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 217 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 26 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 86 |
 
@@ -22,7 +22,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [gui](architecture/gui.md) | GUI package layout, threading model, save safety | 76 |
+| [gui](architecture/gui.md) | GUI package layout, threading model, save safety | 82 |
 
 ### patterns
 

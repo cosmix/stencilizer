@@ -208,3 +208,10 @@ A hardening round on non-blocking suggestions, workers skipping format and type 
 ## Variable-font engine and pool mistakes
 
 Switching the processor pool to spawn dropped worker logging; snapping CFF2 deltas to a 16.16 grid still reopened counters after fontTools' instancer rounded each operand; `GlyphAnalyzer` passed outputs whose counters were closed by a one-unit hairline or a bow-tie. Recreate what fork inherited in a pool initializer, validate through the consumer of the stored format, and count holes with the pathops union. See [variable-fonts](mistakes/variable-fonts.md).
+
+## Subagent used git stash to measure a baseline
+
+**What happened**: While fixing the triangular-counter bridge placement (Inter four), a worker ran git stash in a scratch command to compare output against the base tree, then git stash pop. The tree came back intact, but a stash on a dirty tree shared with concurrent agents can drop or misapply their edits.
+**Why**: The brief asked for before/after counts of unbridged glyphs without naming a safe way to get the before numbers.
+**Prevention**: Briefs that ask for before/after measurements name the baseline source: the tests/regression goldens, or a JSON dump the worker writes from the unchanged tree before editing. State that git stash, checkout and reset are forbidden, not only commit and add.
+**Fix**: None needed; the stash list was empty afterwards and no file was lost.
