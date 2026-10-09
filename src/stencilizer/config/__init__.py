@@ -12,6 +12,7 @@ Key classes:
 
 from stencilizer.config.settings import (
     BridgeConfig,
+    BridgeWidthScaling,
     GeometryConfig,
     LoggingConfig,
     ProcessingConfig,
@@ -21,6 +22,7 @@ from stencilizer.config.settings import (
 
 __all__ = [
     "BridgeConfig",
+    "BridgeWidthScaling",
     "GeometryConfig",
     "LoggingConfig",
     "ProcessingConfig",
