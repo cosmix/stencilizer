@@ -12,9 +12,9 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 21 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 22 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 47 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 185 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 202 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 26 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 60 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 68 |
 
 ## Tier 2 — Topics
 

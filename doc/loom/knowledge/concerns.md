@@ -5,7 +5,7 @@
 
 ## Unsupported font formats
 
-CFF2 write and variable fonts are unsupported; see stack.md "Supported font formats". Nothing in the core rejects them: `FontReader.load` only checks the file exists and `FontReader.format` labels CFF2 "OpenType", so `classify_glyphs` succeeds (26 island glyphs on a CFF2 copy of CommitMono) and every glyph write raises `NotImplementedError` in `domain_glyph_to_fonttools` (`io/converter.py`). The GUI rejects them in `unsupported_reason` (`gui/session.py:54`, called from `FontSession.open`); the CLI does not, so callers of the core must check for `fvar`/`CFF2` themselves.
+CFF2 write and variable fonts are unsupported; see stack.md "Supported font formats". `FontReader.load` raises `FontFormatError` for an `fvar` or `CFF2` table (src/stencilizer/io/reader.py:54-57), `FontWriter` repeats the check in `_check_supported_format` (src/stencilizer/io/writer.py:25-29), and the GUI rejects both in `unsupported_reason` (src/stencilizer/gui/session.py:63-66, called from `FontSession.open`). Past those guards nothing handles them: `fonttools_glyph_to_domain` reverses winding only when `"CFF " in font` (io/converter.py:32), so a CFF2 outline would read inside-out, and `domain_glyph_to_fonttools` raises `NotImplementedError` for any font without `glyf` or `CFF ` (io/converter.py:65-72).
 
 ## Oversized test module
 
@@ -23,9 +23,9 @@ tests/unit/test_io.py is 490 lines, over the 400-line file limit. tests/regressi
 
 UPM scaling made fonts not at 1000 UPM behave as the 1000-UPM tuning scaled. For Roboto (2048) and Lato (2000), 75 of 1009 island glyphs changed output (17 gained contours, 5 lost contours, 53 kept the count). The changes are intended but nobody has inspected the rendered glyphs.
 
-## Swallowed glyph-write failures and unchecked classification reuse
+## Unchecked classification reuse
 
-`FontProcessor._save_font` (`core/processor.py`) logs a failed `writer.update_glyph` and continues: the failure is not counted in `ProcessingStats.error_count`, and `writer.save()` still writes a font renamed "Stenciled". A caller-supplied `classification` passed to `process` is used without checking it came from the file `process` reopens, so an edited source mixes old outlines with new tables. Tests of a save must read the output back rather than trust the stats.
+A caller-supplied `classification` passed to `FontProcessor.process` is used without checking it came from the file `process` reopens (core/processor.py:226), so an edited source mixes old outlines with new tables; only the GUI guards this, with its source digest check (architecture/gui.md "Save safety"). Tests of a save must read the output back rather than trust the stats. A failed `writer.update_glyph` in `_save_font` raises `FontSaveError` and publishes nothing (core/processor.py:349-355).
 
 ## Tests write log files into the working directory
 
@@ -58,3 +58,11 @@ The `window` fixture (`GuiController` plus `MainWindow`, tests/gui/conftest.py:1
 ## Sandbox fingerprint and reviewer hand-back need loom fixes
 
 Two plan stages hit the same two gate failures (mistakes/review-and-completion-gates.md), so prose rules are not enough. Proposals: the finish and contract-freeze fingerprint should ignore non-regular files in the worktree root, or those commands should run outside the sandbox; the review-harvest hook should read a review block from a hand-back message, or the reviewer agent definition should drop that tool. Until then a version 2 stage run from a sandboxed session stalls on the review gate.
+
+## GUI tests honour an inherited QT_QPA_PLATFORM
+
+`tests/gui/conftest.py:24` uses `os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")`, so in a desktop session that exports `QT_QPA_PLATFORM=wayland;xcb` every GUI test opens real windows (and in a sandbox without a display socket Qt cannot start). Run GUI tests as `QT_QPA_PLATFORM=offscreen uv run pytest ...` until conftest assigns the variable outright; see mistakes.md "GUI tests open real windows when QT_QPA_PLATFORM is set".
+
+## Sequential bridges cut through sibling counters
+
+When an island group has no clear gap and no spanning bridge (`surgery_groups.arrangement` falls back to vertical, `_spanning` fails because the islands share no x range), `_sequential` (core/surgery_groups.py:108-135) bridges each island in turn, and every bridge band crosses the sibling counters of the same parent without splitting them. Holes are never obstructions (`geometry_crossings.is_bridge_path_clear`, core/geometry_crossings.py:112-119), `bridge_nested._nested_status` splits only the bridged island's own children, `SurgeryContext.merge` passes the original contours rather than the current pieces, and `_containing_piece` matches later islands by bbox centre, so a triangle whose centre lands in a gap is appended unchanged. Roboto `.notdef` (a box with four triangular counters, the first glyph the GUI previews for Roboto, tests/gui/test_main_window.py:66-78) comes out with 0 islands but stray holes crossing the bridge gaps, which render as black wedges. A prototype that splits overlapped sibling holes, restricted to siblings so nested rings (◎, ℗) are untouched, fixed `.notdef`, `naira`, `won`, `uni20BB`, `dollar`, `uni0E3F`, `uni2318` and `uni25A9`, and reduced glyphs with leftover islands or crossing contours from 69 to 59 in Roboto, 76 to 70 in Lato and 71 to 70 in CommitMono. Fixing it changes the static goldens, so it needs its own plan; the variable-font engine reuses this surgery on the default master and inherits the defect.

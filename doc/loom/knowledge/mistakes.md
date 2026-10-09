@@ -180,6 +180,23 @@ See [README layout](mistakes/readme-layout.md) for the correction and placement 
 
 A 2x offscreen grab clamps the window to the tiny default offscreen screen, so the UI comes out cropped and magnified. Pass a 3840x2160 screen through `offscreen:configfile=` and keep `QT_SCALE_FACTOR=2`. See [offscreen-screenshots](mistakes/offscreen-screenshots.md).
 
+## Fixed-parameter replay breaks bridge-cut coincidence across masters
+
+**What happened**: While planning variable-font support, replaying the default master's bridge surgery in other masters by keeping each cut point at the same edge parameter t was recommended and accepted. A spike on Ubuntu[wdth,wght] showed islands at an axis extreme in 554 of 561 bridged glyphs.
+
+**Why**: Surgery output relies on exact coincidence: a cut hole piece touches its outer piece along the bridge line, and the analyzer only accepts touching contours as non-nested. Fixed t keeps each point on its edge but moves the points of one bridge line off a common line, leaving hairline slivers that close the counter.
+
+**Prevention**: Any cross-master replay of surgery must keep every point of one bridge line on one axis-aligned line in each master: recompute the line coordinate per master, intersect it with the polyline near the default edge, and project same-contour vertices that land on the wrong side onto the line. Validate every master with the analyzer before trusting a replay design.
+
+**Fix**: The variable-font plan uses per-master realignment; the spike measured 23 of 561 (Ubuntu) and 27 of 576 (Inter) bridged glyphs still failing at some extreme, which the plan leaves unbridged and counts.
+
 ## CI action refs and release version bumps
 
 setup-uv has no floating major tags, so `@v10` fails at job setup; verify every action ref with `gh api`. A version bump must also run `uv lock`, or `uv sync --locked` fails. See [ci-release](mistakes/ci-release.md).
+
+## GUI tests open real windows when QT_QPA_PLATFORM is set
+
+**What happened**: During the 2026-10-09 pressure test of the variable-font plan, a teammate timed `uv run pytest tests/gui/test_session.py tests/gui/test_main_window.py tests/gui/test_controller_errors.py` from a desktop session. The test windows appeared on the user's screen, showing a stenciled glyph preview.
+**Why**: `tests/gui/conftest.py:24` sets `os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")`, and the desktop session exports `QT_QPA_PLATFORM=wayland;xcb`, so the default never applies.
+**Prevention**: Run every Qt command with `QT_QPA_PLATFORM=offscreen` set explicitly on the command line; probes and acceptance commands must not rely on the conftest default. Assign the variable instead of setdefault-ing it in conftest.
+**Fix**: The variable-font plan forces offscreen in `tests/gui/conftest.py` (stage cff2-static) and prefixes its GUI acceptance commands with `QT_QPA_PLATFORM=offscreen`.

@@ -19,7 +19,7 @@ Per glyph: `GlyphAnalyzer` → `GlyphTransformer.transform()` → `ContourMerger
 
 ## Font format I/O
 
-Read: `fonttools_glyph_to_domain()` records any outline with `RecordingPen`; CFF contours are point-reversed to TrueType winding (src/stencilizer/io/converter.py:48-54). Write: `domain_glyph_to_fonttools()` branches on `"glyf"` → `_update_truetype_glyph`, `"CFF "` → `_update_cff_glyph` (reverses back, converter.py:243-265), anything else raises `NotImplementedError` (converter.py:89-95). CFF2 is only named in format detection (src/stencilizer/io/reader.py:63); there is no CFF2 write path.
+Read: `fonttools_glyph_to_domain()` records any outline with `RecordingPen`; contours are point-reversed to TrueType winding only when `"CFF " in font` (src/stencilizer/io/converter.py:30-35), so CFF2 is not normalized. Write: `domain_glyph_to_fonttools()` (converter.py:51) checks `"glyf"` first → `_update_truetype_glyph` (converter.py:161), then `"CFF "` → `_update_cff_glyph` (converter.py:232, reverses back), anything else raises `NotImplementedError` (converter.py:65-72). The `glyf`-first check means a variable TrueType glyph written through this path would get a new glyf entry with its gvar left stale. There is no CFF2 write path; `FontReader.format` labels CFF2 "OpenType" (src/stencilizer/io/reader.py:76).
 
 ## GUI (summary)
 
@@ -27,7 +27,7 @@ Read: `fonttools_glyph_to_domain()` records any outline with `RecordingPen`; CFF
 
 ## Font format and error boundary
 
-Review fixes reject variable fonts (fvar) and CFF2 before conversion and expose glyph conversion errors instead of silently omitting glyphs. Unsupported inputs must fail explicitly without publishing an output font.
+`FontReader.load` and `FontWriter` reject variable fonts (fvar) and CFF2 before conversion with `FontFormatError`, and glyph conversion errors are raised instead of silently omitting glyphs. Unsupported inputs must fail explicitly without publishing an output font.
 
 ## Processing outcomes
 
