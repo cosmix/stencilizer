@@ -39,15 +39,17 @@ def test_reader_rejects_variable_fonts_before_exposing_font() -> None:
     font.close.assert_called_once()
 
 
-def test_writer_rejects_variable_fonts_without_output() -> None:
+def test_writer_rejects_variable_fonts_without_output(tmp_path: Path) -> None:
     font = MagicMock()
     font.__contains__.side_effect = lambda name: name == "fvar"
-    writer = FontWriter(font, Path("output.ttf"))
+    output = tmp_path / "output.ttf"
+    writer = FontWriter(font, output)
     with pytest.raises(FontFormatError):
         writer.update_glyph(_glyph())
-    with pytest.raises(FontFormatError):
-        writer.save()
+    assert not output.exists()
     font.save.assert_not_called()
+    writer.save()
+    font.save.assert_called_once_with(str(output))
 
 
 def test_static_cff2_font_loads_and_saves_as_cff2(tmp_path: Path) -> None:

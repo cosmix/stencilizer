@@ -6,6 +6,7 @@ with the stencilized naming convention.
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 
@@ -14,17 +15,16 @@ from stencilizer.domain.glyph import Glyph
 from stencilizer.exceptions import FontFormatError, FontSaveError
 from stencilizer.io.converter import domain_glyph_to_fonttools
 
+if TYPE_CHECKING:
+    from stencilizer.variable.model import VariableGlyph
+
 # Name table IDs we modify
 NAME_ID_FAMILY = 1
 NAME_ID_FULL_NAME = 4
 NAME_ID_VERSION = 5
 NAME_ID_POSTSCRIPT = 6
 NAME_ID_TYPOGRAPHIC_FAMILY = 16
-
-
-def _check_supported_format(font: TTFont, path: Path) -> None:
-    if "fvar" in font:
-        raise FontFormatError(str(path), "Unsupported variable fonts")
+NAME_ID_VARIATIONS_POSTSCRIPT = 25
 
 
 def update_font_names(font: TTFont, suffix: str = " Stenciled") -> None:
@@ -38,6 +38,15 @@ def update_font_names(font: TTFont, suffix: str = " Stenciled") -> None:
         suffix: Suffix to add (default: " Stenciled")
     """
     name_table = font["name"]
+    postscript_name_ids = {NAME_ID_POSTSCRIPT, NAME_ID_VARIATIONS_POSTSCRIPT}
+    family_name = _variable_family_name(font) if "fvar" in font else None
+
+    if "fvar" in font:
+        postscript_name_ids.update(
+            instance.postscriptNameID
+            for instance in font["fvar"].instances
+            if instance.postscriptNameID not in (None, 0xFFFF)
+        )
 
     # Collect updates to apply (avoid modifying while iterating)
     updates: list[tuple[int, int, int, int, str]] = []
@@ -53,7 +62,11 @@ def update_font_names(font: TTFont, suffix: str = " Stenciled") -> None:
         except UnicodeDecodeError:
             continue
 
-        new_name = _updated_font_name(name_id, original, suffix)
+        new_name = (
+            _updated_postscript_name(original, suffix)
+            if name_id in postscript_name_ids
+            else _updated_font_name(name_id, original, suffix, family_name)
+        )
 
         if new_name is not None:
             updates.append((name_id, platform_id, plat_enc_id, lang_id, new_name))
@@ -63,7 +76,21 @@ def update_font_names(font: TTFont, suffix: str = " Stenciled") -> None:
         name_table.setName(new_name, name_id, platform_id, plat_enc_id, lang_id)
 
 
-def _updated_font_name(name_id: int, original: str, suffix: str) -> str | None:
+def _variable_family_name(font: TTFont) -> str | None:
+    for name_id in (NAME_ID_TYPOGRAPHIC_FAMILY, NAME_ID_FAMILY):
+        for record in font["name"].names:
+            if record.nameID != name_id:
+                continue
+            try:
+                return cast("str", record.toUnicode())
+            except UnicodeDecodeError:
+                continue
+    return None
+
+
+def _updated_font_name(
+    name_id: int, original: str, suffix: str, family_name: str | None
+) -> str | None:
     if name_id == NAME_ID_FAMILY:
         return original + suffix
 
@@ -71,21 +98,26 @@ def _updated_font_name(name_id: int, original: str, suffix: str) -> str | None:
         return original + suffix
 
     if name_id == NAME_ID_FULL_NAME:
+        if family_name is not None and (
+            original == family_name or original.startswith(f"{family_name} ")
+        ):
+            return f"{family_name}{suffix}{original[len(family_name) :]}"
         parts = original.rsplit(" ", 1)
         return f"{parts[0]}{suffix} {parts[1]}" if len(parts) == 2 else original + suffix
-
-    if name_id == NAME_ID_POSTSCRIPT:
-        ps_suffix = suffix.replace(" ", "")
-        if "-" in original:
-            parts = original.split("-", 1)
-            return f"{parts[0]}{ps_suffix}-{parts[1]}"
-        return original + ps_suffix
 
     if name_id == NAME_ID_VERSION:
         timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
         return f"{original}; Stencil Version generated {timestamp} (UTC) using Stencilizer v{__version__} https://github.com/cosmix/stencilizer"
 
     return None
+
+
+def _updated_postscript_name(original: str, suffix: str) -> str:
+    ps_suffix = suffix.replace(" ", "")
+    if "-" in original:
+        parts = original.split("-", 1)
+        return f"{parts[0]}{ps_suffix}-{parts[1]}"
+    return original + ps_suffix
 
 
 class FontWriter:
@@ -122,7 +154,10 @@ class FontWriter:
         Raises:
             ValueError: If glyph name not found in font
         """
-        _check_supported_format(self._font, self._output_path)
+        if "fvar" in self._font:
+            raise FontFormatError(
+                str(self._output_path), "variable fonts must use update_variable_glyph"
+            )
         glyph_name = glyph.name
 
         if glyph_name not in self._font.getGlyphOrder():
@@ -133,6 +168,21 @@ class FontWriter:
 
         domain_glyph_to_fonttools(glyph, original_glyph, self._font)
 
+    def update_variable_glyph(self, vg: "VariableGlyph") -> None:
+        """Update a variable glyph through its outline-format writer."""
+        if vg.name not in self._font.getGlyphOrder():
+            raise ValueError(f"Glyph '{vg.name}' not found in font")
+
+        from stencilizer.variable.write_cff2 import write_cff2_variable_glyph
+        from stencilizer.variable.write_gvar import write_truetype_variable_glyph
+
+        if "glyf" in self._font:
+            write_truetype_variable_glyph(self._font, vg)
+        elif "CFF2" in self._font:
+            write_cff2_variable_glyph(self._font, vg)
+        else:
+            raise FontFormatError(str(self._output_path), "unsupported variable outline format")
+
     def save(self) -> None:
         """Save the font file to the output path.
 
@@ -142,7 +192,6 @@ class FontWriter:
         Raises:
             IOError: If file cannot be written
         """
-        _check_supported_format(self._font, self._output_path)
         try:
             update_font_names(self._font)
             self._font.save(str(self._output_path))
