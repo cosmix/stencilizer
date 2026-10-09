@@ -1,8 +1,8 @@
 """Qt-free variable session behavior: outcome cache, survey storage and threading."""
 
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
 import pytest
 from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
@@ -13,12 +13,11 @@ from stencilizer.core import FontProcessor
 from stencilizer.gui import variable_session
 from stencilizer.gui.session import FontSession
 from stencilizer.gui.variable_session import OutcomeKey, VariableOutcomeCache
-from stencilizer.variable.model import VariableGlyph
+from stencilizer.variable.model import Support, VariableGlyph
+from stencilizer.variable.processing import UNSUPPORTED_REASON
 from stencilizer.variable.reader import read_variable_glyph
 from stencilizer.variable.transform import VariableOutcome, transform_variable_glyph
-
-FIXTURES = Path(__file__).parent.parent / "fixtures" / "variable"
-INTER = FIXTURES / "Inter-VF-subset.ttf"
+from tests.font_helpers import INTER
 
 
 def _outcome() -> VariableOutcome:
@@ -142,3 +141,46 @@ def test_transform_failure_becomes_preview_error_and_is_not_cached(
     assert result.bridges_added == 0
     assert result.error == "boom"
     assert session.variable._cache.outcome_keys == []
+
+
+def _singular(glyph: VariableGlyph) -> VariableGlyph:
+    """``glyph`` with two supports sharing one peak: its deltas cannot be solved."""
+    shared = Support((("wght", 0.0, 1.0, 1.0),))
+    return VariableGlyph(
+        default=glyph.default,
+        supports=(shared, shared),
+        masters=(glyph.default, glyph.default),
+        axis_tags=glyph.axis_tags,
+    )
+
+
+def test_singular_variation_data_previews_the_default_outline(processor: FontProcessor) -> None:
+    session = FontSession.open(INTER, processor)
+    assert session.variable is not None
+    singular = _singular(session.variable._glyphs["o"])
+    session.variable._glyphs["o"] = singular
+    result = session.preview("o", BridgeConfig(), GeometryConfig(), location={"wght": 700})
+    assert result.original == singular.default
+    assert result.stenciled is None
+    assert result.bridges_added == 0
+    assert result.error == UNSUPPORTED_REASON
+    assert session.variable._cache.outcome_keys == []
+
+
+def test_survey_failure_counts_zero_and_is_logged(
+    processor: FontProcessor, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    session = FontSession.open(INTER, processor)
+    assert session.variable is not None
+
+    def failing(_vg: VariableGlyph, *_args: object) -> VariableOutcome:
+        raise ValueError("boom")
+
+    monkeypatch.setattr(variable_session, "transform_variable_glyph", failing)
+    with caplog.at_level(logging.DEBUG, logger=variable_session.__name__):
+        count = session.variable.bridge_count("o", BridgeConfig(), GeometryConfig(), {})
+    assert count == 0
+    assert any(
+        record.getMessage() == "Bridge count failed for glyph o" and record.exc_info
+        for record in caplog.records
+    )

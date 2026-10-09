@@ -173,7 +173,9 @@ class FontSession:
         classification, glyphs = classify_variable_glyphs(processor, reader)
         glyph_set = reader.font.getGlyphSet()
         unsupported = {
-            name: fonttools_glyph_to_domain(name, glyph_set[name], reader.font)
+            name: fonttools_glyph_to_domain(
+                name, glyph_set[name], reader.font, reader.unicode_by_name
+            )
             for name in classification.unsupported_islands
         }
         surface = VariableSurface(

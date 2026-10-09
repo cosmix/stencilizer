@@ -1,22 +1,20 @@
 """Axis sliders and location normalization."""
 
-from pathlib import Path
-
 import pytest
 from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QSlider
 from pytestqt.qtbot import QtBot
 
 from stencilizer.gui.axis_controls import AxisPanel
 from stencilizer.gui.variable_session import AxisInfo, normalize, read_avar, read_axes
-
-FIXTURES = Path(__file__).parent.parent / "fixtures" / "variable"
+from tests.font_helpers import INTER, UBUNTU
 
 
 @pytest.fixture
 def ubuntu_axes() -> tuple[AxisInfo, ...]:
     """The fvar axes of the Ubuntu fixture (wdth, wght)."""
-    return read_axes(TTFont(FIXTURES / "Ubuntu-VF-subset.ttf"))
+    return read_axes(TTFont(UBUNTU))
 
 
 @pytest.fixture
@@ -64,7 +62,7 @@ def test_empty_axes_hide_the_panel(panel: AxisPanel) -> None:
 
 
 def test_normalize_applies_avar() -> None:
-    font = TTFont(FIXTURES / "Inter-VF-subset.ttf")
+    font = TTFont(INTER)
     axes, avar = read_axes(font), read_avar(font)
     mapped = normalize({"wght": 700}, axes, avar)
     assert abs(mapped["wght"] - 0.54) < 0.01
@@ -85,3 +83,21 @@ def test_composite_note_toggles_inputs(panel: AxisPanel) -> None:
     panel.set_location_applies(True)
     assert slider.isEnabled()
     assert not note.isVisibleTo(panel)
+
+
+def test_axis_name_from_the_font_is_not_rich_text(qtbot: QtBot) -> None:
+    widget = AxisPanel()
+    qtbot.addWidget(widget)
+    widget.set_axes((AxisInfo("wght", "<b>x</b>", 100.0, 400.0, 900.0),))
+    labels = [label for label in widget.findChildren(QLabel) if label.text() == "<b>x</b>"]
+    assert len(labels) == 1
+    assert labels[0].textFormat() == Qt.TextFormat.PlainText
+
+
+def test_ampersand_in_an_axis_name_is_not_a_mnemonic(qtbot: QtBot) -> None:
+    widget = AxisPanel()
+    qtbot.addWidget(widget)
+    widget.set_axes((AxisInfo("wght", "a&b", 100.0, 400.0, 900.0),))
+    labels = [label for label in widget.findChildren(QLabel) if label.text() == "a&&b"]
+    assert len(labels) == 1
+    assert labels[0].textFormat() == Qt.TextFormat.PlainText
