@@ -1,9 +1,9 @@
 """Variable-font classification and processing driven by ``FontProcessor``."""
 
+import dataclasses
 from collections.abc import Mapping
 from pathlib import Path
-
-from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
+from typing import NamedTuple
 
 from stencilizer.config.settings import BridgeDirection
 from stencilizer.core.analyzer import GlyphAnalyzer
@@ -29,8 +29,14 @@ __all__ = [
 
 UNSUPPORTED_REASON = "unsupported variation data"
 
-# (variable glyph or None, skip reason or None, island count)
-_Inspection = tuple[VariableGlyph | None, str | None, int]
+
+class _Inspection(NamedTuple):
+    """The verdict on one glyph: its variable data or a skip reason, and its island count."""
+
+    glyph: VariableGlyph | None
+    reason: str | None
+    islands: int
+    detail: str = ""  # why the variation data was unusable, for the skip log
 
 
 def _islands(analyzer: GlyphAnalyzer, glyph: Glyph, upm: int) -> int:
@@ -50,43 +56,46 @@ def _counted_default(vg: VariableGlyph, upm: int) -> Glyph:
     return (merged if merged is not None else flat).default
 
 
-def _inspect(font: TTFont, analyzer: GlyphAnalyzer, name: str, upm: int) -> _Inspection:
+def _inspect(reader: FontReader, analyzer: GlyphAnalyzer, name: str) -> _Inspection:
     """Read one glyph and decide whether it is processed, with its default-master island count."""
+    font, upm, unicode_by_name = reader.font, reader.units_per_em, reader.unicode_by_name
     try:
-        vg = read_variable_glyph(font, name)
-    except VariationDataError:
-        static = fonttools_glyph_to_domain(name, font.getGlyphSet()[name], font)
-        return None, UNSUPPORTED_REASON, _islands(analyzer, static, upm)
+        vg = read_variable_glyph(font, name, unicode_by_name)
+    except VariationDataError as error:
+        glyph = font.getGlyphSet()[name]
+        static = fonttools_glyph_to_domain(name, glyph, font, unicode_by_name)
+        return _Inspection(None, UNSUPPORTED_REASON, _islands(analyzer, static, upm), error.reason)
     if vg is None:
         composite = "glyf" in font and font["glyf"][name].isComposite()
-        return None, "composite glyph" if composite else "empty glyph", 0
+        return _Inspection(None, "composite glyph" if composite else "empty glyph", 0)
     islands = _islands(analyzer, _counted_default(vg, upm), upm)
     if islands == 0:
-        return None, "no islands", 0
-    return vg, None, islands
+        return _Inspection(None, "no islands", 0)
+    return _Inspection(vg, None, islands)
 
 
 def classify_variable_glyphs(
     processor: FontProcessor, reader: FontReader
 ) -> tuple[GlyphClassification, dict[str, VariableGlyph]]:
     """Select glyphs whose overlap-merged default has islands, with their variable data."""
-    font, upm = reader.font, reader.units_per_em
+    glyph_order = reader.font.getGlyphOrder()
     result = GlyphClassification()
     variable: dict[str, VariableGlyph] = {}
-    for name in font.getGlyphOrder():
-        vg, reason, islands = _inspect(font, processor.analyzer, name, upm)
-        if vg is not None:
-            result.glyphs_to_process.append(vg.default)
-            variable[name] = vg
+    for name in glyph_order:
+        inspection = _inspect(reader, processor.analyzer, name)
+        if inspection.glyph is not None:
+            result.glyphs_to_process.append(inspection.glyph.default)
+            variable[name] = inspection.glyph
             continue
-        skipped = reason or "no islands"
+        skipped = inspection.reason or "no islands"
         result.skipped_reasons[name] = skipped
-        processor.processing_logger.log_glyph_skipped(name, skipped)
-        if skipped == UNSUPPORTED_REASON and islands:
-            result.unsupported_islands[name] = islands
+        logged = f"{skipped}: {inspection.detail}" if inspection.detail else skipped
+        processor.processing_logger.log_glyph_skipped(name, logged)
+        if skipped == UNSUPPORTED_REASON and inspection.islands:
+            result.unsupported_islands[name] = inspection.islands
     processor.logger.info(
         "Filtered glyphs",
-        total=len(font.getGlyphOrder()),
+        total=len(glyph_order),
         to_process=len(result.glyphs_to_process),
         skipped=result.skipped_count,
     )
@@ -95,11 +104,10 @@ def classify_variable_glyphs(
 
 def variable_island_counts(reader: FontReader) -> list[tuple[str, int]]:
     """Return ``(name, island count)`` for glyphs with islands after overlap removal."""
-    font, upm = reader.font, reader.units_per_em
     analyzer = GlyphAnalyzer()
     counts = []
-    for name in font.getGlyphOrder():
-        _, _, islands = _inspect(font, analyzer, name, upm)
+    for name in reader.font.getGlyphOrder():
+        islands = _inspect(reader, analyzer, name).islands
         if islands:
             counts.append((name, islands))
     return counts
@@ -108,19 +116,38 @@ def variable_island_counts(reader: FontReader) -> list[tuple[str, int]]:
 def _selected_glyphs(
     processor: FontProcessor, reader: FontReader, classification: GlyphClassification | None
 ) -> tuple[GlyphClassification, dict[str, VariableGlyph]]:
-    """Return the classification and the variable glyphs to process, reading no glyph twice."""
+    """Return the classification and the variable glyphs to process, reading no glyph twice.
+
+    A given classification may name a glyph whose variation data no longer reads. Such a glyph
+    is left unchanged, counted as skipped, and its default islands count as unbridged. The
+    returned classification is a copy; the caller's is not modified.
+    """
     if classification is None:
         return classify_variable_glyphs(processor, reader)
     variable: dict[str, VariableGlyph] = {}
+    kept: list[Glyph] = []
+    skipped = dict(classification.skipped_reasons)
+    unsupported = dict(classification.unsupported_islands)
     for glyph in classification.glyphs_to_process:
         try:
-            vg = read_variable_glyph(reader.font, glyph.name)
+            vg = read_variable_glyph(reader.font, glyph.name, reader.unicode_by_name)
         except VariationDataError as error:
             processor.logger.warning("Glyph left unchanged", glyph=glyph.name, reason=str(error))
+            skipped[glyph.name] = UNSUPPORTED_REASON
+            islands = _islands(processor.analyzer, glyph, reader.units_per_em)
+            if islands:
+                unsupported[glyph.name] = islands
             continue
+        kept.append(glyph)
         if vg is not None:
             variable[glyph.name] = vg
-    return classification, variable
+    selected = dataclasses.replace(
+        classification,
+        glyphs_to_process=kept,
+        skipped_reasons=skipped,
+        unsupported_islands=unsupported,
+    )
+    return selected, variable
 
 
 def process_variable_font(

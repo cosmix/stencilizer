@@ -5,9 +5,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from fontTools.misc.textTools import Tag  # type: ignore[import-untyped]
 from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
-from fontTools.ttLib.tables._f_v_a_r import Axis, table__f_v_a_r  # type: ignore[import-untyped]
 
 from stencilizer.core.curve import curve_tolerance, flatten_contour
 from stencilizer.domain.contour import Contour, Point, PointType
@@ -19,13 +17,7 @@ from stencilizer.variable.model import Support, VariableGlyph, glyph_coordinates
 from stencilizer.variable.reader import cff2_vsindex, read_variable_glyph
 from stencilizer.variable.rounding import round_variable_glyph
 from stencilizer.variable.solver import solve_deltas
-
-FIXTURES = Path(__file__).parent.parent / "fixtures"
-VARIABLE = FIXTURES / "variable"
-UBUNTU = VARIABLE / "Ubuntu-VF-subset.ttf"
-INTER = VARIABLE / "Inter-VF-subset.ttf"
-CANTARELL = VARIABLE / "Cantarell-VF-subset.otf"
-ROBOTO = FIXTURES / "Roboto-Regular.ttf"
+from tests.font_helpers import CANTARELL, INTER, UBUNTU, fvar_only_roboto, units_per_em
 
 
 def _name(font: TTFont, char: str) -> str:
@@ -37,10 +29,6 @@ def _read(path: Path, char: str) -> VariableGlyph:
     vg = read_variable_glyph(font, _name(font, char))
     assert vg is not None
     return vg
-
-
-def _upm(path: Path) -> int:
-    return int(TTFont(path)["head"].unitsPerEm)
 
 
 def _square(dx: float, size: float = 500.0) -> Glyph:
@@ -112,15 +100,7 @@ def test_solve_deltas_shared_peak_raises() -> None:
 
 
 def test_fvar_without_gvar_reads_no_supports() -> None:
-    font = TTFont(ROBOTO)
-    axis = Axis()
-    axis.axisTag = Tag("wght")
-    axis.minValue, axis.defaultValue, axis.maxValue = 100.0, 400.0, 900.0
-    axis.axisNameID = 256
-    fvar = table__f_v_a_r()
-    fvar.axes = [axis]
-    fvar.instances = []
-    font["fvar"] = fvar
+    font = fvar_only_roboto()
     vg = read_variable_glyph(font, _name(font, "o"))
     assert vg is not None
     assert vg.supports == ()
@@ -213,8 +193,8 @@ def _curve_counts(vg: VariableGlyph, upm: int) -> list[int]:
 
 
 def test_flatten_compatible_structure_and_tolerance() -> None:
-    upm = _upm(INTER)
     font = TTFont(INTER)
+    upm = units_per_em(font)
     counts: list[int] = []
     for char in "oPe8":
         vg = read_variable_glyph(font, _name(font, char))

@@ -6,31 +6,24 @@ from pathlib import Path
 import pytest
 from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 
-from stencilizer.core import GlyphAnalyzer
 from stencilizer.domain.contour import Contour, Point
 from stencilizer.domain.glyph import Glyph, GlyphMetadata
 from stencilizer.variable.flatten import flatten_compatible
 from stencilizer.variable.model import Support, VariableGlyph
 from stencilizer.variable.overlaps import remove_overlaps_compatible
 from stencilizer.variable.reader import read_variable_glyph
-
-FIXTURES = Path(__file__).parent.parent / "fixtures" / "variable"
-UBUNTU = FIXTURES / "Ubuntu-VF-subset.ttf"
-INTER = FIXTURES / "Inter-VF-subset.ttf"
+from tests.font_helpers import INTER, UBUNTU, units_per_em
+from tests.font_helpers import island_count as _islands
 
 _Box = tuple[float, float, float, float]
 
 
 def _flat(path: Path, char: str) -> tuple[int, VariableGlyph]:
     font = TTFont(path)
-    upm = int(font["head"].unitsPerEm)
+    upm = units_per_em(font)
     vg = read_variable_glyph(font, str(font.getBestCmap()[ord(char)]))
     assert vg is not None
     return upm, flatten_compatible(vg, upm)
-
-
-def _islands(glyph: Glyph, upm: int) -> int:
-    return len(GlyphAnalyzer().analyze(glyph, upm).get_islands())
 
 
 def _shape(glyph: Glyph) -> list[int]:

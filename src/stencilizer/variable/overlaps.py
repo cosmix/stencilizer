@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import pathops  # type: ignore[import-untyped]
 from fontTools.pens.recordingPen import RecordingPen  # type: ignore[import-untyped]
 
+from stencilizer.core.geometry import signed_area
 from stencilizer.domain.contour import Contour, Point
 from stencilizer.domain.glyph import Glyph
 from stencilizer.variable.model import VariableGlyph, glyph_coordinates
@@ -216,7 +217,8 @@ def _faithful(replayed: list[_Polygon], polygons: list[_Polygon]) -> bool:
         difference = pathops.op(_path(replayed), reference, pathops.PathOp.XOR)
     except pathops.PathOpsError:
         return False
-    return bool(difference.area <= FIDELITY_RELATIVE * reference.area + FIDELITY_FLOOR)
+    # pathops reports Path.area unsigned (measured: 100.0 for a square in either winding).
+    return bool(abs(difference.area) <= FIDELITY_RELATIVE * abs(reference.area) + FIDELITY_FLOOR)
 
 
 def _replay_faithful(plan: _Plan, glyph: Glyph) -> list[_Polygon] | None:
@@ -228,13 +230,7 @@ def _replay_faithful(plan: _Plan, glyph: Glyph) -> list[_Polygon] | None:
 
 
 def _area(polygon: _Polygon) -> float:
-    return (
-        sum(
-            x0 * y1 - x1 * y0
-            for (x0, y0), (x1, y1) in zip(polygon, polygon[1:] + polygon[:1], strict=True)
-        )
-        / 2
-    )
+    return signed_area([Point(x, y) for x, y in polygon])
 
 
 def _to_glyph(template: Glyph, polygons: list[_Polygon]) -> Glyph:

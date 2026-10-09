@@ -4,35 +4,21 @@ import copy
 from pathlib import Path
 
 import pytest
-from fontTools.misc.textTools import Tag  # type: ignore[import-untyped]
 from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
-from fontTools.ttLib.tables._f_v_a_r import Axis, table__f_v_a_r  # type: ignore[import-untyped]
 
 from stencilizer.domain.contour import Contour, Point, PointType
 from stencilizer.domain.glyph import Glyph, GlyphMetadata
-from stencilizer.io.converter import fonttools_glyph_to_domain
-from stencilizer.variable.model import VariableGlyph, with_coordinates
+from stencilizer.variable.model import Support, VariableGlyph, with_coordinates
 from stencilizer.variable.reader import read_variable_glyph
 from stencilizer.variable.write_gvar import write_truetype_variable_glyph
-
-FIXTURES = Path(__file__).parent.parent / "fixtures"
-UBUNTU = FIXTURES / "variable" / "Ubuntu-VF-subset.ttf"
-ROBOTO = FIXTURES / "Roboto-Regular.ttf"
+from tests.font_helpers import UBUNTU, fvar_only_roboto, glyph_at
+from tests.font_helpers import points as _points
 
 
 def _read(font: TTFont, name: str) -> VariableGlyph:
     vg = read_variable_glyph(font, name)
     assert vg is not None
     return vg
-
-
-def _domain(font: TTFont, name: str, location: dict[str, float]) -> Glyph:
-    glyph_set = font.getGlyphSet(location=location, normalized=True)
-    return fonttools_glyph_to_domain(name, glyph_set[name], font)
-
-
-def _points(glyph: Glyph) -> list[Point]:
-    return [p for contour in glyph.contours for p in contour.points]
 
 
 def _save(font: TTFont, path: Path) -> TTFont:
@@ -75,7 +61,7 @@ def test_roundtrip_reproduces_peaks(tmp_path: Path) -> None:
     for support in vg.supports:
         peak = support.peak()
         expected = vg.instance(peak)
-        actual = _domain(saved, name, peak)
+        actual = glyph_at(saved, name, peak)
         for a, b in zip(_points(actual), _points(expected), strict=True):
             assert abs(a.x - b.x) <= 0.5
             assert abs(a.y - b.y) <= 0.5
@@ -89,6 +75,24 @@ def test_phantom_deltas_survive(tmp_path: Path) -> None:
     write_truetype_variable_glyph(font, _read(font, name))
     saved = _save(font, tmp_path / "out.ttf")
     assert _phantoms(saved, name) == expected
+
+
+def test_new_support_gets_zero_phantom_deltas(tmp_path: Path) -> None:
+    font = TTFont(UBUNTU)
+    name = font.getBestCmap()[ord("o")]
+    expected = _phantoms(font, name)
+    vg = _read(font, name)
+    extra = Support((("wdth", 0.0, 1.0, 1.0),))
+    assert extra not in vg.supports
+    master = _shifted(vg, 5).default
+    widened = VariableGlyph(
+        vg.default, (*vg.supports, extra), (*vg.masters, master), vg.axis_tags, vg.cff2
+    )
+    write_truetype_variable_glyph(font, widened)
+    saved = _phantoms(_save(font, tmp_path / "out.ttf"), name)
+    extra_key = frozenset({("wdth", (0.0, 1.0, 1.0))})
+    assert saved.pop(extra_key) == [(0.0, 0.0)] * 4
+    assert saved == expected
 
 
 def test_lsb_follows_xmin(tmp_path: Path) -> None:
@@ -112,24 +116,9 @@ def test_instructions_dropped_for_rewritten_glyph_only() -> None:
     assert font["glyf"][other].compile(font["glyf"]) == other_bytes
 
 
-def _fvar_only_roboto(path: Path) -> None:
-    font = TTFont(ROBOTO)
-    axis = Axis()
-    axis.axisTag = Tag("wght")
-    axis.minValue = 100.0
-    axis.defaultValue = 400.0
-    axis.maxValue = 900.0
-    axis.axisNameID = 256
-    fvar = table__f_v_a_r()
-    fvar.axes = [axis]
-    fvar.instances = []
-    font["fvar"] = fvar
-    font.save(path)
-
-
 def test_fvar_only_font_constant_glyph(tmp_path: Path) -> None:
     source = tmp_path / "fvar_only.ttf"
-    _fvar_only_roboto(source)
+    fvar_only_roboto().save(source)
     font = TTFont(source)
     vg = _read(font, "O")
     assert vg.supports == ()
@@ -141,7 +130,7 @@ def test_fvar_only_font_constant_glyph(tmp_path: Path) -> None:
 
 def test_fvar_only_font_rejects_varying_glyph(tmp_path: Path) -> None:
     source = tmp_path / "fvar_only.ttf"
-    _fvar_only_roboto(source)
+    fvar_only_roboto().save(source)
     font = TTFont(source)
     varying = _read(TTFont(UBUNTU), "o")
     contours = [Contour(list(c.points), direction=c.direction) for c in varying.default.contours]

@@ -5,27 +5,18 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fontTools.misc.textTools import Tag  # type: ignore[import-untyped]
 from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
-from fontTools.ttLib.tables._f_v_a_r import Axis, table__f_v_a_r  # type: ignore[import-untyped]
 
 from stencilizer.config import BridgeConfig, GeometryConfig
-from stencilizer.core import GlyphAnalyzer
-from stencilizer.domain.contour import Point
 from stencilizer.domain.glyph import Glyph
 from stencilizer.exceptions import FontFormatError
 from stencilizer.io.converter import fonttools_glyph_to_domain
 from stencilizer.io.writer import FontWriter
-
-FIXTURES = Path(__file__).parent.parent / "fixtures"
-UBUNTU = FIXTURES / "variable" / "Ubuntu-VF-subset.ttf"
-INTER = FIXTURES / "variable" / "Inter-VF-subset.ttf"
-CANTARELL = FIXTURES / "variable" / "Cantarell-VF-subset.otf"
-ROBOTO = FIXTURES / "Roboto-Regular.ttf"
-
-
-def _upm(font: TTFont) -> int:
-    return int(font["head"].unitsPerEm)
+from tests.font_helpers import CANTARELL, INTER, UBUNTU, fvar_only_roboto
+from tests.font_helpers import glyph_at as _reread
+from tests.font_helpers import island_count as _islands
+from tests.font_helpers import points as _points
+from tests.font_helpers import units_per_em as _upm
 
 
 def _transform(font: TTFont, name: str) -> Any:
@@ -44,19 +35,6 @@ def _write(font: TTFont, vg: Any, output: Path) -> TTFont:
     writer.update_variable_glyph(vg)
     writer.save()
     return TTFont(output)
-
-
-def _reread(font: TTFont, name: str, location: dict[str, float]) -> Glyph:
-    glyph_set = font.getGlyphSet(location=location, normalized=True)
-    return fonttools_glyph_to_domain(name, glyph_set[name], font)
-
-
-def _islands(glyph: Glyph, upm: int) -> int:
-    return len(GlyphAnalyzer().analyze(glyph, upm).get_islands())
-
-
-def _points(glyph: Glyph) -> list[Point]:
-    return [point for contour in glyph.contours for point in contour.points]
 
 
 def _assert_close(saved: Glyph, expected: Glyph, tolerance: float) -> None:
@@ -78,22 +56,6 @@ def _phantoms(font: TTFont, name: str) -> dict[frozenset[Any], list[tuple[float,
         ]
         phantoms[frozenset(tv.axes.items())] = tail
     return phantoms
-
-
-def _fvar_only_roboto(path: Path) -> None:
-    """Roboto plus a one-axis fvar and no gvar, as tests/gui/conftest.py variable_font_path."""
-    font = TTFont(ROBOTO)
-    axis = Axis()
-    axis.axisTag = Tag("wght")
-    axis.minValue = 100.0
-    axis.defaultValue = 400.0
-    axis.maxValue = 900.0
-    axis.axisNameID = 256
-    fvar = table__f_v_a_r()
-    fvar.axes = [axis]
-    fvar.instances = []
-    font["fvar"] = fvar
-    font.save(path)
 
 
 def test_gvar_output_reproduces_instances(tmp_path: Path) -> None:
@@ -126,7 +88,7 @@ def test_gvar_writer_handles_missing_gvar(tmp_path: Path) -> None:
     from stencilizer.variable.reader import read_variable_glyph
 
     source_path = tmp_path / "modified.ttf"
-    _fvar_only_roboto(source_path)
+    fvar_only_roboto().save(source_path)
     font = TTFont(source_path)
     vg = read_variable_glyph(font, "O")
     assert vg is not None

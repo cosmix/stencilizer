@@ -1,6 +1,6 @@
 """Contracts for the variable replay engine (stage variable-engine)."""
 
-import copy
+import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -13,20 +13,14 @@ from stencilizer.core import GlyphAnalyzer
 from stencilizer.domain.contour import Contour, Point, PointType
 from stencilizer.domain.glyph import Glyph, GlyphMetadata
 from stencilizer.exceptions import GlyphError
-from stencilizer.io.converter import fonttools_glyph_to_domain
-
-FIXTURES = Path(__file__).parent.parent / "fixtures" / "variable"
-UBUNTU = FIXTURES / "Ubuntu-VF-subset.ttf"
-INTER = FIXTURES / "Inter-VF-subset.ttf"
-CANTARELL = FIXTURES / "Cantarell-VF-subset.otf"
+from tests.font_helpers import CANTARELL, INTER, UBUNTU, glyph_at, vsindex_cantarell
+from tests.font_helpers import island_count as _islands
+from tests.font_helpers import points as _points
+from tests.font_helpers import units_per_em as _upm
 
 
 def _glyph_name(font: TTFont, char: str) -> str:
     return str(font.getBestCmap()[ord(char)])
-
-
-def _upm(font: TTFont) -> int:
-    return int(font["head"].unitsPerEm)
 
 
 def _read(path: Path, char: str) -> tuple[TTFont, Any]:
@@ -44,14 +38,6 @@ def _transform(path: Path, char: str, bridge: BridgeConfig | None = None) -> tup
     font, vg = _read(path, char)
     upm = _upm(font)
     return upm, transform_variable_glyph(vg, bridge or BridgeConfig(), GeometryConfig(), upm)
-
-
-def _islands(glyph: Glyph, upm: int) -> int:
-    return len(GlyphAnalyzer().analyze(glyph, upm).get_islands())
-
-
-def _points(glyph: Glyph) -> list[Point]:
-    return [point for contour in glyph.contours for point in contour.points]
 
 
 def _assert_close(left: Glyph, right: Glyph, tolerance: float) -> None:
@@ -124,8 +110,7 @@ def test_cff2_variable_reader_uses_varstore_regions() -> None:
     assert len(vg.supports) == 2
     for support in vg.supports:
         peak = support.peak()
-        glyph_set = font.getGlyphSet(location=peak, normalized=True)
-        expected = fonttools_glyph_to_domain(name, glyph_set[name], font)
+        expected = glyph_at(font, name, peak)
         _assert_close(vg.instance(peak), expected, 0.5)
     assert len(GlyphAnalyzer().analyze(vg.default, _upm(font)).get_islands()) == 1
 
@@ -246,7 +231,9 @@ def test_variable_glyph_dict_roundtrip() -> None:
     upm = _upm(font)
     assert VariableGlyph.from_dict(vg.to_dict()) == vg
     args = (vg.to_dict(), BridgeConfig().model_dump(), upm, GeometryConfig().model_dump())
-    with ProcessPoolExecutor(max_workers=1) as pool:
+    with ProcessPoolExecutor(
+        max_workers=1, mp_context=multiprocessing.get_context("spawn")
+    ) as pool:
         result = pool.submit(process_variable_glyph, *args).result()
     assert "error" not in result, result.get("error")
     assert result["bridges_added"] >= 1
@@ -257,22 +244,11 @@ def test_variable_glyph_dict_roundtrip() -> None:
     assert rebuilt.axis_tags == vg.axis_tags
 
 
-def _vsindex_font() -> TTFont:
-    """Cantarell with a second VarData listing VarData 0's regions in reverse order."""
-    font = TTFont(CANTARELL)
-    store = font["CFF2"].cff.topDictIndex[0].VarStore.otVarStore
-    extra = copy.deepcopy(store.VarData[0])
-    extra.VarRegionIndex = list(reversed(extra.VarRegionIndex))
-    store.VarData.append(extra)
-    store.VarDataCount = len(store.VarData)
-    return font
-
-
 def test_cff2_vsindex_selection() -> None:
     from stencilizer.variable.reader import cff2_vsindex, read_variable_glyph
 
     _, original = _read(CANTARELL, "o")
-    font = _vsindex_font()
+    font = vsindex_cantarell()
     name = _glyph_name(font, "o")
     assert cff2_vsindex(font, name) == 0
     top_dict = font["CFF2"].cff.topDictIndex[0]
@@ -286,7 +262,7 @@ def test_cff2_vsindex_selection() -> None:
     assert peaks == [s.peak() for s in reversed(original.supports)]
     assert peaks != [s.peak() for s in original.supports]
 
-    private_font = _vsindex_font()
+    private_font = vsindex_cantarell()
     private_font["CFF2"].cff.topDictIndex[0].FDArray[0].Private.vsindex = 1
     with pytest.raises(GlyphError) as raised:
         read_variable_glyph(private_font, name)
