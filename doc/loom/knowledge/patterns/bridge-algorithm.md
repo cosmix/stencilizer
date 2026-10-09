@@ -7,7 +7,7 @@ GlyphAnalyzer flattens curves with UPM-scaled tolerance before measuring signed 
 
 ## Candidate placement
 
-The live placement logic is in `ContourMerger` and its axis-generic contour builders. `GlyphTransformer.transform()` computes width from `BridgeConfig.width_percent` and a reference stroke of 10% of UPM. The unused candidate scorer and rectangular geometry generator were removed with their domain types and tests.
+The live placement logic is in `ContourMerger` (core/merger.py, with `merge_at_candidates` in core/merger_candidates.py for glyphs the centre attempt leaves unbridged; see "Contour surgery") and its axis-generic contour builders. `GlyphTransformer.transform()` computes width from `BridgeConfig.width_percent` and a reference stroke of 10% of UPM (core/surgery.py:56-57). The unused candidate scorer and rectangular geometry generator were removed with their domain types and tests.
 
 ## Contour surgery
 

@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 57 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 235 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 26 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 86 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 90 |
 
 ## Tier 2 — Topics
 
@@ -29,7 +29,7 @@
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [bridge-algorithm](patterns/bridge-algorithm.md) | Island detection, bridge placement, contour surgery, multi-island cases | 71 |
-| [variable-replay](patterns/variable-replay.md) | Variable-font stencil replay, validation, delta solve, rounding, measured rates | 43 |
+| [variable-replay](patterns/variable-replay.md) | Variable-font stencil replay, validation, delta solve, rounding, measured rates | 44 |
 
 ### mistakes
 
