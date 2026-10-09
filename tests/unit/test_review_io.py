@@ -5,7 +5,6 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from fontTools.cffLib.CFFToCFF2 import convertCFFToCFF2  # type: ignore[import-untyped]
 from fontTools.pens.recordingPen import RecordingPen  # type: ignore[import-untyped]
 from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 
@@ -20,18 +19,20 @@ from stencilizer.io.converter import (
 from stencilizer.io.reader import FontReader
 from stencilizer.io.writer import FontWriter
 from stencilizer.variable.reader import is_variable
+from tests.font_helpers import UBUNTU, write_commit_mono_cff2
 
 
 def _glyph(name: str = "A") -> Glyph:
     return Glyph(GlyphMetadata(name, ord(name), 500, 0), [])
 
 
-def test_reader_rejects_variable_fonts_before_exposing_font() -> None:
-    reader = FontReader(Path("tests/fixtures/variable/Ubuntu-VF-subset.ttf"))
+def test_reader_loads_variable_fonts() -> None:
+    reader = FontReader(UBUNTU)
     reader.load()
     try:
         assert reader.font is not None
         assert is_variable(reader.font)
+        assert "fvar" in reader.font
     finally:
         reader.close()
 
@@ -50,10 +51,7 @@ def test_writer_rejects_variable_fonts_without_output(tmp_path: Path) -> None:
 
 
 def test_static_cff2_font_loads_and_saves_as_cff2(tmp_path: Path) -> None:
-    source = TTFont(Path(__file__).parent.parent / "fixtures" / "CommitMono-Cosmix-700-Regular.otf")
-    convertCFFToCFF2(source)
-    cff2_path = tmp_path / "converted.otf"
-    source.save(cff2_path)
+    cff2_path = write_commit_mono_cff2(tmp_path / "converted.otf")
     output = tmp_path / "out.otf"
 
     with FontReader(cff2_path) as reader:
@@ -157,3 +155,15 @@ def test_reader_reuses_font_wide_glyph_and_unicode_lookups() -> None:
     font.getGlyphSet.assert_called_once()
     font.getBestCmap.assert_called_once()
     assert convert.call_args_list[0].kwargs["unicode_by_name"] == {"A": 65, "B": 66}
+
+
+def test_reader_exposes_the_cached_unicode_map() -> None:
+    font = MagicMock()
+    font.getBestCmap.return_value = {65: "A", 97: "A", 66: "B"}
+    reader = FontReader(Path("input.ttf"))
+    with pytest.raises(RuntimeError):
+        _ = reader.unicode_by_name
+    reader._font = font
+    assert reader.unicode_by_name == {"A": 65, "B": 66}
+    assert reader.unicode_by_name is reader.unicode_by_name
+    font.getBestCmap.assert_called_once()

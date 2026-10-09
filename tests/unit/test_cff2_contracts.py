@@ -2,32 +2,21 @@
 
 from pathlib import Path
 
-from fontTools.cffLib.CFFToCFF2 import convertCFFToCFF2  # type: ignore[import-untyped]
 from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 
 from stencilizer.config import LoggingConfig, StencilizerSettings
 from stencilizer.core import GlyphAnalyzer
 from stencilizer.core.processor import FontProcessor
 from stencilizer.io import FontReader
-
-COMMIT_MONO_PATH = Path(__file__).parent.parent / "fixtures" / "CommitMono-Cosmix-700-Regular.otf"
-
-
-def _convert_to_cff2(tmp_path: Path) -> Path:
-    """CommitMono converted to static CFF2 outlines, as tests/gui/conftest.py does."""
-    font = TTFont(COMMIT_MONO_PATH)
-    convertCFFToCFF2(font)
-    path = tmp_path / "converted.otf"
-    font.save(path)
-    return path
+from tests.font_helpers import COMMIT_MONO, write_commit_mono_cff2
 
 
 def test_cff2_read_normalizes_winding(tmp_path: Path) -> None:
     """CFF2 'O' reads with TrueType winding, so the analyzer finds the same island as CFF."""
-    cff2_path = _convert_to_cff2(tmp_path)
+    cff2_path = write_commit_mono_cff2(tmp_path / "converted.otf")
     analyzer = GlyphAnalyzer()
 
-    with FontReader(COMMIT_MONO_PATH) as cff_reader:
+    with FontReader(COMMIT_MONO) as cff_reader:
         cff_glyph = cff_reader.get_glyph("O")
         assert cff_glyph is not None
         cff_islands = analyzer.analyze(cff_glyph, cff_reader.units_per_em).islands
@@ -45,7 +34,7 @@ def test_cff2_read_normalizes_winding(tmp_path: Path) -> None:
 
 def test_cff2_static_roundtrip_writes_bridges(tmp_path: Path) -> None:
     """Processing a CFF2 font writes a CFF2 font whose 'O' is bridged."""
-    input_path = _convert_to_cff2(tmp_path)
+    input_path = write_commit_mono_cff2(tmp_path / "converted.otf")
     output_path = tmp_path / "out.otf"
     settings = StencilizerSettings(logging=LoggingConfig(log_file=tmp_path / "run.log"))
 

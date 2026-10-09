@@ -12,7 +12,7 @@ from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 
 from stencilizer.domain.glyph import Glyph
 from stencilizer.exceptions import GlyphProcessingError
-from stencilizer.io.converter import fonttools_glyph_to_domain
+from stencilizer.io.converter import build_unicode_by_name, fonttools_glyph_to_domain
 
 
 class FontReader:
@@ -78,6 +78,19 @@ class FontReader:
         if self._font is None:
             raise RuntimeError("Font not loaded. Call load() first.")
         return self._font
+
+    @property
+    def unicode_by_name(self) -> dict[str, int]:
+        """Return the glyph name to code point map, built from the cmap once per loaded font.
+
+        Pass it to the converters so each glyph read does not rebuild the reverse cmap.
+
+        Raises:
+            RuntimeError: If font has not been loaded yet
+        """
+        if self._unicode_by_name is None:
+            self._unicode_by_name = build_unicode_by_name(self.font)
+        return self._unicode_by_name
 
     @property
     def units_per_em(self) -> int:
@@ -155,16 +168,12 @@ class FontReader:
         try:
             if self._glyph_set is None:
                 self._glyph_set = self._font.getGlyphSet()
-            if self._unicode_by_name is None:
-                self._unicode_by_name = {}
-                for code_point, glyph_name in (self._font.getBestCmap() or {}).items():
-                    self._unicode_by_name.setdefault(glyph_name, code_point)
             fonttools_glyph = self._glyph_set[name]
             return fonttools_glyph_to_domain(
                 name=name,
                 fonttools_glyph=fonttools_glyph,
                 font=self._font,
-                unicode_by_name=self._unicode_by_name,
+                unicode_by_name=self.unicode_by_name,
             )
         except Exception as e:
             raise GlyphProcessingError(name, str(e)) from e
