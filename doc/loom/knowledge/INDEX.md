@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 57 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 235 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 26 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 90 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 107 |
 
 ## Tier 2 — Topics
 
@@ -22,14 +22,14 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [gui](architecture/gui.md) | GUI package layout, threading model, save safety | 92 |
+| [gui](architecture/gui.md) | GUI package layout, threading model, save safety | 93 |
 
 ### patterns
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [bridge-algorithm](patterns/bridge-algorithm.md) | Island detection, bridge placement, contour surgery, multi-island cases | 71 |
-| [variable-replay](patterns/variable-replay.md) | Variable-font stencil replay, validation, delta solve, rounding, measured rates | 44 |
+| [variable-replay](patterns/variable-replay.md) | Variable replay, width scaling, validation, delta solve, measured rates | 83 |
 
 ### mistakes
 
@@ -39,5 +39,5 @@
 | [gui](mistakes/gui.md) | fontTools TTFont iteration, Qt widget lifetime in tests | 16 |
 | [offscreen-screenshots](mistakes/offscreen-screenshots.md) | Offscreen 2x GUI grabs need a large screen config file | 10 |
 | [readme-layout](mistakes/readme-layout.md) | Place README screenshots beside the content they illustrate | 13 |
-| [review-and-completion-gates](mistakes/review-and-completion-gates.md) | Malformed reviews, fingerprint drift, IV process traps, loom tool quirks | 59 |
+| [review-and-completion-gates](mistakes/review-and-completion-gates.md) | Malformed reviews, fingerprint drift, IV process traps, loom tool quirks | 73 |
 | [variable-fonts](mistakes/variable-fonts.md) | Pool start-method side effects, CFF2 delta checks, analyzer blind spots | 31 |

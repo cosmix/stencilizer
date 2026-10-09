@@ -62,6 +62,11 @@ Selecting one shows it before and after stenciling, side by side at one shared s
 you change the bridge width (30-110 %) or the spanning-bridges toggle in the sidebar. The worker
 slider below them sets the number of processes used for the save; its left end is "Auto".
 
+For a variable font the sidebar also shows a Width scaling group under the bridge width. Fixed
+keeps the default master's gap at every axis location; Proportional makes each gap follow the
+stroke it cuts at that location, and enables the Strength and Minimum sliders (the same values as
+`--scaling-strength` and `--min-bridge-width`). Static fonts do not show the group.
+
 The FONT card at the bottom of the sidebar lists everything the font says about itself: names and
 version, outline format and container, vertical metrics, glyph, island and composite counts,
 OpenType features and scripts, its tables, copyright, designer, license and embedding rights, and
@@ -184,6 +189,34 @@ stencilizer input.ttf --instance wght=700
 `--instance` takes comma-separated `tag=value` pairs inside the axis ranges and requires a
 variable font. For a CFF2 font the static instance has CFF outlines.
 
+By default (`--width-scaling fixed`) every bridge keeps the default master's gap in every master,
+to within one font unit. `--width-scaling proportional` sizes each bridge's gap in each master by
+the thickness of the stroke that bridge cuts, so the bridges of a Black master are wider than
+those of a Thin one:
+
+```bash
+# Gaps follow the stroke of each bridge in each master
+stencilizer input.ttf --width-scaling proportional
+
+# Follow it at half strength, never narrower than 40 % of the reference stroke
+stencilizer input.ttf --width-scaling proportional --scaling-strength 50 --min-bridge-width 40
+```
+
+- `--scaling-strength` (0-100, default 100): how closely the gap follows the stroke. 0 is the same
+  as fixed.
+- `--min-bridge-width` (10-110, default 30): the smallest gap, as a percentage of the reference
+  stroke (10 % of the font's UPM). It never exceeds the default master's gap.
+- A glyph whose proportional bridges fail in some master is retried with the fixed gap, then with
+  each bridge line at the mean of its cut points. The glyph then falls back as a whole, and the
+  summary does not say which glyphs did.
+- With `--instance`, a glyf variable font in proportional mode is stenciled as a variable font
+  first, then pinned, then the static stencil runs over any glyph that still has an island. A CFF2
+  font prints a warning and pins first with a fixed width, because the instancer moves bridge
+  points between masters.
+- `--list-islands` and `--dry-run` with `--instance` pin first in every mode.
+- Static fonts ignore the three options and print `Width scaling applies only to variable fonts;
+  using fixed width.`
+
 ### Analysis Modes
 
 ```bash
@@ -228,11 +261,16 @@ If you are using Stencilizer as a library, create a `StencilizerSettings` instan
 values directly before passing it to the processor:
 
 ```python
-from stencilizer.config import StencilizerSettings
+from stencilizer.config import BridgeWidthScaling, StencilizerSettings
 
 settings = StencilizerSettings()
 settings.bridge.width_percent = 70.0
 settings.processing.max_workers = 4
+
+# Variable fonts only: scale each bridge's gap by the stroke it cuts in every master
+settings.bridge.width_scaling = BridgeWidthScaling.PROPORTIONAL
+settings.bridge.scaling_strength = 100.0
+settings.bridge.min_width_percent = 30.0
 ```
 
 ## How It Works
@@ -253,6 +291,10 @@ For each island, the algorithm:
 2. Determines optimal bridge orientation (vertical or horizontal)
 3. Calculates bridge width as a percentage of a reference stroke of 10% of the font's UPM
 4. Places bridges to connect the island to the outer contour
+
+In a variable font that width is the default master's gap. The other masters repeat it
+(`--width-scaling fixed`) or scale it by the stroke each bridge cuts there
+(`--width-scaling proportional`); see [Variable Fonts](#variable-fonts).
 
 ### 3. Glyph Transformation
 
@@ -297,6 +339,7 @@ Analysis
   Total islands         67
   Estimated bridges     67
   Bridge width          60% of a reference stroke of 10% of font UPM
+  Width scaling         fixed
 
 ✓ Dry run complete – no changes made
 ```
@@ -386,6 +429,14 @@ Some fonts may not have enclosed contours. Use `--list-islands` to check which g
 ### Bridge width too wide/narrow
 
 Adjust the `--bridge-width` parameter (range: 30-110% of a reference stroke of 10% of the font's UPM). Default is 60%.
+
+### Variable font bridges look the same in fixed and proportional mode
+
+A glyph falls back to the fixed gap when its proportional bridges fail in any master, for example
+when a counter is narrower than the fixed gap in the lightest master, and the summary does not
+report it. Such glyphs render the same in both modes at every axis location. Also check that the
+option applies: static fonts, and CFF2 fonts with `--instance`, use a fixed width and print a
+warning first (`--quiet` hides it).
 
 ### Processing errors
 

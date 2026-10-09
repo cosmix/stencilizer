@@ -7,7 +7,7 @@ GlyphAnalyzer flattens curves with UPM-scaled tolerance before measuring signed 
 
 ## Candidate placement
 
-The live placement logic is in `ContourMerger` (core/merger.py, with `merge_at_candidates` in core/merger_candidates.py for glyphs the centre attempt leaves unbridged; see "Contour surgery") and its axis-generic contour builders. `GlyphTransformer.transform()` computes width from `BridgeConfig.width_percent` and a reference stroke of 10% of UPM (core/surgery.py:56-57). The unused candidate scorer and rectangular geometry generator were removed with their domain types and tests.
+The live placement logic is in `ContourMerger` (core/merger.py, with `merge_at_candidates` in core/merger_candidates.py for glyphs the centre attempt leaves unbridged; see "Contour surgery") and its axis-generic contour builders. `GlyphTransformer.transform()` computes width from `BridgeConfig.width_percent` and a reference stroke of `REFERENCE_STROKE_FRACTION` (10%) of UPM (core/surgery.py:56-57). For a static font that is the gap of every bridge. For a variable font `width_percent` is the default master's gap; the other masters follow `BridgeConfig.width_scaling`: `fixed` repeats that gap, `proportional` scales it by the stroke each bridge cuts, and `variable/bridge_width.py` sets each master's line targets after this surgery (patterns/variable-replay.md "Width scaling"). The unused candidate scorer and rectangular geometry generator were removed with their domain types and tests.
 
 ## Contour surgery
 
