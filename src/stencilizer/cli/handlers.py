@@ -1,4 +1,4 @@
-"""CLI handlers for read-only font analysis commands."""
+"""CLI handlers: width scaling, stencil-first second pass, analysis commands, reporting."""
 
 from pathlib import Path
 
@@ -8,6 +8,8 @@ from stencilizer.cli.output import (
     SYM_OK,
     console,
     format_file_size,
+    print_cancellation_notice,
+    print_cancellation_summary,
     print_error,
     print_font_info,
     print_glyph_islands,
@@ -18,7 +20,6 @@ from stencilizer.cli.output import (
 from stencilizer.cli.pinning import is_cff2_font, is_variable_font, pin_stenciled, publish_pinned
 from stencilizer.config import BridgeWidthScaling, StencilizerSettings
 from stencilizer.core import FontProcessor, GlyphAnalyzer
-from stencilizer.exceptions import FontProcessingError
 from stencilizer.io import FontReader
 from stencilizer.utils import ProcessingStats
 from stencilizer.variable.reader import is_variable
@@ -28,6 +29,14 @@ CFF2_WARNING = (
     "Proportional width scaling with --instance is not supported for CFF2 fonts; "
     "pinning first with fixed width."
 )
+
+
+def exit_cancelled(quiet: bool) -> typer.Exit:
+    """Print the cancellation notice unless ``quiet``; return the exit-130 exception to raise."""
+    if not quiet:
+        print_cancellation_notice()
+        print_cancellation_summary(processed=0, cancelled=0)
+    return typer.Exit(code=130)
 
 
 def fixed_width_settings(settings: StencilizerSettings) -> StencilizerSettings:
@@ -65,8 +74,13 @@ def stencil_pinned(
     output_path: Path,
     settings: StencilizerSettings,
     workers: int | None,
+    *,
+    quiet: bool = False,
 ) -> ProcessingStats:
-    """Pin a stenciled variable font at ``instance`` and stencil that static font."""
+    """Pin a stenciled variable font at ``instance`` and stencil that static font.
+
+    A glyph failure in the static pass raises ``FontProcessingError`` from the processor.
+    """
     try:
         pinned = pin_stenciled(stenciled, source, instance, workdir)
         processor = FontProcessor(fixed_width_settings(settings), quiet=True)
@@ -75,17 +89,14 @@ def stencil_pinned(
         if not classification.glyphs_to_process:
             publish_pinned(pinned, output_path)
             return ProcessingStats()
-        stats = processor.process(
+        return processor.process(
             font_path=pinned,
             output_path=output_path,
             max_workers=workers,
             classification=classification,
         )
     except KeyboardInterrupt:
-        raise typer.Exit(code=130) from None
-    if stats.error_count:
-        raise FontProcessingError(stats.errors)
-    return stats
+        raise exit_cancelled(quiet) from None
 
 
 def _handle_list_islands(font_path: Path, display_path: Path, quiet: bool) -> None:
