@@ -83,3 +83,50 @@ Several findings targeted the pre-pressure-test draft and were already folded in
 - Line anchors pointed into files earlier stages edit; the briefs now name symbols and tests.
 - The overview stated island sets "cannot differ across masters" as a format fact; it was a measurement on three fonts.
 - Not adopted: running stage gates with coverage. Coverage has no threshold in pyproject or CI, and it tripled the xdist run (198 s against 69 s), leaving no room under the 300 s cap. CI's Python 3.11 job was uncovered at runtime; integration-verify now runs the suite under 3.11.
+
+# Pressure test: PLAN-variable-bridge-width.md (2026-10-09, HEAD c058f98)
+
+Omissions, mistakes and bad assumptions found in the original plan, each checked against the tree or measured with scratch scripts. All were folded into the plan and its briefs.
+
+## Blocks execution
+
+- **Retrying fallback chain breaks two existing tests no worker owned.** `tests/unit/test_variable_transform.py:74-92` and `tests/unit/test_variable_validate.py:59-78` assert one `replay` call per master; a two-attempt chain gives `assert 10 == 5`. W1 owned neither file and was told to keep every assertion. Same class as mistakes.md "Signature change breaks monkeypatched stubs in existing tests": the plan listed production callers, not test doubles.
+- **`replay`'s 4-positional signature is pinned by spies, `align.py:37` and a mean-target assertion** (`test_variable_replay.py:90-102`); the plan let W1 change it freely.
+- **Function limit, not file limit, was the real CLI budget.** `stencilize` is at 48 of 50 effective lines, `_run_command` at 45; three new parameters fail `test_function_line_limit`. The brief budgeted only module lines and its done-when never ran `tests/regression`.
+- **Codex unit told to verify with `uv run`**, a repeat of mistakes.md "Codex worker briefs told to verify with uv run".
+- **W2 render step wrote PNGs to `$TMPDIR`**, where the Read tool is blocked (mistakes/review-and-completion-gates.md).
+- **No sandbox and environment inventory**, so the known contract-freeze / stage-complete refusal inside the sandbox had no operator instruction.
+
+## Silently ships broken
+
+- **`validate._facing_pairs` assumed to pair bridges.** It returns every overlapping same-axis pair (6 for 4 lines, 91 for Inter `.notdef`); used for targets, fixed-mode gaps drift 110-138 instead of 123. Also cited at validate.py:250-266 in a 146-line file.
+- **Ink rule as worded measured the counter on round glyphs** (filter crossings to the extent, then alternate): Inter `o` 833.9 instead of about 316. The extent's master was never specified.
+- **Proportional `--instance` on CFF2 reopens counters**: 17-18 of 21 Cantarell island glyphs closed at intermediate weights against 1-2 for pin first. The knowledge base already recorded the CFF2 instancer drift; the plan never checked it.
+- **Proportional `--instance` bridged fewer glyphs than today** (glyphs the variable run cannot bridge, e.g. `ampersand`, keep islands after pinning), contradicting the plan's own goal.
+- **Stencil-then-pin changes output names**; a naive second write doubles the "Stenciled" suffix (`update_font_names` is not idempotent).
+- **GUI sidebar overflows at 1280x800** once the group is added (61 px of slack, the group needs 112-173 px); no step or test would see it.
+- **Goal "default master identical in both modes" is false for a glyph only one mode's chain can bridge**; the contract asserted it for every glyph.
+- **Static font + proportional only warned**; settings stayed proportional (dry-run would print proportional, a static `--instance` run would stencil before failing), and the check could read the pinned temp file.
+- **Fallback step 3, `--scaling-strength`/`--min-bridge-width` propagation, the pin location and the second pass had no gate**; "proportional bridges >= fixed" was a tautology and "fixed >= HEAD" had no baseline numbers.
+- **Distill never deleted the drift concern** it was said to delete (mistakes.md "Fixed concerns marked Resolved instead of deleted"), and named a README "Graphical Interface" section that does not exist.
+
+## Under-specified or stale
+
+- Stale numbers measured before 1d5980b/252cc94 (controls.py 169→173, session.py 389→393, every W2 line ref), align.py:152-169 in a 44-line file, "Python 3.12" where the venv and CI use 3.13, prerequisite 3 still open though committed.
+- Zero default ink (ZeroDivisionError escaping `transform.py:94`), line order, the new module for `_realign`/`_project`, `glyph_from_outlines` returning a `Glyph`, `StrEnum` combo data coming back as `str`, static-after-variable GUI reset, bad `--instance` spec found only after a full stencil, non-atomic `shutil.move` across tmpfs, unreadable input surfacing as "Unexpected error".
+- The standard stage ran scoped test subsets instead of the full suite; the integration-verify GUI step ("open the GUI, select Proportional and save") was not executable by an agent.
+- An integration-verify wiring grep required `scaled_gap` in transform.py, which the W1 brief never mentioned and the `reachable` check already covered.
+
+# Codex review: PLAN-variable-bridge-width.md (2026-10-09, HEAD c5a0476)
+
+The review was written against the pre-pressure draft (c058f98), so most of its anchors were stale; each point was rechecked against the tree and the current plan. Points already folded in by the pressure pass: `_facing_pairs` as the pairing rule, the universal default-equality goal, ownership of `test_variable_transform.py`, CFF2 stencil-then-pin, `shutil.move`, the scoped-subset gate and the "Python 3.12" claim. What remained and was folded in:
+
+- **Contracts covered only one bridge per glyph.** The disjoint pairing rule had no contract with two bridges whose strokes change by different ratios, so a per-glyph ratio or overlapping-pair targets would pass. Added `per-bridge-ratios-are-independent` (vertical and horizontal two-counter glyphs, measured 60/60 today, expected 90/60).
+- **The product rule for proportional-only successes was prose without a gate.** Added `proportional-only-success-is-kept` on the review's wide-master glyph (re-measured: unchanged today) and a design-decision row.
+- **Fallback chain tested only where every step fails or the first fallback succeeds.** No test proved a one-time replay failure or a validation rejection advances to the next step, and the mean-target step had no proportional-mode contract. Added two named transform tests and `scaled-steps-fall-back-to-mean-targets`.
+- **"No glyph bridges less often" was gated by totals.** Measured a per-glyph Baseline at c5a0476 and required a test that embeds it, in both modes.
+- **Directory output and failed-publication cases of `publish_pinned` were untested**, and the plan did not say the success report waits for publication.
+- **glyf stencil-then-pin was argued only from island counts at a master.** Measured `enclosed_counters` after pinning at off-master weights (only `ampersand`, which the second pass bridges) and added an off-master contract on the saved file.
+- **False fact: `BridgeDirection` is exported from `stencilizer.config`.** It is not; `_shared.md` and the F0 brief said "beside `BridgeDirection`". The contract geometry now names `stencilizer.config.settings`.
+- **Artifacts listed 3 new modules** while most of the public surface lives in modified files; knowledge-distill listed only README. `uv lock --check` and the gate interpreter policy were missing from the implementation stage.
+- **Stale Evidence claim:** "every bridged fixture glyph has exactly 2 lines and one pair" contradicted the plan's own `.notdef` (14 lines) and `B` figures.
