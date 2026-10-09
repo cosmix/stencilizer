@@ -407,7 +407,7 @@ class TestCffGlyphUpdate:
 
             # Verify getCharString was called with private and globalSubrs
             mock_pen.getCharString.assert_called_once_with(
-                private=mock_private, globalSubrs=mock_global_subrs
+                private=mock_private, globalSubrs=mock_global_subrs, optimize=False
             )
 
     def test_update_cff_glyph_stores_charstring_in_font(self):
