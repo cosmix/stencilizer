@@ -9,6 +9,7 @@ from stencilizer.core.analyzer import GlyphAnalyzer
 from stencilizer.core.geometry import signed_area
 from stencilizer.domain.glyph import Glyph
 from stencilizer.exceptions import VariationDataError
+from stencilizer.variable.holes import enclosed_counters
 from stencilizer.variable.model import VariableGlyph
 from stencilizer.variable.replay import BridgeLine, Slot, slot_values
 
@@ -120,8 +121,10 @@ def validate(
 ) -> bool:
     """True when every validation location keeps its bridges and at most ``allowed_islands``.
 
-    ``lines`` are the bridge lines of ``vg``'s default, as ``map_surgery`` grouped them;
-    without them only island counts are checked.
+    Islands are counted by the analyzer and as the counters the fill encloses, which also
+    catches bow-ties and hairline walls the analyzer misses. ``lines`` are the bridge lines
+    of ``vg``'s default, as ``map_surgery`` grouped them; without them only island counts
+    are checked.
     """
     try:
         vg.deltas()
@@ -134,6 +137,9 @@ def validate(
     for location in validation_locations(vg):
         glyph = vg.instance(location)
         if len(analyzer.analyze(glyph, upm).get_islands()) > allowed_islands:
+            return False
+        counters = enclosed_counters(glyph, upm)
+        if counters is None or counters > allowed_islands:
             return False
         if not _bridges_intact(glyph, lines, pairs, signs):
             return False

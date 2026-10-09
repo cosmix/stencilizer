@@ -14,22 +14,20 @@ from PySide6.QtWidgets import QLabel, QMessageBox, QSlider
 from pytestqt.qtbot import QtBot
 
 from stencilizer.config import BridgeConfig, GeometryConfig
-from stencilizer.core import FontProcessor, GlyphAnalyzer
+from stencilizer.core import FontProcessor
 from stencilizer.domain import Glyph
 from stencilizer.gui.composites import compose, load_component_outlines
 from stencilizer.gui.controller import GuiController
 from stencilizer.gui.main_window import MainWindow
 from stencilizer.gui.session import FontSession
 from stencilizer.io import FontReader
-from stencilizer.io.converter import fonttools_glyph_to_domain
 from stencilizer.utils import ProcessingStats
+from tests.font_helpers import INTER, UBUNTU, glyph_at
+from tests.font_helpers import island_count as _islands
+from tests.font_helpers import units_per_em as _upm
 from tests.gui.conftest import LOAD_TIMEOUT, SAVE_TIMEOUT, build_settings, load_session
 
 pytestmark = pytest.mark.usefixtures("staging_root")
-
-FIXTURES = Path(__file__).parent.parent / "fixtures" / "variable"
-UBUNTU = FIXTURES / "Ubuntu-VF-subset.ttf"
-INTER = FIXTURES / "Inter-VF-subset.ttf"
 
 
 @pytest.fixture
@@ -56,14 +54,6 @@ def _load_window(window: MainWindow, qtbot: QtBot, path: Path) -> None:
     qtbot.waitUntil(lambda: bool(loaded or errors), timeout=LOAD_TIMEOUT)
     assert not errors, errors
     qtbot.waitUntil(lambda: window.comparison.after_canvas.glyph is not None, timeout=LOAD_TIMEOUT)
-
-
-def _islands(glyph: Glyph, upm: int) -> int:
-    return len(GlyphAnalyzer().analyze(glyph, upm).get_islands())
-
-
-def _upm(font: TTFont) -> int:
-    return int(font["head"].unitsPerEm)
 
 
 def _expected_location(font: TTFont, user: dict[str, float]) -> dict[str, float]:
@@ -131,8 +121,7 @@ def test_gui_saves_variable_font(controller: GuiController, qtbot: QtBot, tmp_pa
     saved = TTFont(out)
     assert "fvar" in saved
     assert "gvar" in saved
-    glyph_set = saved.getGlyphSet(location={"wght": 1.0}, normalized=True)
-    bold_o = fonttools_glyph_to_domain("o", glyph_set["o"], saved)
+    bold_o = glyph_at(saved, "o", {"wght": 1.0})
     assert _islands(bold_o, _upm(saved)) == 0
 
 

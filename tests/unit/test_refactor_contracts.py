@@ -90,7 +90,16 @@ def test_cli_analyzes_each_glyph_once_in_parent_process(
 
     result = CliRunner().invoke(
         app,
-        [str(COMMIT_MONO_PATH), "--output", str(output_path), "--workers", "1", "--quiet"],
+        [
+            str(COMMIT_MONO_PATH),
+            "--output",
+            str(output_path),
+            "--workers",
+            "1",
+            "--quiet",
+            "--log-file",
+            str(tmp_path / "run.log"),
+        ],
     )
 
     assert result.exit_code == 0, f"CLI failed: {result.output}\n{result.exception}"

@@ -1,5 +1,6 @@
 """Qt-free variable-font state for GUI sessions: axes, location mapping, outcome cache."""
 
+import logging
 import threading
 from collections import OrderedDict
 from collections.abc import Callable, Mapping
@@ -14,9 +15,12 @@ from fontTools.varLib.models import (  # type: ignore[import-untyped]
 from stencilizer.config import BridgeConfig, GeometryConfig
 from stencilizer.config.settings import BridgeDirection
 from stencilizer.domain import Glyph
+from stencilizer.exceptions import VariationDataError
 from stencilizer.variable.model import VariableGlyph
 from stencilizer.variable.processing import UNSUPPORTED_REASON
 from stencilizer.variable.transform import VariableOutcome, transform_variable_glyph
+
+logger = logging.getLogger(__name__)
 
 OUTCOME_CACHE_ENTRIES = 64
 
@@ -203,7 +207,11 @@ class VariableSurface:
             return VariablePreview(self.unsupported[name], None, 0, UNSUPPORTED_REASON)
         direction = directions.get(name, bridge.direction)
         normalized = self.normalize(location)
-        original = self._glyphs[name].instance(normalized)
+        try:
+            original = self._glyphs[name].instance(normalized)
+        except VariationDataError:
+            # Singular variation data: show the default outline, as the survey and CLI skip it.
+            return VariablePreview(self._glyphs[name].default, None, 0, UNSUPPORTED_REASON)
         try:
             outcome = self._cache.outcome(
                 self._key(name, bridge, geometry, direction),
@@ -236,4 +244,5 @@ class VariableSurface:
                 self._compute(name, bridge, geometry, direction),
             )
         except Exception:
+            logger.debug("Bridge count failed for glyph %s", name, exc_info=True)
             return 0

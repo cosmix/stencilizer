@@ -11,16 +11,15 @@ from typer.testing import CliRunner, Result
 
 from stencilizer.cli.app import app
 from stencilizer.config import LoggingConfig, StencilizerSettings
-from stencilizer.core import FontProcessor, GlyphAnalyzer
-from stencilizer.domain.glyph import Glyph
+from stencilizer.core import FontProcessor
 from stencilizer.exceptions import VariationDataError
 from stencilizer.io import FontReader
 from stencilizer.io.converter import fonttools_glyph_to_domain
+from tests.font_helpers import CANTARELL, INTER, UBUNTU
+from tests.font_helpers import glyph_at as _glyph_at
+from tests.font_helpers import island_count as _islands
+from tests.font_helpers import units_per_em as _upm
 
-FIXTURES = Path(__file__).parent.parent / "fixtures" / "variable"
-UBUNTU = FIXTURES / "Ubuntu-VF-subset.ttf"
-INTER = FIXTURES / "Inter-VF-subset.ttf"
-CANTARELL = FIXTURES / "Cantarell-VF-subset.otf"
 KEPT_TABLES = ("fvar", "avar", "STAT", "HVAR", "MVAR")
 
 
@@ -30,19 +29,6 @@ def _cli(*args: str) -> Result:
 
 def _processor(tmp_path: Path) -> FontProcessor:
     return FontProcessor(StencilizerSettings(logging=LoggingConfig(log_file=tmp_path / "log.txt")))
-
-
-def _islands(glyph: Glyph, upm: int) -> int:
-    return len(GlyphAnalyzer().analyze(glyph, upm).get_islands())
-
-
-def _glyph_at(font: TTFont, name: str, location: dict[str, float]) -> Glyph:
-    glyph_set = font.getGlyphSet(location=location, normalized=True)
-    return fonttools_glyph_to_domain(name, glyph_set[name], font)
-
-
-def _upm(font: TTFont) -> int:
-    return int(font["head"].unitsPerEm)
 
 
 def _glyph_bytes(font: TTFont, name: str) -> bytes:
@@ -67,7 +53,7 @@ def _assert_tables_kept(source: TTFont, output: TTFont, tags: tuple[str, ...]) -
 
 def test_cli_writes_variable_stencil(tmp_path: Path) -> None:
     out = tmp_path / "out.ttf"
-    result = _cli(str(UBUNTU), "-o", str(out), "-q")
+    result = _cli(str(UBUNTU), "-o", str(out), "--log-file", str(tmp_path / "run.log"), "-q")
     assert result.exit_code == 0, result.output
     source, output = TTFont(UBUNTU), TTFont(out)
     assert "fvar" in output
@@ -80,7 +66,7 @@ def test_cli_writes_variable_stencil(tmp_path: Path) -> None:
 
 def test_untouched_glyph_keeps_variations(tmp_path: Path) -> None:
     out = tmp_path / "out.ttf"
-    result = _cli(str(UBUNTU), "-o", str(out), "-q")
+    result = _cli(str(UBUNTU), "-o", str(out), "--log-file", str(tmp_path / "run.log"), "-q")
     assert result.exit_code == 0, result.output
     source, output = TTFont(UBUNTU), TTFont(out)
     source_coords = list(source["glyf"]["l"].getCoordinates(source["glyf"])[0])
@@ -92,7 +78,16 @@ def test_untouched_glyph_keeps_variations(tmp_path: Path) -> None:
 
 def test_cli_instance_pins_static(tmp_path: Path) -> None:
     out = tmp_path / "out.ttf"
-    result = _cli(str(INTER), "--instance", "wght=700", "-o", str(out), "-q")
+    result = _cli(
+        str(INTER),
+        "--instance",
+        "wght=700",
+        "-o",
+        str(out),
+        "--log-file",
+        str(tmp_path / "run.log"),
+        "-q",
+    )
     assert result.exit_code == 0, result.output
     output = TTFont(out)
     assert "fvar" not in output
@@ -104,7 +99,16 @@ def test_cli_instance_pins_static(tmp_path: Path) -> None:
     assert _islands(p_glyph, _upm(merged)) == 0
 
     out2 = tmp_path / "out650.ttf"
-    result = _cli(str(INTER), "--instance", "wght=650", "-o", str(out2), "-q")
+    result = _cli(
+        str(INTER),
+        "--instance",
+        "wght=650",
+        "-o",
+        str(out2),
+        "--log-file",
+        str(tmp_path / "run.log"),
+        "-q",
+    )
     assert result.exit_code == 0, result.output
     unnamed = TTFont(out2)
     assert "fvar" not in unnamed
@@ -173,10 +177,10 @@ def test_unsupported_glyph_counted(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     original = processing.read_variable_glyph
 
-    def failing_read(font: TTFont, name: str) -> Any:
+    def failing_read(font: TTFont, name: str, *args: Any) -> Any:
         if name == "o":
             raise VariationDataError(name, "contract: unreadable variation data")
-        return original(font, name)
+        return original(font, name, *args)
 
     monkeypatch.setattr(processing, "read_variable_glyph", failing_read)
     processor = _processor(tmp_path)

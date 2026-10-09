@@ -11,7 +11,8 @@ from stencilizer.core import FontProcessor
 from stencilizer.gui.session import FontSession
 from stencilizer.io import FontReader
 from stencilizer.io.converter import _recording_to_contours
-from tests.gui.conftest import FIXTURES_DIR, build_settings
+from tests.font_helpers import FIXTURES_DIR
+from tests.gui.conftest import build_settings
 
 UNBRIDGED_DEFAULT = frozenset(
     {

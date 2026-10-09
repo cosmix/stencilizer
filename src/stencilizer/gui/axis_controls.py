@@ -27,7 +27,10 @@ class AxisRow:
         self.axis = axis
         # Narrow axes (Ubuntu wdth 75..100) get tenth-unit steps.
         self.scale = 10 if axis.maximum - axis.minimum < _FINE_RANGE else 1
-        self.label = QLabel(axis.name, parent)
+        # The name comes from the font's name table: never render it as rich text, and double
+        # each "&" so the buddy does not read it as a mnemonic marker.
+        self.label = QLabel(axis.name.replace("&", "&&"), parent)
+        self.label.setTextFormat(Qt.TextFormat.PlainText)
         self.slider = QSlider(Qt.Orientation.Horizontal, parent)
         self.slider.setObjectName(f"axis-slider-{axis.tag}")
         self.slider.setRange(round(axis.minimum * self.scale), round(axis.maximum * self.scale))

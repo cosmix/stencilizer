@@ -11,8 +11,10 @@ CLI (typer)
             │       └── converter.fonttools_glyph_to_domain()
             ├── GlyphAnalyzer (contour hierarchy, island detection)
             ├── GlyphTransformer (contour surgery)
+            ├── variable/ (fonts with an fvar table: surgery replayed on every master)
             └── FontWriter
-                    └── converter.domain_glyph_to_fonttools()
+                    ├── converter.domain_glyph_to_fonttools()
+                    └── variable.write_gvar / variable.write_cff2
 ```
 
 ## Key Modules
@@ -22,8 +24,9 @@ CLI (typer)
 | CLI | `src/stencilizer/cli/app.py` | Entry point, Typer commands |
 | Config | `src/stencilizer/config/settings.py` | Pydantic settings models |
 | Domain | `src/stencilizer/domain/` | `Glyph`, `Contour`, `Point` models |
-| I/O | `src/stencilizer/io/` | `FontReader`, `FontWriter`, format converters |
+| I/O | `src/stencilizer/io/` | `FontReader`, `FontWriter`, format converters, `--instance` pinning |
 | Core | `src/stencilizer/core/` | Analyzer, geometry, bridge placement, surgery |
+| Variable | `src/stencilizer/variable/` | Variable-font engine: reader, solver, replay, `gvar` and CFF2 writers |
 | Exceptions | `src/stencilizer/exceptions.py` | Exception hierarchy |
 
 ## Font Format Handling
@@ -33,21 +36,32 @@ CLI (typer)
 - **TrueType** (`.ttf`): `glyf` table, quadratic curves
 - **OpenType/TrueType** (`.otf`): `glyf` table in OT container
 - **OpenType/CFF** (`.otf`): `CFF ` table, cubic curves
-- **OpenType/CFF2** (`.otf`): `CFF2` table, static fonts only
+- **OpenType/CFF2** (`.otf`): `CFF2` table, static fonts
+- **Variable TrueType** (`fvar` + `glyf`): the default outline is stenciled and the surgery is
+  replayed on a master at every `gvar` support peak; `glyf` and `gvar` tuples are rewritten
+- **Variable CFF2** (`fvar` + `CFF2`): same replay; charstrings are rewritten with `blend` operands
 
 ### Not Supported
 
-- Variable fonts (`fvar` table)
-- Variable CFF2 (blend operators)
+- `fvar` with `CFF ` outlines: the font loads, but saving fails with "unsupported variable
+  outline format" once a glyph needs writing
+- Glyphs whose variation data the engine cannot use (for example several `vsindex` values in one
+  CFF2 charstring): left unchanged, counted as skipped, with their islands counted as unbridged
 
 ### Format Detection
 
 ```python
-# reader.py
+# reader.py (FontReader.format)
 if "CFF " in font or "CFF2" in font:
     return "OpenType"
 return "TrueType"
+
+# variable/reader.py
+is_variable(font)  # "fvar" in font; FontProcessor then runs variable/processing.py
 ```
+
+`FontWriter.update_glyph` rejects fonts with `fvar`; they go through `update_variable_glyph`,
+which dispatches on `glyf` (`write_gvar`) or `CFF2` (`write_cff2`).
 
 ### Winding Convention Normalization
 
@@ -73,7 +87,8 @@ Core conversion between fonttools and domain models:
 
 ### `src/stencilizer/io/reader.py`
 
-Font loading via fonttools `TTFont`. Provides `iter_glyphs()` iterator.
+Font loading via fonttools `TTFont`. Provides `iter_glyphs()` iterator and `unicode_by_name`,
+the glyph-name to code-point map built once per loaded font.
 
 ### `src/stencilizer/io/writer.py`
 
@@ -98,6 +113,11 @@ Points list with winding direction. Normalized to TrueType convention.
 
 Contours + metadata (name, unicode, advance_width, lsb).
 
+### VariableGlyph
+
+`variable/model.py`: the default `Glyph`, the variation `Support` regions, and one full master
+`Glyph` per support.
+
 ## Testing
 
 ### Fixtures
@@ -105,6 +125,7 @@ Contours + metadata (name, unicode, advance_width, lsb).
 - `tests/fixtures/Roboto-Regular.ttf` - TrueType
 - `tests/fixtures/Lato-Black.ttf` - TrueType
 - `tests/fixtures/CommitMono-Cosmix-700-Regular.otf` - CFF
+- `tests/fixtures/variable/` - variable subsets: Ubuntu and Inter (`gvar`), Cantarell (CFF2)
 
 ### Test Structure
 
@@ -141,6 +162,7 @@ ruff format src tests
 ## Conventions
 
 - All contours normalized to TrueType winding convention internally
-- Parallel processing via `ProcessPoolExecutor` with picklable functions
+- Parallel processing via `ProcessPoolExecutor` with a spawn context and picklable functions;
+  entry points call `multiprocessing.freeze_support()` and scripts guard `if __name__ == "__main__"`
 - Domain models support dict serialization for IPC
 - Bridge width calculated as a percentage of a reference stroke of 10% of the font's UPM

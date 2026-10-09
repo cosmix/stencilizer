@@ -13,7 +13,7 @@ from fontTools.ttLib.tables.TupleVariation import TupleVariation  # type: ignore
 
 from stencilizer.domain.contour import PointType
 from stencilizer.variable.model import Support, VariableGlyph
-from stencilizer.variable.rounding import round_variable_glyph
+from stencilizer.variable.rounding import round_coords, round_variable_glyph
 
 _ON_CURVE_FLAG = 0x01
 _PHANTOM_COUNT = 4
@@ -102,18 +102,19 @@ def _replace_glyph(font: TTFont, vg: VariableGlyph, old: _OldGlyph) -> None:
 def _build_tuples(
     font: TTFont, r: VariableGlyph, phantoms: dict[SupportKey, Phantoms]
 ) -> list[TupleVariation]:
-    """One tuple per support from the rounded deltas, original phantom deltas kept."""
+    """One tuple per support from the rounded deltas, original phantom deltas kept.
+
+    A support with no original tuple gets zero phantom deltas: the source's metrics took no
+    contribution from a region it never had, so zero leaves its metric variation unchanged.
+    """
     new_coords, controls = font["glyf"]._getCoordinatesAndControls(r.name, font["hmtx"].metrics)
     end_pts = controls[1]
     zero_phantoms: Phantoms = [(0.0, 0.0)] * _PHANTOM_COUNT
     tuples = []
     for support, deltas in zip(r.supports, r.deltas(), strict=True):
         tail = phantoms.get(support.axes, zero_phantoms)
-        point_deltas = [(otRound(dx), otRound(dy)) for dx, dy in deltas]
         axes = {tag: (s, p, e) for tag, s, p, e in support.axes}
-        variation = TupleVariation(
-            axes, point_deltas + [(otRound(dx), otRound(dy)) for dx, dy in tail]
-        )
+        variation = TupleVariation(axes, round_coords(deltas) + round_coords(tail))
         # Tolerance 0 keeps inferred deltas exact, so bridge lines stay closed.
         variation.optimize(new_coords, end_pts, tolerance=0.0)
         tuples.append(variation)
@@ -126,7 +127,11 @@ def _check_supports(font: TTFont, supports: tuple[Support, ...], name: str) -> N
 
 
 def write_truetype_variable_glyph(font: TTFont, vg: VariableGlyph) -> None:
-    """Replace one glyph's glyf outline and gvar tuples; other glyphs stay untouched."""
+    """Replace one glyph's glyf outline and gvar tuples; other glyphs stay untouched.
+
+    A glyph without supports has its gvar entry removed: with no variation tuples there is
+    nothing to store, and a missing entry means the glyph is the same at every location.
+    """
     r = round_variable_glyph(vg)
     _check_supports(font, r.supports, r.name)
     old = _capture_old(font, r.name)

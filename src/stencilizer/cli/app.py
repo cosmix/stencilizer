@@ -159,12 +159,12 @@ def _run_command(
         with _instance_font(input_font, instance) as font_path:
             output_path = output or FontWriter.get_stenciled_path(input_font)
             if list_islands:
-                _handle_list_islands(font_path, quiet)
+                _handle_list_islands(font_path, input_font, quiet)
                 raise typer.Exit(code=0)
             if dry_run:
-                _handle_dry_run(font_path, settings, quiet, verbose)
+                _handle_dry_run(font_path, input_font, settings, quiet, verbose)
                 raise typer.Exit(code=0)
-            _run_standard(font_path, output_path, settings, workers, quiet, verbose)
+            _run_standard(font_path, input_font, output_path, settings, workers, quiet, verbose)
     except FontLoadError as error:
         print_error(f"Could not load font: {error.reason}")
         raise typer.Exit(code=1) from error
@@ -208,14 +208,18 @@ def _instance_font(input_font: Path, instance: str | None) -> Iterator[Path]:
         yield instantiate_static(input_font, instance, Path(tmp))
 
 
-def _classify_font(font_path: Path, processor: FontProcessor, quiet: bool) -> GlyphClassification:
+def _classify_font(
+    font_path: Path, processor: FontProcessor, quiet: bool, display_path: Path | None = None
+) -> GlyphClassification:
+    # With --instance, font_path is a temporary file; messages name the font the user gave.
+    shown = str(display_path or font_path)
     if not quiet:
         print_step("Loading font")
     try:
         with FontReader(font_path) as reader:
             if not quiet:
                 print_font_info(
-                    font_path=str(font_path),
+                    font_path=shown,
                     font_type=reader.format,
                     glyph_count=reader.glyph_count,
                     upm=reader.units_per_em,
@@ -226,11 +230,12 @@ def _classify_font(font_path: Path, processor: FontProcessor, quiet: bool) -> Gl
     except StencilizerError:
         raise
     except Exception as error:
-        raise FontLoadError(str(font_path), str(error)) from error
+        raise FontLoadError(shown, str(error)) from error
 
 
 def _run_standard(
     font_path: Path,
+    display_path: Path,
     output_path: Path,
     settings: StencilizerSettings,
     workers: int | None,
@@ -238,7 +243,7 @@ def _run_standard(
     verbose: bool,
 ) -> None:
     processor = FontProcessor(settings, quiet=quiet)
-    classification = _classify_font(font_path, processor, quiet)
+    classification = _classify_font(font_path, processor, quiet, display_path)
     island_names = [glyph.name for glyph in classification.glyphs_to_process]
     if not quiet:
         print_islands_found(len(island_names), island_names, verbose)

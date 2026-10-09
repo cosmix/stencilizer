@@ -13,8 +13,8 @@ from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 from stencilizer.domain.contour import PointType
 from stencilizer.domain.glyph import Glyph
 from stencilizer.variable.model import VariableGlyph, glyph_coordinates
-from stencilizer.variable.reader import _cff2_supports, cff2_vsindex
-from stencilizer.variable.rounding import round_variable_glyph
+from stencilizer.variable.reader import cff2_region_supports, cff2_vsindex
+from stencilizer.variable.rounding import round_coords, round_variable_glyph
 from stencilizer.variable.solver import Coords
 
 Command = tuple[str, list[Any]]
@@ -27,7 +27,9 @@ def write_cff2_variable_glyph(font: TTFont, vg: VariableGlyph) -> None:
     """
     rounded = round_variable_glyph(vg)
     vs_index = _checked_vsindex(font, rounded) if rounded.supports else None
-    deltas = rounded.deltas() if rounded.supports else []
+    # The rounded deltas are integers; re-solving them from the rebuilt masters leaves float
+    # noise that would turn zero deltas into blend operands.
+    deltas = [round_coords(delta) for delta in rounded.deltas()] if rounded.supports else []
     commands = _glyph_commands(rounded.default, deltas)
     program = commandsToProgram(
         specializeCommands(
@@ -49,13 +51,14 @@ def _checked_vsindex(font: TTFont, vg: VariableGlyph) -> int | None:
     ``blend`` takes one delta per region in region order, so the supports must be exactly
     the regions the reader extracted, in the same order.
     """
-    regions = _cff2_supports(font, vg.name)
+    vs_index = cff2_vsindex(font, vg.name)
+    regions = () if vs_index is None else cff2_region_supports(font, vg.name, vs_index)
     if [s.axes for s in regions] != [s.axes for s in vg.supports]:
         raise ValueError(
             f"{vg.name}: {len(vg.supports)} supports do not match the "
             f"{len(regions)} regions of its CFF2 VarData"
         )
-    return cff2_vsindex(font, vg.name)
+    return vs_index
 
 
 def _glyph_commands(default: Glyph, deltas: list[Coords]) -> list[Command]:
@@ -127,8 +130,8 @@ def _segment(
 def _relative(index: int, layers: list[Coords], current: list[tuple[float, float]]) -> list[Any]:
     """dx, dy from the current point for the default and every delta layer, then advance.
 
-    Each layer is differenced on its own, so the absolute default stays integral and the
-    deltas stay float (encoded as 16.16 fixed); rounding after differencing would drift.
+    Each layer is differenced on its own from integer coordinates, so the default and every
+    delta stay integral and the relative operands sum back to the exact absolute points.
     """
     dxs: list[float] = []
     dys: list[float] = []
@@ -141,10 +144,14 @@ def _relative(index: int, layers: list[Coords], current: list[tuple[float, float
     return [_operand(dxs), _operand(dys)]
 
 
+def _integral(value: float) -> float:
+    """``value`` as an ``int`` when it is whole, so the charstring encodes a short integer."""
+    return int(value) if float(value).is_integer() else value
+
+
 def _operand(values: list[float]) -> Any:
     """A plain number, or ``[default, *deltas, 1]``: one blended operand for commandsToProgram."""
-    default, deltas = values[0], values[1:]
-    default_operand = int(default) if float(default).is_integer() else default
+    default, deltas = _integral(values[0]), [_integral(value) for value in values[1:]]
     if all(delta == 0 for delta in deltas):
-        return default_operand
-    return [default_operand, *deltas, 1]
+        return default
+    return [default, *deltas, 1]

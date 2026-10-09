@@ -9,23 +9,24 @@ from stencilizer.domain.glyph import Glyph, GlyphMetadata
 from stencilizer.exceptions import FontFormatError
 from stencilizer.io.writer import FontWriter
 from stencilizer.variable.model import VariableGlyph
-
-FIXTURE = Path(__file__).parent.parent / "fixtures" / "variable" / "Inter-VF-subset.ttf"
+from tests.font_helpers import CANTARELL, INTER
 
 
 def test_variable_save_suffixes_postscript_and_full_names(tmp_path: Path) -> None:
     output = tmp_path / "out.ttf"
-    FontWriter(TTFont(FIXTURE), output).save()
+    FontWriter(TTFont(INTER), output).save()
 
     names = TTFont(output)["name"]
     assert names.getDebugName(25) == "InterVariableStenciled"
     assert names.getDebugName(280) == "InterVariableStenciled-Thin"
     assert names.getDebugName(4) == "Inter Variable Stenciled"
+    assert names.getDebugName(1) == "Inter Variable Stenciled"
+    assert names.getDebugName(6) == "InterVariableStenciled"
 
 
 def test_variable_save_suffixes_shared_postscript_name_once(tmp_path: Path) -> None:
     output = tmp_path / "out.ttf"
-    font = TTFont(FIXTURE)
+    font = TTFont(INTER)
     font["fvar"].instances[0].postscriptNameID = 280
     font["fvar"].instances[1].postscriptNameID = 280
 
@@ -43,11 +44,11 @@ def test_update_variable_glyph_rejects_unknown_name(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="nope"):
-        FontWriter(TTFont(FIXTURE), tmp_path / "out.ttf").update_variable_glyph(vg)
+        FontWriter(TTFont(INTER), tmp_path / "out.ttf").update_variable_glyph(vg)
 
 
 def test_update_glyph_rejects_variable_font(tmp_path: Path) -> None:
     glyph = Glyph(metadata=GlyphMetadata("A", None, 500, 0), contours=[])
 
     with pytest.raises(FontFormatError, match="update_variable_glyph"):
-        FontWriter(TTFont(FIXTURE), tmp_path / "out.ttf").update_glyph(glyph)
+        FontWriter(TTFont(CANTARELL), tmp_path / "out.ttf").update_glyph(glyph)

@@ -8,20 +8,27 @@ replayed on each master's own coordinates.
 
 import math
 from collections import defaultdict
-from dataclasses import dataclass
 
 import pathops  # type: ignore[import-untyped]
 from fontTools.pens.recordingPen import RecordingPen  # type: ignore[import-untyped]
 
 from stencilizer.domain.contour import Contour, Point
 from stencilizer.domain.glyph import Glyph
+from stencilizer.variable.crossings import (
+    Crossing,
+    Plan,
+    Step,
+    Vertex,
+    intersect,
+    polygon_area,
+    settle_crossings,
+)
 from stencilizer.variable.model import VariableGlyph, glyph_coordinates
 from stencilizer.variable.solver import Coords
 
 # pathops round-trips coordinates through float32: up to 1.2e-4 off at 2048 UPM.
 VERTEX_TOLERANCE = 1e-3
 EDGE_TOLERANCE = 2e-3
-PARALLEL_EPSILON = 1e-12
 # Projection parameter slack when testing whether a union vertex lies on an input edge.
 EDGE_PARAMETER_SLACK = 1e-6
 # A replayed outline may differ from its location's true union by this share of the
@@ -34,25 +41,6 @@ FIDELITY_FLOOR = 1.0
 _Pt = tuple[float, float]
 _Polygon = list[_Pt]
 _Edge = tuple[int, int]
-
-
-@dataclass(frozen=True)
-class Vertex:
-    """An output vertex that is input vertex ``index`` (flat index over all contours)."""
-
-    index: int
-
-
-@dataclass(frozen=True)
-class Crossing:
-    """An output vertex where input edges ``first`` and ``second`` intersect."""
-
-    first: _Edge
-    second: _Edge
-
-
-_Step = Vertex | Crossing
-_Plan = list[list[_Step]]
 
 
 def _polygons(glyph: Glyph) -> list[_Polygon]:
@@ -76,7 +64,7 @@ def _path(polygons: list[_Polygon]) -> pathops.Path:
     return path
 
 
-def _union(polygons: list[_Polygon]) -> list[_Polygon] | None:
+def union_polygons(polygons: list[_Polygon]) -> list[_Polygon] | None:
     """Overlap-free polygons with clockwise outer contours; None when pathops fails."""
     try:
         result = pathops.simplify(_path(polygons), clockwise=True)
@@ -152,14 +140,14 @@ def _edges_near(point: _Pt, points: Coords, edges: list[_Edge]) -> list[_Edge]:
     return near
 
 
-def _map(polygons: list[_Polygon], union: list[_Polygon]) -> _Plan | None:
+def _map(polygons: list[_Polygon], union: list[_Polygon]) -> Plan | None:
     """Express every union vertex as an input vertex or a crossing of two input edges."""
     points = [point for polygon in polygons for point in polygon]
     grid = _VertexGrid(points)
     edges = _edges(polygons)
-    plan: _Plan = []
+    plan: Plan = []
     for polygon in union:
-        steps: list[_Step] = []
+        steps: list[Step] = []
         for point in polygon:
             index = grid.nearest(point)
             if index is not None:
@@ -173,23 +161,7 @@ def _map(polygons: list[_Polygon], union: list[_Polygon]) -> _Plan | None:
     return plan
 
 
-def _intersect(points: Coords, first: _Edge, second: _Edge) -> _Pt | None:
-    """Intersection of the lines through both edges; None when they are parallel.
-
-    The point may lie past an edge end: a crossing slides along flattened curves from
-    master to master. ``_faithful`` rejects replays where that moves the outline away
-    from the location's true union, such as strokes that no longer overlap.
-    """
-    (ax, ay), (bx, by) = points[first[0]], points[first[1]]
-    (cx, cy), (dx, dy) = points[second[0]], points[second[1]]
-    denominator = (bx - ax) * (dy - cy) - (by - ay) * (dx - cx)
-    if abs(denominator) < PARALLEL_EPSILON:
-        return None
-    t = ((cx - ax) * (dy - cy) - (cy - ay) * (dx - cx)) / denominator
-    return (ax + t * (bx - ax), ay + t * (by - ay))
-
-
-def _replay(plan: _Plan, points: Coords) -> list[_Polygon] | None:
+def _replay(plan: Plan, points: Coords) -> list[_Polygon] | None:
     out: list[_Polygon] = []
     for steps in plan:
         polygon: _Polygon = []
@@ -197,7 +169,7 @@ def _replay(plan: _Plan, points: Coords) -> list[_Polygon] | None:
             if isinstance(step, Vertex):
                 polygon.append(points[step.index])
                 continue
-            crossing = _intersect(points, step.first, step.second)
+            crossing = intersect(points, step.first, step.second)
             if crossing is None:
                 return None
             polygon.append(crossing)
@@ -216,25 +188,22 @@ def _faithful(replayed: list[_Polygon], polygons: list[_Polygon]) -> bool:
         difference = pathops.op(_path(replayed), reference, pathops.PathOp.XOR)
     except pathops.PathOpsError:
         return False
-    return bool(difference.area <= FIDELITY_RELATIVE * reference.area + FIDELITY_FLOOR)
+    # pathops reports Path.area unsigned (measured: 100.0 for a square in either winding).
+    return bool(abs(difference.area) <= FIDELITY_RELATIVE * abs(reference.area) + FIDELITY_FLOOR)
 
 
-def _replay_faithful(plan: _Plan, glyph: Glyph) -> list[_Polygon] | None:
-    """``plan`` replayed on ``glyph``; None when it degenerates or misses the true union."""
-    replayed = _replay(plan, glyph_coordinates(glyph))
-    if replayed is None or not _faithful(replayed, _polygons(glyph)):
+def _replay_faithful(plan: Plan, glyph: Glyph, default: Coords) -> list[_Polygon] | None:
+    """``plan`` replayed on ``glyph``; None when it degenerates or misses the true union.
+
+    Crossings are settled against their placement in ``default``, the input default.
+    """
+    polygons = _polygons(glyph)
+    points = glyph_coordinates(glyph)
+    replayed = _replay(plan, points)
+    if replayed is None:
         return None
-    return replayed
-
-
-def _area(polygon: _Polygon) -> float:
-    return (
-        sum(
-            x0 * y1 - x1 * y0
-            for (x0, y0), (x1, y1) in zip(polygon, polygon[1:] + polygon[:1], strict=True)
-        )
-        / 2
-    )
+    settle_crossings(plan, _edges(polygons), default, points, replayed)
+    return replayed if _faithful(replayed, polygons) else None
 
 
 def _to_glyph(template: Glyph, polygons: list[_Polygon]) -> Glyph:
@@ -267,7 +236,7 @@ def _canonical(indices: tuple[int, ...]) -> tuple[int, ...]:
     return min(forward, backward)
 
 
-def _is_unchanged(polygons: list[_Polygon], plan: _Plan) -> bool:
+def _is_unchanged(polygons: list[_Polygon], plan: Plan) -> bool:
     """True when the union is the input up to contour order, start points and orientation."""
     output: list[tuple[int, ...]] = []
     for steps in plan:
@@ -285,7 +254,7 @@ def remove_overlaps_compatible(vg: VariableGlyph) -> VariableGlyph | None:
     comes back as the same object, keeping its contour order and start points.
     """
     polygons = _polygons(vg.default)
-    union = _union(polygons)
+    union = union_polygons(polygons)
     if union is None:
         return None
     plan = _map(polygons, union)
@@ -293,16 +262,17 @@ def remove_overlaps_compatible(vg: VariableGlyph) -> VariableGlyph | None:
         return None
     if _is_unchanged(polygons, plan):
         return vg
-    merged_default = _replay_faithful(plan, vg.default)
+    default = glyph_coordinates(vg.default)
+    merged_default = _replay_faithful(plan, vg.default, default)
     if merged_default is None:
         return None
-    signs = [_area(polygon) for polygon in merged_default]
+    signs = [polygon_area(polygon) for polygon in merged_default]
     merged_masters: list[Glyph] = []
     for master in vg.masters:
-        replayed = _replay_faithful(plan, master)
+        replayed = _replay_faithful(plan, master, default)
         if replayed is None:
             return None
-        if any(_area(p) * sign <= 0 for p, sign in zip(replayed, signs, strict=True)):
+        if any(polygon_area(p) * sign <= 0 for p, sign in zip(replayed, signs, strict=True)):
             return None
         merged_masters.append(_to_glyph(master, replayed))
     return VariableGlyph(

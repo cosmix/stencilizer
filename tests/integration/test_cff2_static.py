@@ -2,34 +2,30 @@
 
 from pathlib import Path
 
-from fontTools.cffLib.CFFToCFF2 import convertCFFToCFF2  # type: ignore[import-untyped]
 from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 
-from stencilizer.config import StencilizerSettings
+from stencilizer.config import BridgeConfig, LoggingConfig, StencilizerSettings
+from stencilizer.config.settings import BridgeDirection
 from stencilizer.core import GlyphAnalyzer
 from stencilizer.core.processor import FontProcessor
 from stencilizer.io import FontReader
+from tests.font_helpers import write_commit_mono_cff2
 
 
 def _cff2_font(tmp_path: Path) -> Path:
     """Convert the CommitMono fixture to a static CFF2 font."""
-    source = Path(__file__).parent.parent / "fixtures" / "CommitMono-Cosmix-700-Regular.otf"
-    font = TTFont(source)
-    convertCFFToCFF2(font)
-    path = tmp_path / "commitmono-cff2.otf"
-    font.save(path)
-    font.close()
-    return path
+    return write_commit_mono_cff2(tmp_path / "commitmono-cff2.otf")
 
 
-def test_cff2_process_keeps_cff2_table(tmp_path: Path) -> None:
-    """Processing a static CFF2 font preserves its CFF2 outlines."""
+def test_cff2_process_keeps_cff2_table(tmp_path: Path, settings: StencilizerSettings) -> None:
+    """A per-glyph direction on a static CFF2 font adds bridges and keeps the CFF2 table."""
     source = _cff2_font(tmp_path)
     output = tmp_path / "out.otf"
 
-    stats = FontProcessor(StencilizerSettings()).process(
+    stats = FontProcessor(settings).process(
         font_path=source,
         output_path=output,
+        directions={"O": BridgeDirection.HORIZONTAL},
     )
 
     output_font = TTFont(output)
@@ -40,10 +36,14 @@ def test_cff2_process_keeps_cff2_table(tmp_path: Path) -> None:
 
 
 def test_cff2_output_glyphs_have_no_islands(tmp_path: Path) -> None:
-    """Processing bridges the islands in representative CFF2 glyphs."""
+    """Forced vertical bridges still close the islands in representative CFF2 glyphs."""
     source = _cff2_font(tmp_path)
     output = tmp_path / "out.otf"
-    FontProcessor(StencilizerSettings()).process(font_path=source, output_path=output)
+    settings = StencilizerSettings(
+        bridge=BridgeConfig(direction=BridgeDirection.VERTICAL),
+        logging=LoggingConfig(log_file=tmp_path / "run.log"),
+    )
+    FontProcessor(settings).process(font_path=source, output_path=output)
 
     with FontReader(output) as reader:
         analyzer = GlyphAnalyzer()
@@ -55,11 +55,13 @@ def test_cff2_output_glyphs_have_no_islands(tmp_path: Path) -> None:
             assert analyzer.analyze(glyph, upm).get_islands() == []
 
 
-def test_cff2_untouched_glyph_charstring_unchanged(tmp_path: Path) -> None:
+def test_cff2_untouched_glyph_charstring_unchanged(
+    tmp_path: Path, settings: StencilizerSettings
+) -> None:
     """Glyphs without islands retain their original CFF2 charstrings."""
     source = _cff2_font(tmp_path)
     output = tmp_path / "out.otf"
-    FontProcessor(StencilizerSettings()).process(font_path=source, output_path=output)
+    FontProcessor(settings).process(font_path=source, output_path=output)
 
     input_font = TTFont(source)
     output_font = TTFont(output)

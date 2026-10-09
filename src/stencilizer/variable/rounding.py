@@ -6,13 +6,9 @@ from stencilizer.variable.model import VariableGlyph, glyph_coordinates, with_co
 from stencilizer.variable.solver import Coords
 
 
-def _round_coords(coords: Coords) -> Coords:
+def round_coords(coords: Coords) -> Coords:
+    """Every coordinate rounded to the nearest integer, halves up as fontTools rounds."""
     return [(otRound(x), otRound(y)) for x, y in coords]
-
-
-def _round_fixed(coords: Coords) -> Coords:
-    """Snap to the 16.16 grid CFF2 blend operands store, so differencing them stays exact."""
-    return [(otRound(x * 65536) / 65536, otRound(y * 65536) / 65536) for x, y in coords]
 
 
 def _combine(base: Coords, terms: list[tuple[float, Coords]]) -> Coords:
@@ -39,7 +35,7 @@ def _visit_order(vg: VariableGlyph) -> list[int]:
     )
 
 
-def _round_gvar_deltas(vg: VariableGlyph, rdef: Coords) -> list[Coords]:
+def _round_deltas(vg: VariableGlyph, rdef: Coords) -> list[Coords]:
     """Integer deltas chosen so every support peak lands within 0.5 of the exact outline.
 
     Supports are visited in order; the delta of support k absorbs the error left by the
@@ -51,26 +47,29 @@ def _round_gvar_deltas(vg: VariableGlyph, rdef: Coords) -> list[Coords]:
     rounded: dict[int, Coords] = {}
     for k in _visit_order(vg):
         if any(scalars[k][j] != 0.0 for j in range(len(peaks)) if j != k and j not in rounded):
-            rounded[k] = _round_coords(exact[k])
+            rounded[k] = round_coords(exact[k])
             continue
         accumulated = _combine(rdef, [(scalars[k][j], rd) for j, rd in rounded.items()])
         target = glyph_coordinates(vg.masters[k])
-        rounded[k] = _round_coords(
+        rounded[k] = round_coords(
             [(tx - ax, ty - ay) for (tx, ty), (ax, ay) in zip(target, accumulated, strict=True)]
         )
     return [rounded[k] for k in range(len(peaks))]
 
 
 def round_variable_glyph(vg: VariableGlyph) -> VariableGlyph:
-    """The glyph as stored: integer default, integer gvar or 16.16 CFF2 deltas, masters rebuilt."""
-    rdef = _round_coords(glyph_coordinates(vg.default))
+    """The glyph as stored: integer default and integer deltas, masters rebuilt from them.
+
+    CFF2 gets integer deltas too: fontTools' instancer rounds the blended delta of every
+    relative charstring operand, so fractional deltas make edges that must coincide on
+    separate contours drift apart. Integer absolute deltas difference to integer operand
+    deltas, so every master is exact under that rounding.
+    """
+    rdef = round_coords(glyph_coordinates(vg.default))
     default = with_coordinates(vg.default, rdef)
     if not vg.supports:
         return VariableGlyph(default, (), (), vg.axis_tags, vg.cff2)
-    if vg.cff2:
-        deltas = [_round_fixed(delta) for delta in vg.deltas()]
-    else:
-        deltas = _round_gvar_deltas(vg, rdef)
+    deltas = _round_deltas(vg, rdef)
     masters = []
     for support in vg.supports:
         peak = support.peak()
