@@ -117,7 +117,7 @@ Reviewer rounds recorded malformed because the report went through the hand-back
 
 ## README image placement
 
-Place screenshots alongside the instructions they illustrate; avoid stacking large visuals at the top.
+Place screenshots in the section they illustrate, never stacked directly under another large visual. The user wants the GUI screenshot high in the README: the Desktop App section sits right after Features, separated from the logo and hero image by the Overview and Features text.
 See [README layout](mistakes/readme-layout.md) for the correction and placement rule.
 
 ## Review probes must supply complete glyph metadata
