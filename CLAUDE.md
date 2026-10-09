@@ -165,4 +165,6 @@ ruff format src tests
 - Parallel processing via `ProcessPoolExecutor` with a spawn context and picklable functions;
   entry points call `multiprocessing.freeze_support()` and scripts guard `if __name__ == "__main__"`
 - Domain models support dict serialization for IPC
-- Bridge width calculated as a percentage of a reference stroke of 10% of the font's UPM
+- Bridge width calculated as a percentage of a reference stroke of 10% of the font's UPM; in a
+  variable font that is the default master's gap, and `BridgeConfig.width_scaling` (`fixed`, or
+  `proportional` with `scaling_strength` and `min_width_percent`) sets the gap in every other master
