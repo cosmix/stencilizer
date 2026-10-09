@@ -12,16 +12,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from stencilizer.config import BridgeConfig, BridgeWidthScaling
+from stencilizer.config.settings import REFERENCE_STROKE_FRACTION
 from stencilizer.domain.glyph import Glyph
-from stencilizer.variable.realign import Placed, Span, contour_spans
+from stencilizer.variable.realign import Extent, Placed, Span, contour_spans, extents_overlap
 
 if TYPE_CHECKING:
-    from stencilizer.variable.replay import BridgeLine, Slot, SurgeryMap
-
-# Core surgery sizes bridge widths as a percentage of this fraction of the UPM.
-_REFERENCE_STROKE = 0.1
-
-Extent = tuple[float, float]
+    from stencilizer.variable.replay import BridgeLine, SurgeryMap
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,7 +52,7 @@ def scaled_gap(base: float, ratio: float, bridge: BridgeConfig, upm: int) -> flo
     """
     if bridge.width_scaling == BridgeWidthScaling.FIXED:
         return base
-    minimum = min(bridge.min_width_percent / 100.0 * _REFERENCE_STROKE * upm, base)
+    minimum = min(bridge.min_width_percent / 100.0 * REFERENCE_STROKE_FRACTION * upm, base)
     return max(minimum, base * math.pow(ratio, bridge.scaling_strength / 100.0))
 
 
@@ -91,16 +87,8 @@ def _positions(glyph: Glyph) -> Placed:
 
 def _extent(positions: Placed, lines: Iterable["BridgeLine"]) -> Extent:
     """Cross-axis range of the lines' points."""
-    values = [positions[ci][pi][1 - line.axis] for line in lines for ci, pi in _slots(line)]
+    values = [positions[ci][pi][1 - line.axis] for line in lines for ci, pi in line.slots]
     return min(values), max(values)
-
-
-def _overlap(first: Extent, second: Extent) -> bool:
-    return max(first[0], second[0]) < min(first[1], second[1])
-
-
-def _slots(line: "BridgeLine") -> list["Slot"]:
-    return [member.slot for member in line.members]
 
 
 def _contours(line: "BridgeLine", spans: Sequence[Span]) -> frozenset[int]:
@@ -132,7 +120,7 @@ def disjoint_pairs(
                 break
             if high in paired or contours[high] != contours[low]:
                 continue
-            if _overlap(extents[low], extents[high]):
+            if extents_overlap(extents[low], extents[high]):
                 pairs.append((low, high))
                 paired.update((low, high))
                 break

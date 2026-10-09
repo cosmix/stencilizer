@@ -11,7 +11,8 @@ from stencilizer.domain.glyph import Glyph
 from stencilizer.exceptions import VariationDataError
 from stencilizer.variable.holes import enclosed_counters
 from stencilizer.variable.model import VariableGlyph
-from stencilizer.variable.replay import BridgeLine, Slot, slot_values
+from stencilizer.variable.realign import Extent, extents_overlap
+from stencilizer.variable.replay import BridgeLine, slot_values
 
 MAX_GRID_LOCATIONS = 64
 
@@ -65,16 +66,12 @@ def validation_locations(vg: VariableGlyph) -> list[Location]:
     return list(unique.values())
 
 
-def _slots(line: BridgeLine) -> list[Slot]:
-    return [member.slot for member in line.members]
-
-
 def _line_value(glyph: Glyph, line: BridgeLine) -> float:
-    return fmean(slot_values(glyph, _slots(line), line.axis))
+    return fmean(slot_values(glyph, line.slots, line.axis))
 
 
-def _cross_span(glyph: Glyph, line: BridgeLine) -> tuple[float, float]:
-    values = slot_values(glyph, _slots(line), 1 - line.axis)
+def _cross_span(glyph: Glyph, line: BridgeLine) -> Extent:
+    values = slot_values(glyph, line.slots, 1 - line.axis)
     return min(values), max(values)
 
 
@@ -89,9 +86,7 @@ def _facing_pairs(glyph: Glyph, lines: Sequence[BridgeLine]) -> list[tuple[int, 
     for i, j in itertools.combinations(range(len(lines)), 2):
         if lines[i].axis != lines[j].axis:
             continue
-        low_i, high_i = _cross_span(glyph, lines[i])
-        low_j, high_j = _cross_span(glyph, lines[j])
-        if max(low_i, low_j) < min(high_i, high_j):
+        if extents_overlap(_cross_span(glyph, lines[i]), _cross_span(glyph, lines[j])):
             gap = _line_value(glyph, lines[i]) - _line_value(glyph, lines[j])
             pairs.append((i, j, math.copysign(1.0, gap)))
     return pairs
@@ -99,7 +94,7 @@ def _facing_pairs(glyph: Glyph, lines: Sequence[BridgeLine]) -> list[tuple[int, 
 
 def _piece_signs(glyph: Glyph, lines: Sequence[BridgeLine]) -> dict[int, float]:
     """Orientation sign of every contour that carries a bridge cut."""
-    pieces = {ci for line in lines for ci, _ in _slots(line)}
+    pieces = {ci for line in lines for ci, _ in line.slots}
     return {ci: math.copysign(1.0, signed_area(glyph.contours[ci].points)) for ci in pieces}
 
 

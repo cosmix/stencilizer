@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from stencilizer.domain.contour import Point
 from stencilizer.domain.glyph import Glyph
+from stencilizer.variable.crossings import Pt
 from stencilizer.variable.solver import Coords
 
 if TYPE_CHECKING:
@@ -20,7 +21,8 @@ if TYPE_CHECKING:
 _SEARCH_EDGES = 12
 _MIN_EDGE_SPAN = 1e-12
 
-_Pt = tuple[float, float]
+Extent = tuple[float, float]
+"""(low, high) range of coordinates along one axis."""
 Span = tuple[int, int]
 """(start, length) of the contour a point belongs to, in the concatenated point list."""
 Placed = list[list[list[float]]]
@@ -41,7 +43,12 @@ def contour_spans(glyph: Glyph) -> list[Span]:
     return spans
 
 
-def lerp(a: _Pt, b: _Pt, t: float) -> list[float]:
+def extents_overlap(first: Extent, second: Extent) -> bool:
+    """True when two (low, high) ranges share more than a single value."""
+    return max(first[0], second[0]) < min(first[1], second[1])
+
+
+def lerp(a: Pt, b: Pt, t: float) -> list[float]:
     return [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]
 
 
@@ -51,7 +58,7 @@ def mean_target(line: "BridgeLine", placed: Placed) -> float:
     return fmean(placed[ci][pi][line.axis] for ci, pi in cuts)
 
 
-def _cross(a: _Pt, b: _Pt, axis: int, target: float) -> list[float] | None:
+def _cross(a: Pt, b: Pt, axis: int, target: float) -> list[float] | None:
     """Where edge a -> b crosses the line ``axis == target``; exact on that axis."""
     low, high = a[axis], b[axis]
     if (low - target) * (high - target) > 0 or abs(high - low) <= _MIN_EDGE_SPAN:

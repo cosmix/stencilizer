@@ -14,6 +14,7 @@ from statistics import fmean
 from stencilizer.domain.contour import Contour
 from stencilizer.domain.glyph import Glyph
 from stencilizer.variable.bridge_width import WidthRule, pair_targets
+from stencilizer.variable.crossings import Pt
 from stencilizer.variable.model import glyph_coordinates, with_coordinates
 from stencilizer.variable.realign import (
     Placed,
@@ -33,8 +34,6 @@ _EDGE_T_SLACK = 1e-9
 _LINE_DECIMALS = 5
 # Core surgery's point dedup at 1000 UPM; callers pass their geometry's snap distance.
 _SNAP_DISTANCE = 0.5
-
-_Pt = tuple[float, float]
 
 Slot = tuple[int, int]
 """An output point: (contour index, point index within that contour)."""
@@ -82,6 +81,11 @@ class BridgeLine:
     coordinate: float
     members: tuple[LineMember, ...]
 
+    @property
+    def slots(self) -> list[Slot]:
+        """The output point of every member."""
+        return [member.slot for member in self.members]
+
 
 @dataclass(frozen=True, slots=True)
 class SurgeryMap:
@@ -101,11 +105,11 @@ def slot_values(glyph: Glyph, slots: Sequence[Slot], axis: int) -> list[float]:
     return [axis_value(glyph.contours[ci].points[pi], axis) for ci, pi in slots]
 
 
-def _key(point: _Pt) -> _Pt:
+def _key(point: Pt) -> Pt:
     return (round(point[0], _VERTEX_DECIMALS), round(point[1], _VERTEX_DECIMALS))
 
 
-def _edge_point(point: _Pt, coords: Coords, spans: list[Span]) -> EdgePoint | None:
+def _edge_point(point: Pt, coords: Coords, spans: list[Span]) -> EdgePoint | None:
     """The input edge nearest to ``point`` within the mapping distance, if any."""
     best: EdgePoint | None = None
     best_distance = _EDGE_DISTANCE
@@ -256,7 +260,7 @@ def map_surgery(
     """Source of every output point in the (polygon) input, or None when one has none."""
     coords = glyph_coordinates(input_glyph)
     spans = contour_spans(input_glyph)
-    vertices: dict[_Pt, list[int]] = defaultdict(list)
+    vertices: dict[Pt, list[int]] = defaultdict(list)
     for index, coord in enumerate(coords):
         vertices[_key(coord)].append(index)
     sources: list[tuple[Source, ...]] = []
@@ -291,7 +295,7 @@ def _place(smap: SurgeryMap, master: Coords) -> Placed | None:
 
 def _stops(smap: SurgeryMap) -> frozenset[Slot]:
     """Line points and cut points: the slots projection never moves or walks past."""
-    members = {member.slot for line in smap.lines for member in line.members}
+    members = {slot for line in smap.lines for slot in line.slots}
     cuts = {
         (ci, pi)
         for ci, sources in enumerate(smap.sources)
