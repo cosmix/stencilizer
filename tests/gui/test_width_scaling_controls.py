@@ -5,7 +5,10 @@ from pathlib import Path
 
 import pytest
 from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtGui import QWheelEvent
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QMessageBox, QScrollArea, QSlider, QSplitter, QWidget
 from pytestqt.qtbot import QtBot
 
 from stencilizer.config import BridgeConfig, BridgeWidthScaling
@@ -155,3 +158,117 @@ def test_save_default_master_same_other_masters_differ(
     assert glyph_at(fixed, "o", {}).to_dict() == glyph_at(proportional, "o", {}).to_dict()
     bold = {"wght": 1.0}
     assert glyph_at(fixed, "o", bold).to_dict() != glyph_at(proportional, "o", bold).to_dict()
+
+
+def _shown_inter(window: MainWindow, qtbot: QtBot) -> ControlPanel:
+    """Show the window at 1280x800 with Inter loaded and Proportional selected."""
+    window.resize(1280, 800)
+    with qtbot.waitExposed(window):
+        window.show()
+    _load_inter(window, qtbot)
+    controls = window.controls
+    _select(controls, BridgeWidthScaling.PROPORTIONAL)
+    return controls
+
+
+def _wheel(widget: QWidget, delta: int) -> QWheelEvent:
+    """Send a wheel event of ``delta`` eighths of a degree to the middle of ``widget``."""
+    position = QPointF(widget.rect().center())
+    event = QWheelEvent(
+        position,
+        widget.mapToGlobal(position),
+        QPoint(),
+        QPoint(0, delta),
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+        Qt.ScrollPhase.NoScrollPhase,
+        False,
+    )
+    QApplication.sendEvent(widget, event)
+    return event
+
+
+def _sidebar(window: MainWindow) -> QScrollArea:
+    """The scroll area that wraps the control panel."""
+    areas = window.findChildren(QScrollArea)
+    return next(area for area in areas if area.widget() is window.controls)
+
+
+def test_wheel_over_unfocused_widgets_changes_nothing(window: MainWindow, qtbot: QtBot) -> None:
+    controls = _shown_inter(window, qtbot)
+    strength, combo = controls.strength_slider, controls.scaling_combo
+    strength.setValue(50)
+    for widget in (strength, combo):
+        widget.clearFocus()
+        assert not widget.hasFocus()
+    changes: list[None] = []
+    controls.parameters_changed.connect(lambda: changes.append(None))
+    for widget in (strength, combo):
+        assert not _wheel(widget, -120).isAccepted()
+    assert strength.value() == 50
+    assert combo.currentIndex() == combo.findData(BridgeWidthScaling.PROPORTIONAL)
+    assert changes == []
+
+
+def test_wheel_over_unfocused_slider_scrolls_the_sidebar(window: MainWindow, qtbot: QtBot) -> None:
+    controls = _shown_inter(window, qtbot)
+    strength = controls.strength_slider
+    strength.setValue(50)
+    strength.clearFocus()
+    bar = _sidebar(window).verticalScrollBar()
+    qtbot.waitUntil(lambda: bar.maximum() > 0, timeout=2000)
+    over_slider = QPointF(strength.mapTo(window, strength.rect().center()))
+    QTest.wheelEvent(window.windowHandle(), over_slider, QPoint(0, -120))
+    assert bar.value() > 0
+    assert strength.value() == 50
+
+
+def test_wheel_over_focused_slider_changes_it(window: MainWindow, qtbot: QtBot) -> None:
+    controls = _shown_inter(window, qtbot)
+    strength = controls.strength_slider
+    strength.setValue(50)
+    window.activateWindow()
+    strength.setFocus()
+    qtbot.waitUntil(strength.hasFocus, timeout=2000)
+    with qtbot.waitSignal(controls.parameters_changed, timeout=2000):
+        _wheel(strength, 120)
+    assert strength.value() > 50
+
+
+def test_value_widgets_added_later_ignore_the_wheel_too(panel: ControlPanel) -> None:
+    late = QWidget(panel)
+    slider = QSlider(Qt.Orientation.Horizontal, late)
+    late.show()
+    slider.setValue(5)
+    _wheel(slider, 120)
+    assert slider.value() == 5
+    assert slider.focusPolicy() == Qt.FocusPolicy.StrongFocus
+
+
+def test_sidebar_never_clips_or_outgrows_the_controls(window: MainWindow, qtbot: QtBot) -> None:
+    controls = _shown_inter(window, qtbot)
+    scroll = _sidebar(window)
+    splitter = scroll.parentWidget()
+    assert isinstance(splitter, QSplitter)
+    bar = scroll.verticalScrollBar()
+    qtbot.waitUntil(lambda: bar.isVisibleTo(scroll), timeout=2000)
+    extent = bar.sizeHint().width()
+    assert scroll.maximumWidth() <= controls.maximumWidth() + extent
+    splitter.setSizes([0, 520, 460])
+    qtbot.waitUntil(lambda: scroll.width() == scroll.minimumWidth(), timeout=2000)
+    assert scroll.viewport().width() >= controls.minimumWidth()
+    assert controls.width() <= scroll.viewport().width()
+    splitter.setSizes([2000, 10, 10])
+    qtbot.waitUntil(lambda: scroll.width() == scroll.maximumWidth(), timeout=2000)
+    assert scroll.width() <= controls.maximumWidth() + extent
+    assert controls.width() == scroll.viewport().width()
+
+
+def test_sidebar_refits_when_the_scroll_bar_style_changes(window: MainWindow) -> None:
+    scroll = _sidebar(window)
+    controls = window.controls
+    assert scroll.verticalScrollBar().sizeHint().width() != 23
+    scroll.setStyleSheet("QScrollBar:vertical { width: 23px; }")
+    assert scroll.verticalScrollBar().sizeHint().width() == 23
+    assert scroll.minimumWidth() == controls.minimumWidth() + 23
+    assert scroll.maximumWidth() == controls.maximumWidth() + 23

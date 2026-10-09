@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -32,6 +32,40 @@ from stencilizer.io.writer import FontWriter
 if TYPE_CHECKING:
     from stencilizer.gui.session import FontSession, PreviewResult
     from stencilizer.utils import ProcessingStats
+
+
+class _SidebarScroll(QScrollArea):
+    """Scroll area that keeps tall controls at their minimum heights, sized so nothing is clipped.
+
+    The bounds come from the controls' own minimum and maximum widths: a scroll area does not
+    inherit its widget's maximum, and a shown scroll bar takes its width from the viewport.
+    """
+
+    def __init__(self, controls: QWidget) -> None:
+        """Wrap ``controls`` in a frameless area that never scrolls sideways."""
+        super().__init__()
+        self._controls = controls
+        self.setWidget(controls)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._fit_width()
+
+    def bar_extent(self) -> int:
+        """Width the themed vertical scroll bar takes from the viewport when shown."""
+        return self.verticalScrollBar().sizeHint().width()
+
+    def _fit_width(self) -> None:
+        """Bound the width by the controls' limits and the themed scroll bar's width."""
+        extent = self.bar_extent()
+        self.setMinimumWidth(self._controls.minimumWidth() + extent)
+        self.setMaximumWidth(self._controls.maximumWidth() + extent)
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802
+        """Refit the width when a new style changes the scroll bar's width."""
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.StyleChange:
+            self._fit_width()
 
 
 class MainWindow(QMainWindow):
@@ -74,7 +108,8 @@ class MainWindow(QMainWindow):
         self.grid_stack.addWidget(self.loading_view)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self._build_sidebar())
+        sidebar = _SidebarScroll(self.controls)
+        splitter.addWidget(sidebar)
         splitter.addWidget(self.grid_stack)
         splitter.addWidget(self._build_preview_pane())
         splitter.setChildrenCollapsible(False)
@@ -82,7 +117,7 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 0)
-        splitter.setSizes([300, 520, 460])
+        splitter.setSizes([300 + sidebar.bar_extent(), 520, 460])
 
         central = QWidget()
         layout = QVBoxLayout(central)
@@ -91,16 +126,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.header)
         layout.addWidget(splitter, 1)
         self.setCentralWidget(central)
-
-    def _build_sidebar(self) -> QScrollArea:
-        """Wrap the controls in a scroll area so tall content keeps its minimum heights."""
-        scroll = QScrollArea()
-        scroll.setWidget(self.controls)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setMinimumWidth(self.controls.minimumWidth())
-        return scroll
 
     def _build_preview_pane(self) -> QWidget:
         """Create the comparison and bridge-direction controls pane."""

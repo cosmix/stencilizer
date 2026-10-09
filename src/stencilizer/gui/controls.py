@@ -2,14 +2,18 @@
 
 import os
 from functools import partial
+from typing import TypeGuard
 
-from PySide6.QtCore import QSignalBlocker, Qt, Signal
+from PySide6.QtCore import QChildEvent, QEvent, QObject, QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
+    QAbstractSlider,
+    QAbstractSpinBox,
     QCheckBox,
     QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QScrollBar,
     QSlider,
     QSpinBox,
     QVBoxLayout,
@@ -33,6 +37,7 @@ _MIN_WIDTH_TOOLTIP = (
     "Smallest bridge gap in light masters, as percent of a reference stroke of 10% of font UPM"
 )
 _WORKERS_TOOLTIP = "Worker processes used when saving; Auto lets the processor decide"
+_VALUE_WIDGETS = (QAbstractSlider, QAbstractSpinBox, QComboBox)
 
 
 def _section_title(text: str, parent: QWidget) -> QLabel:
@@ -40,6 +45,41 @@ def _section_title(text: str, parent: QWidget) -> QLabel:
     label = QLabel(text, parent)
     label.setProperty("role", "sectionTitle")
     return label
+
+
+def _is_value_widget(widget: QObject) -> TypeGuard[QWidget]:
+    """Whether ``widget`` edits a value; scroll bars are sliders but must keep their wheel."""
+    return isinstance(widget, _VALUE_WIDGETS) and not isinstance(widget, QScrollBar)
+
+
+class _WheelGuard(QObject):
+    """Let the wheel scroll the sidebar instead of editing a value widget that lacks focus.
+
+    The guard sits on every widget below the panel, including ones added later: Qt reports a
+    widget to its parent once it is polished, which always precedes any wheel event it can get.
+    """
+
+    def watch(self, root: QWidget) -> None:
+        """Guard ``root`` and its descendants, giving value widgets click and tab focus only."""
+        for widget in (root, *root.findChildren(QWidget)):
+            widget.installEventFilter(self)
+            if _is_value_widget(widget):
+                widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        """Ignore wheel events on unfocused value widgets so they reach the scroll area."""
+        if isinstance(event, QChildEvent) and event.type() == QEvent.Type.ChildPolished:
+            child = event.child()
+            if isinstance(child, QWidget):
+                self.watch(child)
+        elif (
+            event.type() == QEvent.Type.Wheel
+            and _is_value_widget(watched)
+            and not watched.hasFocus()
+        ):
+            event.ignore()
+            return True
+        return False
 
 
 class ControlPanel(QWidget):
@@ -57,6 +97,8 @@ class ControlPanel(QWidget):
         self._build_widgets()
         self._build_layout()
         self._connect_signals()
+        self._wheel_guard = _WheelGuard(self)
+        self._wheel_guard.watch(self)
 
     def _build_widgets(self) -> None:
         """Create every control this panel owns, with its initial state."""
