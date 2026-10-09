@@ -11,7 +11,7 @@ from typing import Any, cast
 from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 
 from stencilizer.domain.glyph import Glyph
-from stencilizer.exceptions import FontFormatError, GlyphProcessingError
+from stencilizer.exceptions import GlyphProcessingError
 from stencilizer.io.converter import fonttools_glyph_to_domain
 
 
@@ -50,13 +50,7 @@ class FontReader:
         if not self._font_path.exists():
             raise FileNotFoundError(f"Font file not found: {self._font_path}")
 
-        font = TTFont(str(self._font_path))
-        if "fvar" in font:
-            font.close()
-            raise FontFormatError(
-                str(self._font_path), "variable fonts (fvar table) are not supported"
-            )
-        self._font = font
+        self._font = TTFont(str(self._font_path))
         self._glyph_names = None
         self._glyph_set = None
         self._unicode_by_name = None

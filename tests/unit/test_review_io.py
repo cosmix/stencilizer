@@ -19,6 +19,7 @@ from stencilizer.io.converter import (
 )
 from stencilizer.io.reader import FontReader
 from stencilizer.io.writer import FontWriter
+from stencilizer.variable.reader import is_variable
 
 
 def _glyph(name: str = "A") -> Glyph:
@@ -26,17 +27,13 @@ def _glyph(name: str = "A") -> Glyph:
 
 
 def test_reader_rejects_variable_fonts_before_exposing_font() -> None:
-    font = MagicMock()
-    font.__contains__.side_effect = lambda name: name == "fvar"
-    reader = FontReader(Path("input.ttf"))
-    with (
-        patch.object(Path, "exists", return_value=True),
-        patch("stencilizer.io.reader.TTFont", return_value=font),
-        pytest.raises(FontFormatError, match="variable"),
-    ):
-        reader.load()
-    assert reader._font is None
-    font.close.assert_called_once()
+    reader = FontReader(Path("tests/fixtures/variable/Ubuntu-VF-subset.ttf"))
+    reader.load()
+    try:
+        assert reader.font is not None
+        assert is_variable(reader.font)
+    finally:
+        reader.close()
 
 
 def test_writer_rejects_variable_fonts_without_output(tmp_path: Path) -> None:

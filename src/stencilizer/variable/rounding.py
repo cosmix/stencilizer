@@ -10,6 +10,11 @@ def _round_coords(coords: Coords) -> Coords:
     return [(otRound(x), otRound(y)) for x, y in coords]
 
 
+def _round_fixed(coords: Coords) -> Coords:
+    """Snap to the 16.16 grid CFF2 blend operands store, so differencing them stays exact."""
+    return [(otRound(x * 65536) / 65536, otRound(y * 65536) / 65536) for x, y in coords]
+
+
 def _combine(base: Coords, terms: list[tuple[float, Coords]]) -> Coords:
     """``base + sum(scalar * delta)`` per point."""
     result = list(base)
@@ -57,12 +62,15 @@ def _round_gvar_deltas(vg: VariableGlyph, rdef: Coords) -> list[Coords]:
 
 
 def round_variable_glyph(vg: VariableGlyph) -> VariableGlyph:
-    """The glyph as stored: integer default (and integer gvar deltas), masters rebuilt."""
+    """The glyph as stored: integer default, integer gvar or 16.16 CFF2 deltas, masters rebuilt."""
     rdef = _round_coords(glyph_coordinates(vg.default))
     default = with_coordinates(vg.default, rdef)
     if not vg.supports:
         return VariableGlyph(default, (), (), vg.axis_tags, vg.cff2)
-    deltas = vg.deltas() if vg.cff2 else _round_gvar_deltas(vg, rdef)
+    if vg.cff2:
+        deltas = [_round_fixed(delta) for delta in vg.deltas()]
+    else:
+        deltas = _round_gvar_deltas(vg, rdef)
     masters = []
     for support in vg.supports:
         peak = support.peak()
