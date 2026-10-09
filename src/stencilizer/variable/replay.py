@@ -22,7 +22,7 @@ _EDGE_T_SLACK = 1e-9
 _LINE_DECIMALS = 5
 _SEARCH_EDGES = 12
 _MIN_EDGE_SPAN = 1e-12
-# Core surgery drops a cut point this close to an input vertex and keeps the vertex.
+# Core surgery's point dedup at 1000 UPM; callers pass their geometry's snap distance.
 _SNAP_DISTANCE = 0.5
 
 _Pt = tuple[float, float]
@@ -56,15 +56,14 @@ _Candidate = list[int] | EdgePoint
 
 @dataclass(frozen=True, slots=True)
 class LineMember:
-    """An output point on a bridge line, the input edges it lies on, and its line offset.
+    """An output point on a bridge line and the input edges it lies on.
 
     ``edges`` are the first and last input edge by start index: one for a cut point, two
-    around a vertex. ``offset``, the default distance from the line, holds in every master.
+    around a vertex.
     """
 
     slot: Slot
     edges: tuple[int, int]
-    offset: float
     cut: bool
 
 
@@ -219,17 +218,21 @@ def _collect(
                 continue
             axis = _cut_axis(source, axes[pi], coords)
             key = (axis, round(axis_value(point, axis), _LINE_DECIMALS))
-            groups[key].append(LineMember((ci, pi), (source.a, source.a), 0.0, cut=True))
+            groups[key].append(LineMember((ci, pi), (source.a, source.a), cut=True))
     return groups, loose
 
 
 def _bridge_lines(
-    output_glyph: Glyph, sources: list[tuple[Source, ...]], coords: Coords, spans: list[_Span]
+    output_glyph: Glyph,
+    sources: list[tuple[Source, ...]],
+    coords: Coords,
+    spans: list[_Span],
+    snap: float,
 ) -> tuple[BridgeLine, ...]:
     """Every bridge line with at least two points.
 
-    A vertex ending a bridge segment joins the nearest line of that axis within the snap
-    distance: surgery kept it in place of a cut point.
+    A vertex ending a bridge segment joins the nearest line of that axis within ``snap``:
+    surgery kept it in place of a cut point.
     """
     groups, loose = _collect(output_glyph, sources, coords, spans)
     centres = {
@@ -237,12 +240,11 @@ def _bridge_lines(
         for key, members in groups.items()
     }
     for slot, axis, source, value in loose:
-        near = [k for k in groups if k[0] == axis and abs(centres[k] - value) <= _SNAP_DISTANCE]
+        near = [k for k in groups if k[0] == axis and abs(centres[k] - value) <= snap]
         if not near:
             continue
         key = min(near, key=lambda k: abs(centres[k] - value))
-        offset = 0.0 if round(value, _LINE_DECIMALS) == key[1] else value - centres[key]
-        groups[key].append(LineMember(slot, _edges_on(source, spans), offset, cut=False))
+        groups[key].append(LineMember(slot, _edges_on(source, spans), cut=False))
     return tuple(
         BridgeLine(key[0], centres[key], tuple(members))
         for key, members in groups.items()
@@ -250,7 +252,9 @@ def _bridge_lines(
     )
 
 
-def map_surgery(input_glyph: Glyph, output_glyph: Glyph) -> SurgeryMap | None:
+def map_surgery(
+    input_glyph: Glyph, output_glyph: Glyph, snap: float = _SNAP_DISTANCE
+) -> SurgeryMap | None:
     """Source of every output point in the (polygon) input, or None when one has none."""
     coords = glyph_coordinates(input_glyph)
     spans = _contour_spans(input_glyph)
@@ -267,7 +271,7 @@ def map_surgery(input_glyph: Glyph, output_glyph: Glyph) -> SurgeryMap | None:
                 return None
             row.append(candidate)
         sources.append(_resolve(row, spans))
-    return SurgeryMap(tuple(sources), _bridge_lines(output_glyph, sources, coords, spans))
+    return SurgeryMap(tuple(sources), _bridge_lines(output_glyph, sources, coords, spans, snap))
 
 
 def _lerp(a: _Pt, b: _Pt, t: float) -> list[float]:
@@ -361,7 +365,7 @@ def _realign(line: BridgeLine, placed: _Placed, master: Coords, spans: list[_Spa
     target = fmean(placed[ci][pi][axis] for ci, pi in cuts)
     for member in line.members:
         ci, pi = member.slot
-        point = _crossing(member, axis, target + member.offset, master, spans, placed[ci][pi])
+        point = _crossing(member, axis, target, master, spans, placed[ci][pi])
         if point is None:
             return None
         placed[ci][pi] = point

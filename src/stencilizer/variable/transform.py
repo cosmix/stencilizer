@@ -10,6 +10,7 @@ from stencilizer.core.analyzer import GlyphAnalyzer
 from stencilizer.core.surgery import GlyphTransformer
 from stencilizer.domain.glyph import Glyph
 from stencilizer.exceptions import VariationDataError
+from stencilizer.variable.align import align_to_lines, snap_distance
 from stencilizer.variable.flatten import flatten_compatible
 from stencilizer.variable.model import VariableGlyph
 from stencilizer.variable.overlaps import remove_overlaps_compatible
@@ -45,17 +46,21 @@ def _bridged(
     outcome = transformer.transform_with_outcome(merged.default, upm=upm)
     if outcome.bridge_count == 0:
         return VariableOutcome(vg, 0, outcome.unbridged_count)
-    smap = map_surgery(merged.default, outcome.glyph)
+    snap = snap_distance(geometry, upm)
+    smap = map_surgery(merged.default, outcome.glyph, snap)
     if smap is None:
+        return None
+    default = align_to_lines(smap, merged.default, outcome.glyph, snap=snap)
+    if default is None:
         return None
     replayed: list[Glyph] = []
     for master in merged.masters:
-        glyph = replay(smap, merged.default, outcome.glyph, master)
+        glyph = replay(smap, merged.default, default, master)
         if glyph is None:
             return None
         replayed.append(glyph)
     result = round_variable_glyph(
-        VariableGlyph(outcome.glyph, merged.supports, tuple(replayed), vg.axis_tags, vg.cff2)
+        VariableGlyph(default, merged.supports, tuple(replayed), vg.axis_tags, vg.cff2)
     )
     if not validate(result, upm, allowed_islands=outcome.unbridged_count, lines=smap.lines):
         return None
