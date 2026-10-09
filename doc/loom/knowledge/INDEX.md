@@ -40,4 +40,4 @@
 | [offscreen-screenshots](mistakes/offscreen-screenshots.md) | Offscreen 2x GUI grabs need a large screen config file | 10 |
 | [readme-layout](mistakes/readme-layout.md) | Place README screenshots beside the content they illustrate | 13 |
 | [review-and-completion-gates](mistakes/review-and-completion-gates.md) | Malformed reviews, fingerprint drift, IV process traps, loom tool quirks | 59 |
-| [variable-fonts](mistakes/variable-fonts.md) | Pool start-method side effects, CFF2 delta checks, analyzer blind spots | 24 |
+| [variable-fonts](mistakes/variable-fonts.md) | Pool start-method side effects, CFF2 delta checks, analyzer blind spots | 31 |
