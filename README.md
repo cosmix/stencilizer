@@ -27,6 +27,19 @@ Characters like **O**, **A**, **B**, **D**, **P**, **R**, **Q**, **4**, **6**, *
 
 ## Installation
 
+### Download
+
+Prebuilt, unsigned executables for Linux (x86-64) and macOS (Apple silicon) are attached to each [GitHub release](https://github.com/cosmix/stencilizer/releases). Each archive contains the `stencilizer` command-line tool and the desktop GUI. Verify the download against `SHA256SUMS` from the same release.
+
+- **Linux**: extract with `tar xzf`. The CLI needs glibc 2.35 or newer; the GUI bundles the X11/xcb libraries it uses but is built on Ubuntu 26.04 and needs glibc 2.43 or newer (for example Ubuntu 26.04 or Fedora 44). The GUI also needs the system OpenGL/EGL libraries and an X11 or XWayland session (`libegl1 libgl1` on Debian and Ubuntu).
+- **macOS**: requires macOS 13 or newer on Apple silicon. The builds are not signed or notarized. After unzipping, clear the quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine Stencilizer.app stencilizer
+```
+
+  macOS 15 and newer no longer offer right-click then Open for unsigned apps. Instead, try to open the app once, then choose Open Anyway in System Settings, Privacy & Security.
+
 ### From source
 
 ```bash
@@ -298,6 +311,23 @@ mypy src/stencilizer tests
 ruff check src tests
 ruff format src tests
 ```
+
+## Releasing
+
+1. Bump `__version__` in `src/stencilizer/__init__.py` (the single version source; `pyproject.toml` reads it and `uv.lock` does not record it), commit, and push `main`.
+2. Tag and push the tag:
+
+```bash
+git tag vX.Y.Z && git push origin vX.Y.Z
+```
+
+The release workflow refuses tags whose commit is not on `origin/main` or whose version does not match `__version__`, and checks that `uv.lock` is current. Otherwise it runs the checks, builds the Linux and macOS executables, and publishes a GitHub release with the archives and `SHA256SUMS`. Tags containing `-` or a PEP 440 pre-release suffix (`a`, `b`, `rc`, for example `v1.0.0rc1`) are marked as pre-releases.
+
+- Push `main` before the tag. A tag on a commit not yet on `origin/main` fails the verify job; push `main`, then re-run the workflow.
+- To re-release a version, delete the existing GitHub release and its tag first.
+- Push tags one at a time: GitHub does not trigger workflows when more than three tags are pushed at once.
+
+To build locally, run `uv sync --locked --no-dev --group build --extra gui` and then `packaging/build.sh`; `packaging/build.sh --smoke` tests the result (the GUI check needs a display; use `xvfb-run -a` on a headless Linux host, or set `QT_QPA_PLATFORM=offscreen`).
 
 ## Troubleshooting
 
