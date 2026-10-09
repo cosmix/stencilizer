@@ -577,7 +577,7 @@ No changes recorded.
 
 ### Knowledge Distillation (knowledge-distill)
 
-**Status:** executing  
+**Status:** completed  
 **Purpose:** Curate all stage memories into permanent knowledge; update user docs.
 NEVER Claude Code auto-memory.
 SINGLE-AGENT: do NOT spawn subagents; memories are compact summaries; keep code
