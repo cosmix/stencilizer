@@ -77,6 +77,27 @@ def unsupported_reason(font: Any) -> str | None:
     return None
 
 
+def _classify_variable(
+    reader: FontReader, processor: FontProcessor
+) -> tuple[GlyphClassification, VariableSurface]:
+    """Classify a variable font and gather its axes and glyph data."""
+    classification, glyphs = classify_variable_glyphs(processor, reader)
+    glyph_set = reader.font.getGlyphSet()
+    unsupported = {
+        name: fonttools_glyph_to_domain(name, glyph_set[name], reader.font, reader.unicode_by_name)
+        for name in classification.unsupported_islands
+    }
+    surface = VariableSurface(
+        read_axes(reader.font),
+        read_avar(reader.font),
+        glyphs,
+        unsupported,
+        reader.units_per_em,
+        VariableOutcomeCache(max_entries=OUTCOME_CACHE_ENTRIES),
+    )
+    return classification, surface
+
+
 @dataclass(frozen=True)
 class PreviewResult:
     """Outcome of stencilizing one glyph for preview."""
@@ -135,7 +156,7 @@ class FontSession:
                     raise FontLoadError(str(path), reason)
                 surface: VariableSurface | None = None
                 if "fvar" in reader.font:
-                    classification, surface = cls._classify_variable(reader, processor)
+                    classification, surface = _classify_variable(reader, processor)
                 else:
                     classification = processor.classify_glyphs(reader)
                 island_names = {glyph.name for glyph in classification.glyphs_to_process}
@@ -170,29 +191,6 @@ class FontSession:
             raise
         except Exception as error:
             raise FontLoadError(str(path), str(error)) from error
-
-    @staticmethod
-    def _classify_variable(
-        reader: FontReader, processor: FontProcessor
-    ) -> tuple[GlyphClassification, VariableSurface]:
-        """Classify a variable font and gather its axes and glyph data."""
-        classification, glyphs = classify_variable_glyphs(processor, reader)
-        glyph_set = reader.font.getGlyphSet()
-        unsupported = {
-            name: fonttools_glyph_to_domain(
-                name, glyph_set[name], reader.font, reader.unicode_by_name
-            )
-            for name in classification.unsupported_islands
-        }
-        surface = VariableSurface(
-            read_axes(reader.font),
-            read_avar(reader.font),
-            glyphs,
-            unsupported,
-            reader.units_per_em,
-            VariableOutcomeCache(max_entries=OUTCOME_CACHE_ENTRIES),
-        )
-        return classification, surface
 
     @property
     def axes(self) -> tuple[AxisInfo, ...]:

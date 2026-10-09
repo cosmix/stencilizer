@@ -79,7 +79,7 @@ Many variable fonts keep overlapping contours, so a counter is formed by overlap
 
 ## Source files at the size limit
 
-`variable/replay.py` is 397 of 400 lines, `gui/session.py` and `core/processor.py` are 389, and `FontSession` is about 295 of 300 class lines. `tests/regression/test_code_structure.py` fails the next addition; split before adding. It checks `src/` only, so test files can pass 400 lines unnoticed (largest now `tests/gui/test_session.py`, 390).
+`variable/replay.py` is 397 of 400 lines, `gui/session.py` 393 and `core/processor.py` 389; `FontSession` is 280 of 300 class lines (the variable-font classification is the module function `_classify_variable`). `tests/regression/test_code_structure.py` fails the next addition; split before adding. It checks `src/` only, so test files can pass 400 lines unnoticed (largest now `tests/gui/test_session.py`, 390).
 
 ## Variable engine test gaps
 
