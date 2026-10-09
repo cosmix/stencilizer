@@ -22,7 +22,7 @@ The CLI gains `--width-scaling`, `--scaling-strength` and `--min-bridge-width`. 
 ## Prerequisites
 
 1. **Committed (5633ea6):** the triangular-counter fix (Inter `4`). `core/merger_candidates.py` tries further bridge lines when the bounding-box centre probe fails, called from `core/merger.py`. It changed which glyphs bridge, so this plan's baselines are measured on top of it.
-2. **Open, blocking:** `tests/regression/test_code_structure.py::test_class_line_limit` fails at 847fbce. `gui/session.py` `FontSession` is 302 lines, over the 300-line class limit, after the font-info panel commit 1d5980b. The integration-verify full suite cannot pass until that work moves code out of `FontSession`. This plan does not touch `gui/session.py`. Fix it before `loom init`.
+2. **Resolved (4cbdea3):** `FontSession` went over the 300-line class limit after the font-info panel commit 1d5980b (302 lines), which failed `tests/regression/test_code_structure.py::test_class_line_limit`. Moving the variable classification to a module function brought it to 280. The baseline table below was measured before that fix, so its single full-suite failure is gone.
 3. **Commit the font-info and loader work first:** that work owns `gui/controls.py` and `gui/main_window.py`, which this plan's W2 also edits. Commit any further edits to them before `loom init`, or the width-scaling merge will conflict.
 
 ## Baseline (measured at 847fbce, detached worktree, 2026-10-09)
