@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QProgressBar,
+    QScrollArea,
     QSplitter,
     QStackedWidget,
     QVBoxLayout,
@@ -73,7 +74,7 @@ class MainWindow(QMainWindow):
         self.grid_stack.addWidget(self.loading_view)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self.controls)
+        splitter.addWidget(self._build_sidebar())
         splitter.addWidget(self.grid_stack)
         splitter.addWidget(self._build_preview_pane())
         splitter.setChildrenCollapsible(False)
@@ -90,6 +91,16 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.header)
         layout.addWidget(splitter, 1)
         self.setCentralWidget(central)
+
+    def _build_sidebar(self) -> QScrollArea:
+        """Wrap the controls in a scroll area so tall content keeps its minimum heights."""
+        scroll = QScrollArea()
+        scroll.setWidget(self.controls)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setMinimumWidth(self.controls.minimumWidth())
+        return scroll
 
     def _build_preview_pane(self) -> QWidget:
         """Create the comparison and bridge-direction controls pane."""
@@ -235,6 +246,7 @@ class MainWindow(QMainWindow):
         session = cast("FontSession", result)
         self.grid.set_glyphs(session.display_glyphs, session.ascender, session.descender)
         self.controls.axes_panel.set_axes(session.axes)
+        self.controls.set_variable(bool(session.axes))
         self.controls.font_info.set_info(session.info)
         self.setWindowTitle(f"{session.path.name} — Stencilizer")
         self.header.set_font_loaded(True)
