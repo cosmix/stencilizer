@@ -43,10 +43,10 @@ def test_duplicate_islands_are_counted_once_each() -> None:
 
 def test_unbridgeable_glyph_reports_zero_bridges() -> None:
     """Report bridges only for islands that the transformer changed."""
-    reader = FontReader(FIXTURES_DIR / "Roboto-Regular.ttf")
+    reader = FontReader(FIXTURES_DIR / "Lato-Black.ttf")
     reader.load()
     try:
-        expected_counts = {"four": 0, "AE": 0, "O": 1, "B": 2, "eight": 2}
+        expected_counts = {"uni0234": 0, "glyph00144": 0, "O": 1, "B": 2}
         for name, expected_count in expected_counts.items():
             glyph = _glyph(reader, name)
             result = process_glyph(

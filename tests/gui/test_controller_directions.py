@@ -74,18 +74,18 @@ def test_font_load_resets_directions(
 
 
 def test_survey_reports_unbridged_glyphs(
-    controller: GuiController, qtbot: QtBot, roboto_path: Path
+    controller: GuiController, qtbot: QtBot, lato_black_path: Path
 ) -> None:
     """Loading a font schedules a survey whose result reports glyphs with no bridge placed."""
     busy_values: list[bool] = []
     controller.busy_changed.connect(busy_values.append)
 
     with qtbot.waitSignal(controller.unbridged_changed, timeout=10_000) as blocker:
-        load_session(controller, qtbot, roboto_path)
+        load_session(controller, qtbot, lato_black_path)
 
     names = blocker.args[0]
-    assert "four" in names
-    assert "AEacute" in names
+    assert "uni0234" in names
+    assert "glyph00144" in names
     assert "O" not in names
     assert busy_values == [True, False]
 

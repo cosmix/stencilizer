@@ -13,7 +13,13 @@ from stencilizer.core import FontProcessor
 from stencilizer.domain import Glyph
 from stencilizer.gui.controller import GuiController
 from stencilizer.gui.session import FontSession
-from tests.font_helpers import COMMIT_MONO, ROBOTO, fvar_only_roboto, write_commit_mono_cff2
+from tests.font_helpers import (
+    COMMIT_MONO,
+    LATO_BLACK,
+    ROBOTO,
+    fvar_only_roboto,
+    write_commit_mono_cff2,
+)
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
@@ -42,6 +48,12 @@ def staging_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Pa
 def roboto_path() -> Path:
     """Roboto Regular (TrueType, UPM 2048)."""
     return ROBOTO
+
+
+@pytest.fixture
+def lato_black_path() -> Path:
+    """Lato Black (TrueType), whose glyphs include some that get no bridge."""
+    return LATO_BLACK
 
 
 @pytest.fixture

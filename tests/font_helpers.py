@@ -20,6 +20,7 @@ from stencilizer.io.converter import fonttools_glyph_to_domain
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 VARIABLE_DIR = FIXTURES_DIR / "variable"
 ROBOTO = FIXTURES_DIR / "Roboto-Regular.ttf"
+LATO_BLACK = FIXTURES_DIR / "Lato-Black.ttf"
 COMMIT_MONO = FIXTURES_DIR / "CommitMono-Cosmix-700-Regular.otf"
 UBUNTU = VARIABLE_DIR / "Ubuntu-VF-subset.ttf"
 INTER = VARIABLE_DIR / "Inter-VF-subset.ttf"

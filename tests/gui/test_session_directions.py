@@ -14,22 +14,40 @@ from stencilizer.io.converter import _recording_to_contours
 from tests.font_helpers import FIXTURES_DIR
 from tests.gui.conftest import build_settings
 
-UNBRIDGED_DEFAULT = frozenset(
+LATO_UNBRIDGED_DEFAULT = frozenset(
     {
-        "AE",
-        "AEacute",
-        "AEmacron",
-        "four",
-        "four.lnum",
-        "four.onum",
-        "four.smcp",
-        "four.tnum",
-        "uni04D4",
-        "uniA72C",
-        "uniA72D",
-        "uniA72E",
-        "uniA72F",
-        "uniA736",
+        "glyph00144",
+        "glyph00558",
+        "glyph01217",
+        "glyph01224",
+        "glyph01225",
+        "glyph01235",
+        "glyph01248",
+        "glyph01249",
+        "glyph01259",
+        "glyph01263",
+        "glyph01264",
+        "glyph01272",
+        "glyph01289",
+        "glyph01290",
+        "glyph02905",
+        "glyph02907",
+        "uni0234",
+        "uni0235",
+        "uni0236",
+        "uni026C",
+        "uni0286",
+        "uni029D",
+        "uni02B6",
+        "uni02E0",
+        "uni0363",
+        "uni1D43",
+        "uni1D44",
+        "uni1D9D",
+        "uni1DA8",
+        "uni1DB6",
+        "uni1DBD",
+        "uni2090",
     }
 )
 
@@ -117,17 +135,17 @@ def test_composite_preview_follows_base_direction(
 
 
 def test_unbridged_lists_glyphs_without_bridges(
-    processor: FontProcessor, roboto_path: Path
+    processor: FontProcessor, lato_black_path: Path
 ) -> None:
     """Glyphs where no bridge could be placed are reported, direction overrides included."""
-    session = FontSession.open(roboto_path, processor)
+    session = FontSession.open(lato_black_path, processor)
 
     default_unbridged = session.unbridged(BridgeConfig(), _geometry())
     with_direction = session.unbridged(
         BridgeConfig(), _geometry(), {"A": BridgeDirection.HORIZONTAL}
     )
 
-    assert default_unbridged == UNBRIDGED_DEFAULT
+    assert default_unbridged == LATO_UNBRIDGED_DEFAULT
     assert "A" not in with_direction
     assert "Aacute" not in with_direction
 
