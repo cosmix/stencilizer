@@ -2,19 +2,24 @@
 
 import os
 import tempfile
-from collections.abc import Iterator
-from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from stencilizer import __version__
-from stencilizer.cli.handlers import _handle_dry_run, _handle_list_islands
+from stencilizer.cli.handlers import (
+    _handle_dry_run,
+    _handle_list_islands,
+    finish_run,
+    resolve_width_scaling,
+    stencil_pinned,
+    validate_input,
+)
 from stencilizer.cli.output import (
     console,
     create_progress,
-    format_file_size,
     print_cancellation_notice,
     print_cancellation_summary,
     print_error,
@@ -23,10 +28,16 @@ from stencilizer.cli.output import (
     print_islands_found,
     print_processing_info,
     print_step,
-    print_success,
     variable_axes,
 )
-from stencilizer.config import BridgeConfig, LoggingConfig, ProcessingConfig, StencilizerSettings
+from stencilizer.cli.pinning import pinned_input, validate_instance
+from stencilizer.config import (
+    BridgeConfig,
+    BridgeWidthScaling,
+    LoggingConfig,
+    ProcessingConfig,
+    StencilizerSettings,
+)
 from stencilizer.core import FontProcessor
 from stencilizer.core.processor import GlyphClassification
 from stencilizer.exceptions import (
@@ -36,7 +47,6 @@ from stencilizer.exceptions import (
     StencilizerError,
 )
 from stencilizer.io import FontReader, FontWriter
-from stencilizer.io.instance import instantiate_static
 from stencilizer.utils import ProcessingStats
 
 app = typer.Typer(
@@ -64,10 +74,49 @@ BridgeWidthOption = Annotated[
         max=110.0,
     ),
 ]
+WidthScalingOption = Annotated[
+    BridgeWidthScaling,
+    typer.Option(
+        "--width-scaling",
+        help="Variable fonts: keep bridge gaps fixed or scale them with each master's stroke weight",
+    ),
+]
+ScalingStrengthOption = Annotated[
+    float,
+    typer.Option(
+        "--scaling-strength",
+        help="Proportional width scaling: 0 (fixed) to 100 (fully proportional)",
+        min=0.0,
+        max=100.0,
+    ),
+]
+MinBridgeWidthOption = Annotated[
+    float,
+    typer.Option(
+        "--min-bridge-width",
+        help="Proportional width scaling: smallest gap as percent of a reference stroke (10-110)",
+        min=10.0,
+        max=110.0,
+    ),
+]
 InstanceOption = Annotated[
     str | None,
     typer.Option(
         "--instance", help="Pin a variable font to a static instance, e.g. wght=700,wdth=90"
+    ),
+]
+OutputOption = Annotated[
+    Path | None,
+    typer.Option("--output", "-o", help="Output path (default: {name}-Stenciled.{ext})"),
+]
+WorkersOption = Annotated[
+    int | None,
+    typer.Option("--workers", "-j", help="Number of parallel workers (default: auto)", min=1),
+]
+DryRunOption = Annotated[
+    bool,
+    typer.Option(
+        "--dry-run", help="Analyze and show what would be done without modifying the font"
     ),
 ]
 VersionOption = Annotated[
@@ -87,25 +136,17 @@ def stencilize(
     input_font: Annotated[
         Path, typer.Argument(help="Path to input TTF/OTF font file", show_default=False)
     ],
-    output: Annotated[
-        Path | None,
-        typer.Option("--output", "-o", help="Output path (default: {name}-Stenciled.{ext})"),
-    ] = None,
+    output: OutputOption = None,
     instance: InstanceOption = None,
     bridge_width: BridgeWidthOption = 60.0,
-    workers: Annotated[
-        int | None,
-        typer.Option("--workers", "-j", help="Number of parallel workers (default: auto)", min=1),
-    ] = None,
+    width_scaling: WidthScalingOption = BridgeWidthScaling.FIXED,
+    scaling_strength: ScalingStrengthOption = 100.0,
+    min_bridge_width: MinBridgeWidthOption = 30.0,
+    workers: WorkersOption = None,
     list_islands: Annotated[
         bool, typer.Option("--list-islands", help="List all glyphs with islands and exit")
     ] = False,
-    dry_run: Annotated[
-        bool,
-        typer.Option(
-            "--dry-run", help="Analyze and show what would be done without modifying the font"
-        ),
-    ] = False,
+    dry_run: DryRunOption = False,
     log_file: Annotated[
         Path | None, typer.Option("--log-file", help="Write detailed logs to file")
     ] = None,
@@ -119,11 +160,17 @@ def stencilize(
     _version: VersionOption = None,
 ) -> None:
     """Convert a font to a stencil-ready version by bridging enclosed contours."""
+    bridge = BridgeConfig(
+        width_percent=bridge_width,
+        width_scaling=width_scaling,
+        scaling_strength=scaling_strength,
+        min_width_percent=min_bridge_width,
+    )
     _run_command(
         input_font,
         output,
         instance,
-        bridge_width,
+        bridge,
         workers,
         list_islands,
         dry_run,
@@ -138,7 +185,7 @@ def _run_command(
     input_font: Path,
     output: Path | None,
     instance: str | None,
-    bridge_width: float,
+    bridge: BridgeConfig,
     workers: int | None,
     list_islands: bool,
     dry_run: bool,
@@ -147,17 +194,21 @@ def _run_command(
     verbose: bool,
     quiet: bool,
 ) -> None:
-    _validate_input(input_font, verbose, quiet)
+    validate_input(input_font, verbose, quiet)
     if not quiet:
         print_header(__version__)
     settings = StencilizerSettings(
-        bridge=BridgeConfig(width_percent=bridge_width),
+        bridge=bridge,
         processing=ProcessingConfig(max_workers=workers),
         logging=LoggingConfig(log_file=log_file, log_level=log_level if not quiet else "WARNING"),
     )
     try:
-        with _instance_font(input_font, instance) as font_path:
-            output_path = output or FontWriter.get_stenciled_path(input_font)
+        settings = resolve_width_scaling(settings, input_font, instance, quiet)
+        output_path = output or FontWriter.get_stenciled_path(input_font)
+        if instance and not (list_islands or dry_run) and _is_proportional(settings):
+            _run_stencil_first(input_font, output_path, instance, settings, workers, quiet, verbose)
+            return
+        with pinned_input(input_font, instance) as font_path:
             if list_islands:
                 _handle_list_islands(font_path, input_font, quiet)
                 raise typer.Exit(code=0)
@@ -181,31 +232,8 @@ def _run_command(
         raise typer.Exit(code=1) from error
 
 
-def _validate_input(input_font: Path, verbose: bool, quiet: bool) -> None:
-    if verbose and quiet:
-        print_error("Cannot use --verbose and --quiet together")
-        raise typer.Exit(code=1)
-    if not input_font.exists():
-        print_error(
-            f"Input file not found: {input_font}",
-            details=f"The file '{input_font}' does not exist or is not accessible.",
-        )
-        raise typer.Exit(code=1)
-    if not input_font.is_file():
-        print_error(
-            f"Input path is not a file: {input_font}",
-            details="Please provide a path to a TTF or OTF font file.",
-        )
-        raise typer.Exit(code=1)
-
-
-@contextmanager
-def _instance_font(input_font: Path, instance: str | None) -> Iterator[Path]:
-    if instance is None:
-        yield input_font
-        return
-    with tempfile.TemporaryDirectory(prefix="stencilizer-instance-") as tmp:
-        yield instantiate_static(input_font, instance, Path(tmp))
+def _is_proportional(settings: StencilizerSettings) -> bool:
+    return settings.bridge.width_scaling is BridgeWidthScaling.PROPORTIONAL
 
 
 def _classify_font(
@@ -233,7 +261,7 @@ def _classify_font(
         raise FontLoadError(shown, str(error)) from error
 
 
-def _run_standard(
+def _stencil(
     font_path: Path,
     display_path: Path,
     output_path: Path,
@@ -241,7 +269,7 @@ def _run_standard(
     workers: int | None,
     quiet: bool,
     verbose: bool,
-) -> None:
+) -> ProcessingStats:
     processor = FontProcessor(settings, quiet=quiet)
     classification = _classify_font(font_path, processor, quiet, display_path)
     island_names = [glyph.name for glyph in classification.glyphs_to_process]
@@ -258,13 +286,45 @@ def _run_standard(
     stats = _process_font(processor, font_path, output_path, workers, quiet, classification)
     if stats.error_count:
         raise FontProcessingError(stats.errors)
-    if quiet and stats.unbridged_count:
-        noun = "island" if stats.unbridged_count == 1 else "islands"
-        console.print(
-            f"[yellow]Warning: {stats.unbridged_count} {noun} remained unbridged[/yellow]"
+    return stats
+
+
+def _run_standard(
+    font_path: Path,
+    display_path: Path,
+    output_path: Path,
+    settings: StencilizerSettings,
+    workers: int | None,
+    quiet: bool,
+    verbose: bool,
+) -> None:
+    stats = _stencil(font_path, display_path, output_path, settings, workers, quiet, verbose)
+    finish_run(output_path, stats, quiet)
+
+
+def _run_stencil_first(
+    input_font: Path,
+    output_path: Path,
+    instance: str,
+    settings: StencilizerSettings,
+    workers: int | None,
+    quiet: bool,
+    verbose: bool,
+) -> None:
+    """Stencil the variable font, pin it at ``instance``, then stencil the static result."""
+    validate_instance(input_font, instance)
+    with tempfile.TemporaryDirectory(prefix="stencilizer-instance-") as tmp:
+        stenciled = Path(tmp) / f"{input_font.stem}-variable{input_font.suffix}"
+        first = _stencil(input_font, input_font, stenciled, settings, workers, quiet, verbose)
+        second = stencil_pinned(
+            stenciled, input_font, instance, Path(tmp), output_path, settings, workers
         )
-    if not quiet:
-        _report_success(output_path, stats)
+    stats = replace(
+        first,
+        bridges_added=first.bridges_added + second.bridges_added,
+        unbridged_count=second.unbridged_count,
+    )
+    finish_run(output_path, stats, quiet)
 
 
 def _process_font(
@@ -309,21 +369,6 @@ def _process_font(
                 cancelled=stats.cancelled_count if stats else 0,
             )
         raise typer.Exit(code=130) from None
-
-
-def _report_success(output_path: Path, stats: ProcessingStats) -> None:
-    print_success(
-        output_path=str(output_path),
-        file_size=format_file_size(output_path),
-        total_time_s=stats.duration_seconds,
-        processed=stats.processed_count,
-        bridges=stats.bridges_added,
-        unbridged=stats.unbridged_count,
-        errors=stats.error_count,
-        avg_time_ms=stats.avg_glyph_time_ms,
-        min_time_ms=stats.min_glyph_time_ms,
-        max_time_ms=stats.max_glyph_time_ms,
-    )
 
 
 def cli() -> None:

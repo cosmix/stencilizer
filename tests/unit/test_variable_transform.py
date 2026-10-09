@@ -5,6 +5,7 @@ written unchanged with its default-master islands counted; it is never half-repl
 """
 
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -17,6 +18,7 @@ from stencilizer.variable.model import VariableGlyph, glyph_coordinates
 from stencilizer.variable.overlaps import remove_overlaps_compatible
 from stencilizer.variable.replay import SurgeryMap, replay
 from stencilizer.variable.solver import Coords
+from stencilizer.variable.validate import validate
 from tests.font_helpers import UBUNTU, island_count
 from tests.unit._variable_cases import read_variable as _read
 
@@ -81,15 +83,52 @@ def test_replay_failing_in_the_last_master_writes_no_replayed_master(
     def fail_last(
         smap: SurgeryMap, input_default: Glyph, output_default: Glyph, master: Glyph
     ) -> Glyph | None:
-        last = len(results) == len(vg.masters) - 1
+        last = len(results) % len(vg.masters) == len(vg.masters) - 1
         results.append(None if last else replay(smap, input_default, output_default, master))
         return results[-1]
 
     monkeypatch.setattr(transform, "replay", fail_last)
     outcome = transform.transform_variable_glyph(vg, BridgeConfig(), GeometryConfig(), upm)
-    assert len(results) == len(vg.masters)
-    assert all(glyph is not None for glyph in results[:-1])
+    assert len(results) == 2 * len(vg.masters)
+    assert all(
+        glyph is not None
+        for i, glyph in enumerate(results)
+        if i % len(vg.masters) != len(vg.masters) - 1
+    )
     _assert_unchanged(outcome, vg, before, _merged_islands(vg, upm))
+
+
+def test_replay_failing_once_retries_next_step(monkeypatch: pytest.MonkeyPatch) -> None:
+    vg, upm = _read(UBUNTU, "o")
+    results: list[Glyph | None] = []
+
+    def fail_first_last(
+        smap: SurgeryMap, input_default: Glyph, output_default: Glyph, master: Glyph
+    ) -> Glyph | None:
+        last = len(results) == len(vg.masters) - 1
+        results.append(None if last else replay(smap, input_default, output_default, master))
+        return results[-1]
+
+    monkeypatch.setattr(transform, "replay", fail_first_last)
+    outcome = transform.transform_variable_glyph(vg, BridgeConfig(), GeometryConfig(), upm)
+    assert outcome.bridge_count >= 1
+    assert outcome.glyph is not vg
+    assert len(results) == 2 * len(vg.masters)
+
+
+def test_validation_failure_retries_next_step(monkeypatch: pytest.MonkeyPatch) -> None:
+    vg, upm = _read(UBUNTU, "o")
+    calls: list[bool] = []
+
+    def fail_first(*args: Any, **kwargs: Any) -> bool:
+        calls.append(bool(calls) and validate(*args, **kwargs))
+        return calls[-1]
+
+    monkeypatch.setattr(transform, "validate", fail_first)
+    outcome = transform.transform_variable_glyph(vg, BridgeConfig(), GeometryConfig(), upm)
+    assert outcome.bridge_count >= 1
+    assert outcome.glyph is not vg
+    assert len(calls) == 2
 
 
 @pytest.mark.parametrize("name", ["map_surgery", "round_variable_glyph", "validate"])
