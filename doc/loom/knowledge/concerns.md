@@ -25,7 +25,7 @@ A caller-supplied `classification` passed to `FontProcessor.process` is used wit
 
 ## CommitMono .notdef renders as a solid box
 
-Under Auto, CommitMono `.notdef` (frame, hole, inverted "404" digits) stencils into overlapping full-width outer rectangles, so preview and saved glyph render as a solid black box (20 contours, output identical to the base before per-glyph directions; sha256 prefix c1f9a7e72f56d125). The defect is in the inverted-island path (`core/surgery_nested.py`) and is outside the direction work because Auto output is pinned. Repro: `process_glyph` on that glyph with `BridgeConfig()`. Which real glyphs reach `_process_inverted` is unknown; the synthetic filled encircled digit never does (patterns/bridge-algorithm.md).
+Under Auto, CommitMono `.notdef` (frame, hole, inverted "404" digits) stencils into overlapping full-width outer rectangles, so preview and saved glyph render as a solid black box (24 output contours). The defect is in the inverted-island path (`core/surgery_nested.py`) and is outside the direction work because Auto output is pinned. The transformer reports 5 bridges and 0 unbridged islands, so the glyph no longer shows in the unbridged warning, while `GlyphAnalyzer` counts 6 islands in the output. The bridged counter pieces touch their own piece and the analyzer files them under the stray rectangles; the render shows one enclosed sliver. Repro: `process_glyph` on that glyph with `BridgeConfig()`. Which real glyphs reach `_process_inverted` is unknown; the synthetic filled encircled digit never does (patterns/bridge-algorithm.md).
 
 ## Full test suite near the acceptance time cap
 

@@ -215,3 +215,14 @@ Switching the processor pool to spawn dropped worker logging; snapping CFF2 delt
 **Why**: The brief asked for before/after counts of unbridged glyphs without naming a safe way to get the before numbers.
 **Prevention**: Briefs that ask for before/after measurements name the baseline source: the tests/regression goldens, or a JSON dump the worker writes from the unchanged tree before editing. State that git stash, checkout and reset are forbidden, not only commit and add.
 **Fix**: None needed; the stash list was empty afterwards and no file was lost.
+
+## Bridge changes judged by counts alone hid a rendering regression
+
+**What happened**: The triangular-counter fallback (core/merger_candidates.py) was declared regression-free because no glyph's bridge count fell and no unbridged count rose. Roboto uniA66E had gone from 6 to 3 unbridged counters while its render got worse: off-centre bridge bands crossed sibling eye counters without splitting them, leaving black wedges (uniA69A and uniA69B too at 1000 UPM).
+**Why**: The transformer's counts and GlyphAnalyzer's island count are both unreliable once output contours touch or overlap. CommitMono .notdef went from 4 to 6 analyzer islands with a pixel-identical render, and uniA66E from 6 to 2 while the render got worse.
+**Prevention**: Check any change to bridge placement with a nonzero-winding raster count of enclosed paper per glyph, plus HEAD-versus-new rendered sheets of every glyph whose output changed. Counts alone do not show a regression.
+**Fix**: _band_line_clear rejects a candidate band whose lines cross any other contour, holes included.
+
+## GUI font-info mistakes
+
+Iterating a fontTools `TTFont` with `for tag in font` (ruff SIM118 suggests it) raises `KeyError('0')` and broke every GUI open; iterate `font.keys()` and test with real fixtures through `FontSession.open`. A parentless widget used as a temporary in a test is collected mid-call. See [gui](mistakes/gui.md).
