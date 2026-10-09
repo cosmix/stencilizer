@@ -58,7 +58,6 @@ def _geometry() -> GeometryConfig:
 
 def test_open_rejects_unsupported_fonts(
     processor: FontProcessor,
-    cff2_font_path: Path,
     variable_font_path: Path,
     roboto_path: Path,
     commit_mono_path: Path,
@@ -74,16 +73,22 @@ def test_open_rejects_unsupported_fonts(
 
     monkeypatch.setattr(processor, "classify_glyphs", record_classification)
 
-    with pytest.raises(FontLoadError, match="CFF2 outlines are not supported"):
-        FontSession.open(cff2_font_path, processor)
     with pytest.raises(FontLoadError, match="variable fonts \\(fvar table\\) are not supported"):
         FontSession.open(variable_font_path, processor)
 
     assert unsupported_reason(TTFont()) is not None
-    assert "glyf or CFF" in (unsupported_reason(TTFont()) or "")
+    assert "glyf, CFF or CFF2" in (unsupported_reason(TTFont()) or "")
     assert unsupported_reason(TTFont(roboto_path)) is None
     assert unsupported_reason(TTFont(commit_mono_path)) is None
     assert calls == []
+
+
+def test_open_accepts_cff2(processor: FontProcessor, cff2_font_path: Path) -> None:
+    """A static CFF2 font opens and lists its island glyphs."""
+    session = FontSession.open(cff2_font_path, processor)
+
+    assert "O" in {glyph.name for glyph in session.island_glyphs}
+    assert unsupported_reason(TTFont(cff2_font_path)) is None
 
 
 @pytest.mark.parametrize(

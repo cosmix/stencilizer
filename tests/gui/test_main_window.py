@@ -200,23 +200,14 @@ def test_invalid_font_shows_load_warning(
     assert messages[0].startswith("Failed to load font")
 
 
-def test_unsupported_font_is_rejected(
-    window: MainWindow,
-    qtbot: QtBot,
-    cff2_font_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """CFF2 input is rejected before it can become a saveable session."""
-    messages = _record_warnings(monkeypatch)
+def test_cff2_font_opens(window: MainWindow, qtbot: QtBot, cff2_font_path: Path) -> None:
+    """A static CFF2 font loads into a saveable session."""
+    with qtbot.assertNotEmitted(window.controller.error):
+        _load_font(window, qtbot, cff2_font_path)
 
-    window.load_font(cff2_font_path)
-    qtbot.waitUntil(lambda: bool(messages), timeout=LOAD_TIMEOUT)
-
-    assert messages[0].startswith("Failed to load font")
-    assert "CFF2 outlines are not supported" in messages[0]
-    assert window.controller.session is None
-    assert window.grid.count() == 0
-    assert not window.header.save_button.isEnabled()
+    assert window.controller.session is not None
+    assert window.grid.count() > 0
+    assert window.header.save_button.isEnabled()
 
 
 def test_open_font_dialog_loads_selection_and_ignores_cancel(

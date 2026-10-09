@@ -5,7 +5,9 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fontTools.cffLib.CFFToCFF2 import convertCFFToCFF2  # type: ignore[import-untyped]
 from fontTools.pens.recordingPen import RecordingPen  # type: ignore[import-untyped]
+from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 
 from stencilizer.domain.contour import Contour, Point, PointType
 from stencilizer.domain.glyph import Glyph, GlyphMetadata
@@ -23,31 +25,47 @@ def _glyph(name: str = "A") -> Glyph:
     return Glyph(GlyphMetadata(name, ord(name), 500, 0), [])
 
 
-@pytest.mark.parametrize("table", ["fvar", "CFF2"])
-def test_reader_rejects_unsupported_fonts_before_exposing_font(table: str) -> None:
+def test_reader_rejects_variable_fonts_before_exposing_font() -> None:
     font = MagicMock()
-    font.__contains__.side_effect = lambda name: name == table
+    font.__contains__.side_effect = lambda name: name == "fvar"
     reader = FontReader(Path("input.ttf"))
     with (
         patch.object(Path, "exists", return_value=True),
         patch("stencilizer.io.reader.TTFont", return_value=font),
-        pytest.raises(FontFormatError, match=table if table == "CFF2" else "variable"),
+        pytest.raises(FontFormatError, match="variable"),
     ):
         reader.load()
     assert reader._font is None
     font.close.assert_called_once()
 
 
-@pytest.mark.parametrize("table", ["fvar", "CFF2"])
-def test_writer_rejects_unsupported_fonts_without_output(table: str) -> None:
+def test_writer_rejects_variable_fonts_without_output() -> None:
     font = MagicMock()
-    font.__contains__.side_effect = lambda name: name == table
+    font.__contains__.side_effect = lambda name: name == "fvar"
     writer = FontWriter(font, Path("output.ttf"))
     with pytest.raises(FontFormatError):
         writer.update_glyph(_glyph())
     with pytest.raises(FontFormatError):
         writer.save()
     font.save.assert_not_called()
+
+
+def test_static_cff2_font_loads_and_saves_as_cff2(tmp_path: Path) -> None:
+    source = TTFont(Path(__file__).parent.parent / "fixtures" / "CommitMono-Cosmix-700-Regular.otf")
+    convertCFFToCFF2(source)
+    cff2_path = tmp_path / "converted.otf"
+    source.save(cff2_path)
+    output = tmp_path / "out.otf"
+
+    with FontReader(cff2_path) as reader:
+        assert reader.format == "OpenType"
+        glyph = reader.get_glyph("O")
+        assert glyph is not None
+        assert reader._font is not None
+        FontWriter(reader._font, output).save()
+
+    with TTFont(output) as saved:
+        assert "CFF2" in saved
 
 
 def test_all_off_curve_quadratic_loop_gets_implied_start() -> None:

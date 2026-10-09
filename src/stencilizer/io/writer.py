@@ -25,8 +25,6 @@ NAME_ID_TYPOGRAPHIC_FAMILY = 16
 def _check_supported_format(font: TTFont, path: Path) -> None:
     if "fvar" in font:
         raise FontFormatError(str(path), "Unsupported variable fonts")
-    if "CFF2" in font:
-        raise FontFormatError(str(path), "Unsupported CFF2 outlines")
 
 
 def update_font_names(font: TTFont, suffix: str = " Stenciled") -> None:

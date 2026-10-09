@@ -21,7 +21,7 @@ from stencilizer.domain import Glyph
 from stencilizer.gui.controller import GuiController
 from stencilizer.gui.session import FontSession
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 LOAD_TIMEOUT = 30_000
@@ -68,7 +68,7 @@ def commit_mono_path() -> Path:
 
 @pytest.fixture
 def cff2_font_path(tmp_path: Path, commit_mono_path: Path) -> Path:
-    """CommitMono converted to CFF2 outlines (unsupported by the core)."""
+    """CommitMono converted to static CFF2 outlines."""
     font = TTFont(commit_mono_path)
     convertCFFToCFF2(font)
     path = tmp_path / "converted.otf"
@@ -78,7 +78,7 @@ def cff2_font_path(tmp_path: Path, commit_mono_path: Path) -> Path:
 
 @pytest.fixture
 def variable_font_path(tmp_path: Path, roboto_path: Path) -> Path:
-    """Roboto with a one-axis fvar table: a variable font (unsupported by the core)."""
+    """Roboto with a one-axis fvar table: a variable font (rejected until variable fonts are supported)."""
     font = TTFont(roboto_path)
     axis = Axis()
     axis.axisTag = Tag("wght")
