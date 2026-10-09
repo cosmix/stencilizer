@@ -137,18 +137,22 @@ def test_main_applies_theme_before_showing_window(
     assert theme_calls[0][1] is None
 
 
-def test_header_shows_font_name_as_plain_text(qtbot: QtBot) -> None:
-    """Markup in a font file name is shown literally, never rendered."""
-    from stencilizer.gui.header import HeaderBar
+def test_font_info_shows_font_strings_as_plain_text(qtbot: QtBot) -> None:
+    """Markup in font-derived strings is shown literally, never rendered."""
+    from PySide6.QtWidgets import QLabel
 
-    header = HeaderBar()
-    qtbot.addWidget(header)
+    from stencilizer.gui.font_info import FontInfo, InfoSection
+    from stencilizer.gui.font_info_panel import FontInfoPanel
 
-    header.set_font_info("<b>x</b>.ttf", "TrueType")
+    panel = FontInfoPanel()
+    qtbot.addWidget(panel)
 
-    assert header.font_name_label.textFormat() == Qt.TextFormat.PlainText
-    assert header.font_details_label.textFormat() == Qt.TextFormat.PlainText
-    assert header.font_name_label.text() == "<b>x</b>.ttf"
+    panel.set_info(FontInfo("<b>x</b>", (InfoSection("Font", (("Family", "<i>y</i>"),)),)))
+
+    labels = panel.findChildren(QLabel)
+    assert labels
+    assert all(label.textFormat() == Qt.TextFormat.PlainText for label in labels)
+    assert {label.text() for label in labels} >= {"<b>x</b>", "<i>y</i>"}
 
 
 def test_action_buttons_stay_compact_in_top_bar(window: MainWindow, qtbot: QtBot) -> None:

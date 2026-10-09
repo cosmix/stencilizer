@@ -75,14 +75,14 @@ def test_empty_state_until_font_loads(window: MainWindow, qtbot: QtBot, roboto_p
     assert window.grid_stack.currentWidget() is window.grid
 
 
-def test_header_describes_loaded_font(window: MainWindow, qtbot: QtBot, roboto_path: Path) -> None:
-    """Loading Roboto populates the header's font name, details and save button."""
+def test_sidebar_describes_loaded_font(window: MainWindow, qtbot: QtBot, roboto_path: Path) -> None:
+    """Loading Roboto fills the sidebar info panel, names the window and enables save."""
     _load_font(window, qtbot, roboto_path)
 
-    assert window.header.font_name_label.text() == "Roboto-Regular.ttf"
-    details = window.header.font_details_label.text()
-    assert "UPM" in details
-    assert "465 composites" in details
+    values = [label.text() for label in window.controls.font_info.value_labels]
+    assert "Roboto-Regular.ttf" in values
+    assert "465" in values
+    assert window.windowTitle() == "Roboto-Regular.ttf — Stencilizer"
     assert window.header.save_button.isEnabled()
 
 

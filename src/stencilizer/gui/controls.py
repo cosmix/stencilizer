@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from stencilizer.config import BridgeConfig
 from stencilizer.gui.axis_controls import AxisPanel
+from stencilizer.gui.font_info_panel import FontInfoPanel
 
 _BRIDGE_WIDTH_TOOLTIP = "Bridge width as percent of a reference stroke of 10% of font UPM (30-110)"
 _WORKERS_TOOLTIP = "Worker processes used when saving; Auto lets the processor decide"
@@ -73,6 +74,7 @@ class ControlPanel(QWidget):
         )
 
         self.axes_panel = AxisPanel(self)
+        self.font_info = FontInfoPanel(self)
 
     def _build_layout(self) -> None:
         """Arrange the bridge and processing controls into styled sections."""
@@ -89,7 +91,9 @@ class ControlPanel(QWidget):
         self._axes_title.hide()
         layout.addWidget(self._axes_title)
         layout.addWidget(self.axes_panel)
-        layout.addStretch()
+        layout.addSpacing(6)
+        layout.addWidget(_section_title("FONT", self))
+        layout.addWidget(self.font_info, 1)
 
     def _bridges_card(self) -> QFrame:
         """Build the card containing bridge parameter controls."""

@@ -28,15 +28,6 @@ def test_header_defaults(header: HeaderBar) -> None:
     """A new header presents its open action but cannot yet save."""
     assert not header.save_button.isEnabled()
     assert header.open_button.isEnabled()
-    assert header.font_name_label.text() == "No font loaded"
-
-
-def test_set_font_info_updates_labels(header: HeaderBar) -> None:
-    """Font metadata is shown in the header's descriptive labels."""
-    header.set_font_info("Roboto-Regular.ttf", "TrueType · 2048 UPM")
-
-    assert header.font_name_label.text() == "Roboto-Regular.ttf"
-    assert header.font_details_label.text() == "TrueType · 2048 UPM"
 
 
 def test_busy_state_restores_save_availability(header: HeaderBar) -> None:

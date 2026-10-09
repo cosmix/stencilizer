@@ -72,13 +72,12 @@ _DISABLED_ROLES = (
 
 _CHROME_QSS = """
 #headerBar { background: $surface; border-bottom: 1px solid $border; }
-#fontName { font-size: 10pt; font-weight: 600; color: $text; }
-#fontDetails { font-size: 9pt; color: $muted_text; }
 #sidebar { background: $window; }
 #previewPane { background: $window; }
 QFrame[role="card"] { background: $surface; border: 1px solid $border; border-radius: 10px; }
 QLabel[role="sectionTitle"] { font-size: 8pt; font-weight: 700; color: $muted_text; }
 QLabel[role="value"] { font-weight: 600; color: $text; }
+QLabel[role="infoTitle"] { font-size: 10pt; font-weight: 700; color: $text; }
 QLabel[role="hint"] { font-size: 8pt; color: $muted_text; }
 QLabel[role="status"] { color: $muted_text; }
 QSplitter::handle { background: $border; }

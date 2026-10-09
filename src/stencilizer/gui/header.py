@@ -1,4 +1,4 @@
-"""Top bar with the wordmark, the loaded font's identity and the open and save actions."""
+"""Top bar with the wordmark and the open and save actions."""
 
 from importlib.resources import files
 
@@ -8,10 +8,8 @@ from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
-    QLabel,
     QPushButton,
     QSizePolicy,
-    QVBoxLayout,
     QWidget,
 )
 
@@ -59,7 +57,7 @@ class Wordmark(QWidget):
 
 
 class HeaderBar(QFrame):
-    """Present font information and expose the window's primary actions."""
+    """Show the wordmark and expose the window's primary actions."""
 
     open_requested = Signal()
     save_requested = Signal()
@@ -76,16 +74,8 @@ class HeaderBar(QFrame):
         self.save_button.clicked.connect(self._emit_save_requested)
 
     def _build_widgets(self) -> None:
-        """Create the wordmark, labels and action buttons displayed in the header."""
+        """Create the wordmark and action buttons displayed in the header."""
         self.logo = Wordmark(self)
-
-        self.font_name_label = QLabel("No font loaded", self)
-        self.font_name_label.setObjectName("fontName")
-        self.font_details_label = QLabel("Open a TrueType or OpenType font (.ttf, .otf)", self)
-        self.font_details_label.setObjectName("fontDetails")
-        for label in (self.font_name_label, self.font_details_label):
-            label.setTextFormat(Qt.TextFormat.PlainText)
-            label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
 
         self.open_button = QPushButton("Open Font…", self)
         self.open_button.setProperty("role", "secondary")
@@ -99,17 +89,13 @@ class HeaderBar(QFrame):
             button.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def _build_layout(self) -> None:
-        """Arrange the wordmark, font details, and actions in one row."""
+        """Arrange the wordmark and actions in one row."""
         layout = QHBoxLayout(self)
         layout.setContentsMargins(20, 12, 20, 12)
         layout.setSpacing(16)
         layout.addWidget(self.logo)
         layout.addSpacing(12)
-        info = QVBoxLayout()
-        info.setSpacing(2)
-        info.addWidget(self.font_name_label)
-        info.addWidget(self.font_details_label)
-        layout.addLayout(info, 1)
+        layout.addStretch(1)
         layout.addWidget(self.open_button)
         layout.addWidget(self.save_button)
 
@@ -120,12 +106,6 @@ class HeaderBar(QFrame):
     def _emit_save_requested(self, _checked: bool = False) -> None:
         """Emit the request to stencilize and save the loaded font."""
         self.save_requested.emit()
-
-    def set_font_info(self, name: str, details: str) -> None:
-        """Display the loaded font's name and descriptive details."""
-        self.font_name_label.setText(name)
-        self.font_name_label.setToolTip(name)
-        self.font_details_label.setText(details)
 
     def set_font_loaded(self, loaded: bool) -> None:
         """Update save availability for the current font state."""

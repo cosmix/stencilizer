@@ -27,6 +27,7 @@ from stencilizer.gui.composites import (
     find_bridged_composites,
     load_component_outlines,
 )
+from stencilizer.gui.font_info import FontInfo, build_font_info
 from stencilizer.gui.variable_session import (
     OUTCOME_CACHE_ENTRIES,
     AxisInfo,
@@ -104,6 +105,7 @@ class FontSession:
     composites: tuple[CompositeGlyph, ...]
     component_outlines: dict[str, Glyph]
     display_names: tuple[str, ...]
+    info: FontInfo
     variable: VariableSurface | None = None
     _glyph_index: dict[str, Glyph] = field(init=False, repr=False)
     _composite_index: dict[str, CompositeGlyph] = field(init=False, repr=False)
@@ -145,6 +147,9 @@ class FontSession:
                 display_names = tuple(
                     name for name in reader.font.getGlyphOrder() if name in displayed
                 )
+                info = build_font_info(
+                    reader.font, path, classification, len(composites), len(display_names)
+                )
                 return cls(
                     path=path,
                     font_format=reader.format,
@@ -158,6 +163,7 @@ class FontSession:
                     composites=composites,
                     component_outlines=component_outlines,
                     display_names=display_names,
+                    info=info,
                     variable=surface,
                 )
         except FontLoadError:

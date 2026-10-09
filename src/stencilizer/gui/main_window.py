@@ -202,11 +202,8 @@ class MainWindow(QMainWindow):
         session = cast("FontSession", result)
         self.grid.set_glyphs(session.display_glyphs, session.ascender, session.descender)
         self.controls.axes_panel.set_axes(session.axes)
-        self.header.set_font_info(
-            session.path.name,
-            f"{session.font_format} · {session.units_per_em} UPM · {session.glyph_count} glyphs · "
-            f"{len(session.island_glyphs)} with islands · {len(session.composites)} composites",
-        )
+        self.controls.font_info.set_info(session.info)
+        self.setWindowTitle(f"{session.path.name} — Stencilizer")
         self.header.set_font_loaded(True)
         self.grid_stack.setCurrentWidget(self.grid)
         self.comparison.clear()

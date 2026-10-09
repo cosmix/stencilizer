@@ -41,8 +41,6 @@ ROLE_FIELDS = (
 
 HOOK_SELECTORS = (
     "#headerBar",
-    "#fontName",
-    "#fontDetails",
     'QPushButton[role="secondary"]',
     'QPushButton[role="primary"]',
     "#sidebar",
