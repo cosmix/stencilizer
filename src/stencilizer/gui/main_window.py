@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -25,6 +25,7 @@ from stencilizer.gui.direction_picker import DirectionPicker
 from stencilizer.gui.glyph_grid import GlyphGrid
 from stencilizer.gui.glyph_view import ComparisonView
 from stencilizer.gui.header import HeaderBar
+from stencilizer.gui.loader import LOADER_DELAY_MS, LoadingView
 from stencilizer.io.writer import FontWriter
 
 if TYPE_CHECKING:
@@ -41,6 +42,12 @@ class MainWindow(QMainWindow):
         self.controller = controller
         self._output_path: Path | None = None
         self._current_glyph: str | None = None
+        self._opening: str | None = None
+        self._page_before_loader: QWidget | None = None
+        self._loader_timer = QTimer(self)
+        self._loader_timer.setSingleShot(True)
+        self._loader_timer.setInterval(LOADER_DELAY_MS)
+        self._loader_timer.timeout.connect(self._show_loader)
         self.setWindowTitle("Stencilizer")
         self.resize(1280, 800)
         self.setMinimumSize(960, 600)
@@ -62,6 +69,8 @@ class MainWindow(QMainWindow):
         self.grid_stack = QStackedWidget()
         self.grid_stack.addWidget(self.empty_state)
         self.grid_stack.addWidget(self.grid)
+        self.loading_view = LoadingView()
+        self.grid_stack.addWidget(self.loading_view)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self.controls)
@@ -126,6 +135,7 @@ class MainWindow(QMainWindow):
         self.controller.preview_ready.connect(self._on_preview_ready)
         self.controller.save_progress.connect(self.set_progress)
         self.controller.busy_changed.connect(self.header.set_busy)
+        self.controller.busy_changed.connect(self._on_busy_changed)
         self.controller.save_finished.connect(self._on_save_finished)
         self.controller.error.connect(self._on_error)
 
@@ -137,8 +147,31 @@ class MainWindow(QMainWindow):
         self.controller.unbridged_changed.connect(self._on_unbridged_changed)
 
     def load_font(self, path: Path) -> None:
-        """Ask the controller to load a font from ``path``."""
+        """Ask the controller to load a font from ``path``; show the loader if it runs long."""
         self.controller.open_font(path)
+        if self.controller.is_busy and self._opening is None:
+            self._opening = path.name
+            self._loader_timer.start()
+
+    def _show_loader(self) -> None:
+        """Swap the glyph area for the loading view while a slow open is still running."""
+        if self._opening is None:
+            return
+        self._page_before_loader = self.grid_stack.currentWidget()
+        self.loading_view.start(self._opening)
+        self.grid_stack.setCurrentWidget(self.loading_view)
+        self.statusBar().showMessage(f"Opening {self._opening}…")
+
+    def _on_busy_changed(self, busy: bool) -> None:
+        """End a pending open: cancel the loader delay and restore the previous page."""
+        if busy or self._opening is None:
+            return
+        self._opening = None
+        self._loader_timer.stop()
+        if self.grid_stack.currentWidget() is self.loading_view:
+            self.loading_view.stop()
+            self.grid_stack.setCurrentWidget(self._page_before_loader or self.empty_state)
+            self.statusBar().clearMessage()
 
     def save_font(self, path: Path) -> None:
         """Ask the controller to save; remember ``path`` only when not already busy."""
