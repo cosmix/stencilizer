@@ -3,64 +3,37 @@
 from pathlib import Path
 
 import pytest
-from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 
 from stencilizer.config import BridgeConfig, GeometryConfig
 from stencilizer.config.settings import BridgeDirection
 from stencilizer.core.analyzer import GlyphAnalyzer
 from stencilizer.core.geometry import signed_area
 from stencilizer.core.surgery import GlyphTransformer, TransformOutcome
-from stencilizer.domain.contour import Contour, Point
-from stencilizer.domain.glyph import Glyph, GlyphMetadata
+from stencilizer.domain.glyph import Glyph
 from stencilizer.exceptions import VariationDataError
 from stencilizer.variable import transform
 from stencilizer.variable.flatten import flatten_compatible
 from stencilizer.variable.model import Support, VariableGlyph, glyph_coordinates, with_coordinates
-from stencilizer.variable.reader import read_variable_glyph
-from stencilizer.variable.replay import EdgePoint, map_surgery, replay
+from stencilizer.variable.replay import EdgePoint, Vertex, map_surgery, replay
 from stencilizer.variable.validate import validate, validation_locations
-
-FIXTURES = Path(__file__).parent.parent / "fixtures" / "variable"
-UBUNTU = FIXTURES / "Ubuntu-VF-subset.ttf"
-CANTARELL = FIXTURES / "Cantarell-VF-subset.otf"
-UPM = 1000
-WGHT = Support((("wght", 0.0, 1.0, 1.0),))
-
-# A stem with an extra vertex at y=210, and its cut by a horizontal bridge from y=100
-# to y=200: every cut lies on one of the two vertical edges.
-STEM = [(0.0, 0.0), (0.0, 300.0), (100.0, 300.0), (100.0, 210.0), (100.0, 0.0)]
-BELOW = [(0.0, 0.0), (0.0, 100.0), (100.0, 100.0), (100.0, 0.0)]
-ABOVE = [(0.0, 200.0), (0.0, 300.0), (100.0, 300.0), (100.0, 210.0), (100.0, 200.0)]
+from tests.font_helpers import CANTARELL, UBUNTU, points
+from tests.font_helpers import island_count as _islands
+from tests.unit._variable_cases import ABOVE, BELOW, STEM, UPM, WGHT, read_variable
+from tests.unit._variable_cases import glyph_from_outlines as _glyph
 
 OUTER = [(0.0, 0.0), (0.0, 700.0), (1000.0, 700.0), (1000.0, 0.0)]
 LEFT_HOLE = [(100.0, 200.0), (300.0, 200.0), (300.0, 500.0), (100.0, 500.0)]
 RIGHT_HOLE = [(700.0, 200.0), (900.0, 200.0), (900.0, 500.0), (700.0, 500.0)]
 
 
-def _glyph(*contours: list[tuple[float, float]]) -> Glyph:
-    return Glyph(
-        metadata=GlyphMetadata("test", None, 1000, 0),
-        contours=[Contour([Point(x, y) for x, y in contour]) for contour in contours],
-    )
+def _read(path: Path, char: str) -> tuple[VariableGlyph, int]:
+    vg, upm = read_variable(path, char)
+    assert vg is not None
+    return vg, upm
 
 
 def _scaled(glyph: Glyph, factor: float) -> Glyph:
     return with_coordinates(glyph, [(x * factor, y * factor) for x, y in glyph_coordinates(glyph)])
-
-
-def _read(path: Path, char: str) -> tuple[VariableGlyph, int]:
-    font = TTFont(path)
-    vg = read_variable_glyph(font, str(font.getBestCmap()[ord(char)]))
-    assert vg is not None
-    return vg, int(font["head"].unitsPerEm)
-
-
-def _islands(glyph: Glyph, upm: int) -> int:
-    return len(GlyphAnalyzer().analyze(glyph, upm).get_islands())
-
-
-def _points(glyph: Glyph) -> list[Point]:
-    return [point for contour in glyph.contours for point in contour.points]
 
 
 def _lines(source: Glyph, output: Glyph) -> list[tuple[int, float, list[tuple[int, int]]]]:
@@ -84,7 +57,7 @@ def test_replay_at_default_returns_surgery_output() -> None:
     assert replayed is not None
     shape = [len(contour.points) for contour in outcome.glyph.contours]
     assert [len(contour.points) for contour in replayed.contours] == shape
-    for got, expected in zip(_points(replayed), _points(outcome.glyph), strict=True):
+    for got, expected in zip(points(replayed), points(outcome.glyph), strict=True):
         assert got.point_type == expected.point_type
         assert got.x == pytest.approx(expected.x, abs=1e-9)
         assert got.y == pytest.approx(expected.y, abs=1e-9)
@@ -127,6 +100,35 @@ def test_projection_snaps_wrong_side_vertex() -> None:
     assert above[4].y == line
     assert above[3].y == line
     assert above[2].y == 300.0
+
+
+def test_tied_vertex_that_splits_in_a_master_gives_no_replay() -> None:
+    # Points 2 and 3 coincide in the default, so both output corners map to a tied vertex.
+    source = _glyph([(0.0, 0.0), (0.0, 100.0), (100.0, 100.0), (100.0, 100.0), (100.0, 0.0)])
+    smap = map_surgery(source, source)
+    assert smap is not None
+    assert smap.sources[0][2] == Vertex(2, (3,))
+    assert replay(smap, source, source, _scaled(source, 1.1)) is not None
+    split = _glyph([(0.0, 0.0), (0.0, 100.0), (100.0, 100.0), (110.0, 100.0), (100.0, 0.0)])
+    assert replay(smap, source, source, split) is None
+
+
+def test_bridge_line_missing_a_narrowed_counter_gives_no_replay() -> None:
+    hole = [(400.0, 200.0), (600.0, 200.0), (600.0, 500.0), (400.0, 500.0)]
+    source = _glyph(OUTER, hole)
+    bridge = BridgeConfig(direction=BridgeDirection.VERTICAL)
+    outcome = GlyphTransformer(GlyphAnalyzer(), bridge_config=bridge).transform_with_outcome(
+        source, upm=UPM
+    )
+    assert outcome.bridge_count == 1
+    smap = map_surgery(source, outcome.glyph)
+    assert smap is not None
+    assert len(smap.lines) == 2
+    assert replay(smap, source, outcome.glyph, _scaled(source, 1.1)) is not None
+    # The counter narrows to x 490..510; its cut points keep their default edge parameter,
+    # so each line's master coordinate falls outside 490..510 and crosses no counter edge.
+    narrow = _glyph(OUTER, [(490.0, 200.0), (510.0, 200.0), (510.0, 500.0), (490.0, 500.0)])
+    assert replay(smap, source, outcome.glyph, narrow) is None
 
 
 def test_validation_locations_stay_inside_the_supported_range() -> None:

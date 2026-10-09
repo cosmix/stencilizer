@@ -144,11 +144,12 @@ class TestGlyphTransformation:
 class TestFullPipeline:
     """Test the complete stencilization pipeline."""
 
-    def test_process_font_creates_valid_output(self, roboto_reader: FontReader) -> None:
+    def test_process_font_creates_valid_output(
+        self, roboto_reader: FontReader, settings: StencilizerSettings
+    ) -> None:
         """Test that processing creates a valid, loadable font."""
         roboto_reader.close()  # Close so processor can open it
 
-        settings = StencilizerSettings()
         processor = FontProcessor(settings)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -173,12 +174,11 @@ class TestFullPipeline:
             assert "glyf" in output_font, "Output should be a valid TrueType font"
             output_font.close()
 
-    def test_processed_glyphs_have_merged_contours(self) -> None:
+    def test_processed_glyphs_have_merged_contours(self, settings: StencilizerSettings) -> None:
         """Test that glyphs with islands have contours merged with bridge gaps."""
         if not ROBOTO_PATH.exists():
             pytest.skip("Roboto font fixture not available")
 
-        settings = StencilizerSettings()
         processor = FontProcessor(settings)
         analyzer = GlyphAnalyzer()
 
@@ -294,7 +294,16 @@ class TestCLI:
             output_path = Path(tmpdir) / "output.ttf"
 
             result = subprocess.run(
-                ["uv", "run", "stencilizer", "-o", str(output_path), str(ROBOTO_PATH)],
+                [
+                    "uv",
+                    "run",
+                    "stencilizer",
+                    "-o",
+                    str(output_path),
+                    "--log-file",
+                    str(Path(tmpdir) / "run.log"),
+                    str(ROBOTO_PATH),
+                ],
                 capture_output=True,
                 text=True,
             )

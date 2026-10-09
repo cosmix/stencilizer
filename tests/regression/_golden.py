@@ -9,7 +9,7 @@ from typing import Any
 from fontTools.pens.recordingPen import RecordingPen
 from fontTools.ttLib import TTFont
 
-from stencilizer.config.settings import BridgeConfig, StencilizerSettings
+from stencilizer.config.settings import BridgeConfig, LoggingConfig, StencilizerSettings
 from stencilizer.core.analyzer import GlyphAnalyzer
 from stencilizer.core.processor import FontProcessor, process_glyph
 from stencilizer.domain import Glyph
@@ -192,7 +192,10 @@ def generate() -> None:
 
     with tempfile.TemporaryDirectory() as directory:
         output_path = Path(directory) / "out.otf"
-        FontProcessor(StencilizerSettings()).process(FIXTURES["commitmono"], output_path)
+        log_config = LoggingConfig(log_file=Path(directory) / "run.log")
+        FontProcessor(StencilizerSettings(logging=log_config)).process(
+            FIXTURES["commitmono"], output_path
+        )
         _write_golden(GOLDEN_DIR / "commitmono_pipeline.json.gz", _record_font(output_path))
 
 
