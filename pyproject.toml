@@ -1,6 +1,6 @@
 [project]
 name = "stencilizer"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Convert fonts to stencil-ready versions by automatically detecting enclosed contours and adding bridges"
 readme = "README.md"
 authors = [
@@ -28,7 +28,13 @@ gui = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+path = "src/stencilizer/__init__.py"
+
 [dependency-groups]
+build = [
+    "pyinstaller>=6.22.3",
+]
 dev = [
     "hypothesis>=6.168.1",
     "mypy>=2.3.1",
