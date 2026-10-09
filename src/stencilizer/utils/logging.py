@@ -59,8 +59,12 @@ WorkerLogArgs = tuple[str, int, int]
 def _attach_handlers(
     log_file: Path, file_level: int, console_level: int, *, delay: bool = False
 ) -> logging.Logger:
-    """Replace the handlers on the ``stencilizer`` logger with a file and a console handler."""
-    file_handler = logging.FileHandler(log_file, encoding="utf-8", delay=delay)
+    """Replace the handlers on the ``stencilizer`` logger with a file and a console handler.
+
+    The file opens in append mode, so a second pass logging to the same path keeps the first
+    pass's records.
+    """
+    file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8", delay=delay)
     file_handler.setLevel(file_level)
     file_handler.setFormatter(
         logging.Formatter("%(asctime)s | %(levelname)-8s | %(name)s | %(message)s")
@@ -116,6 +120,11 @@ def worker_pool_options() -> dict[str, Any]:
     return {"initializer": init_worker_logging, "initargs": initargs}
 
 
+def default_log_path() -> Path:
+    """Name a fresh timestamped log file in the working directory."""
+    return Path(f"stencilizer_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+
+
 def configure_logging(
     log_file: Path | None = None,
     console_level: str = "INFO",
@@ -124,8 +133,7 @@ def configure_logging(
 ) -> structlog.stdlib.BoundLogger:
     """Configure the stencilizer logger with file and console handlers."""
     if log_file is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = Path(f"stencilizer_{timestamp}.log")
+        log_file = default_log_path()
 
     owned_logger = _attach_handlers(
         log_file,

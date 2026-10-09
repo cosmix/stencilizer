@@ -19,6 +19,7 @@ from stencilizer.variable.bridge_width import (
     disjoint_pairs,
     fallback_steps,
     ink,
+    pair_targets,
     scaled_gap,
     stroke_ratio,
     width_rule,
@@ -29,7 +30,14 @@ from stencilizer.variable.overlaps import remove_overlaps_compatible
 from stencilizer.variable.processing import variable_island_counts
 from stencilizer.variable.reader import read_variable_glyph
 from stencilizer.variable.realign import contour_spans
-from stencilizer.variable.replay import BridgeLine, SurgeryMap, map_surgery, replay, slot_values
+from stencilizer.variable.replay import (
+    BridgeLine,
+    LineMember,
+    SurgeryMap,
+    map_surgery,
+    replay,
+    slot_values,
+)
 from stencilizer.variable.transform import transform_variable_glyph
 from tests.font_helpers import CANTARELL, INTER, UBUNTU
 from tests.unit._variable_cases import glyph_from_outlines, read_variable
@@ -37,6 +45,7 @@ from tests.unit._variable_cases import glyph_from_outlines, read_variable
 FIXED = BridgeWidthScaling.FIXED
 PROPORTIONAL = BridgeWidthScaling.PROPORTIONAL
 OUTER = [(0.0, 0.0), (0.0, 1000.0), (1000.0, 1000.0), (1000.0, 0.0)]
+_THREE_CONTOURS = glyph_from_outlines(OUTER, OUTER, OUTER)
 INTER_GAP = 122.88  # 60% of a 204.8-unit reference stroke at 2048 UPM
 
 
@@ -105,6 +114,23 @@ def _gap(glyph: Glyph, low: BridgeLine, high: BridgeLine) -> float:
     return value(high) - value(low)
 
 
+def _horizontal_lines(
+    *rows: tuple[int, float, float, float],
+) -> tuple[list[BridgeLine], Glyph]:
+    """Horizontal bridge lines from (input contour, y, x low, x high) rows.
+
+    Each line has two cut points, in its own contour of the returned output glyph. The input
+    glyph the lines refer to is ``_THREE_CONTOURS``: contour ``n`` starts at point ``4 * n``.
+    """
+    lines: list[BridgeLine] = []
+    for index, (contour, y, _, _) in enumerate(rows):
+        edge = 4 * contour
+        members = tuple(LineMember((index, k), (edge, edge), cut=True) for k in range(2))
+        lines.append(BridgeLine(1, y, members))
+    output = glyph_from_outlines(*([(low, y), (high, y)] for _, y, low, high in rows))
+    return lines, output
+
+
 @pytest.mark.parametrize("ratio", [0.0, 0.25, 1.5])
 def test_fixed_gap_is_the_base(ratio: float) -> None:
     assert scaled_gap(60.0, ratio, BridgeConfig(), 1000) == 60.0
@@ -164,6 +190,47 @@ def test_ink_on_the_square_ring(
     ring = glyph_from_outlines(OUTER, _counter(*counter))
     assert ink(ring, 0, 500.0, extent) == pytest.approx(expected)
     assert ink(ring, 1, 500.0, extent) == pytest.approx(expected)
+
+
+def test_ink_with_the_centre_on_a_counter_edge() -> None:
+    # The counter's own edge lies on the centre line; half-open straddling skips it, so the
+    # line crosses the ring at 0, 200, 800 and 1000 only.
+    ring = glyph_from_outlines(OUTER, _counter(200.0, 800.0))
+    assert ink(ring, 0, 200.0, (0.0, 1000.0)) == pytest.approx(400.0)
+    assert ink(ring, 1, 200.0, (0.0, 1000.0)) == pytest.approx(400.0)
+
+
+def test_ink_through_vertices_counts_each_crossing_once() -> None:
+    diamond = glyph_from_outlines([(500.0, 0.0), (1000.0, 500.0), (500.0, 1000.0), (0.0, 500.0)])
+    assert ink(diamond, 1, 500.0, (0.0, 1000.0)) == pytest.approx(1000.0)
+    assert ink(diamond, 0, 500.0, (0.0, 1000.0)) == pytest.approx(1000.0)
+    assert ink(diamond, 1, 500.0, (250.0, 750.0)) == pytest.approx(500.0)
+
+
+def test_pairing_skips_a_nearer_line_on_other_contours() -> None:
+    lines, output = _horizontal_lines(
+        (0, 100.0, 0.0, 100.0), (1, 200.0, 0.0, 100.0), (0, 300.0, 0.0, 100.0)
+    )
+    assert disjoint_pairs(lines, _THREE_CONTOURS, output) == [(0, 2)]
+
+
+def test_pairing_skips_a_nearer_line_without_cross_overlap() -> None:
+    lines, output = _horizontal_lines(
+        (0, 100.0, 0.0, 100.0), (0, 200.0, 500.0, 600.0), (0, 300.0, 0.0, 100.0)
+    )
+    assert disjoint_pairs(lines, _THREE_CONTOURS, output) == [(0, 2)]
+
+
+def test_leftover_line_keeps_its_mean_target() -> None:
+    lines, output = _horizontal_lines(
+        (0, 100.0, 0.0, 100.0), (0, 160.0, 0.0, 100.0), (0, 400.0, 0.0, 100.0)
+    )
+    rule = width_rule(SurgeryMap((), tuple(lines)), _THREE_CONTOURS, output, BridgeConfig(), 1000)
+    assert [(pair.lower, pair.upper) for pair in rule.pairs] == [(0, 1)]
+    placed = [[[point.x, point.y] for point in contour.points] for contour in output.contours]
+    means = [110.0, 150.0, 407.0]
+    # The pair goes to its centre -/+ half the default gap; the odd line keeps its mean.
+    assert pair_targets(rule, lines, placed, output, means) == [100.0, 160.0, 407.0]
 
 
 def test_fallback_steps_follow_the_configured_mode() -> None:

@@ -1,7 +1,7 @@
 """CLI application entry point for stencilizer."""
 
 import os
-import tempfile
+import time
 from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
@@ -12,16 +12,21 @@ from stencilizer import __version__
 from stencilizer.cli.handlers import (
     _handle_dry_run,
     _handle_list_islands,
+    exit_cancelled,
     finish_run,
     resolve_width_scaling,
     stencil_pinned,
     validate_input,
 )
+from stencilizer.cli.options import (
+    BridgeWidthOption,
+    MinBridgeWidthOption,
+    ScalingStrengthOption,
+    WidthScalingOption,
+)
 from stencilizer.cli.output import (
     console,
     create_progress,
-    print_cancellation_notice,
-    print_cancellation_summary,
     print_error,
     print_font_info,
     print_header,
@@ -30,7 +35,7 @@ from stencilizer.cli.output import (
     print_step,
     variable_axes,
 )
-from stencilizer.cli.pinning import pinned_input, validate_instance
+from stencilizer.cli.pinning import instance_workdir, pinned_input, validate_instance
 from stencilizer.config import (
     BridgeConfig,
     BridgeWidthScaling,
@@ -42,12 +47,12 @@ from stencilizer.core import FontProcessor
 from stencilizer.core.processor import GlyphClassification
 from stencilizer.exceptions import (
     FontLoadError,
-    FontProcessingError,
     FontSaveError,
     StencilizerError,
 )
 from stencilizer.io import FontReader, FontWriter
 from stencilizer.utils import ProcessingStats
+from stencilizer.utils.logging import default_log_path
 
 app = typer.Typer(
     name="stencilizer",
@@ -64,41 +69,6 @@ def version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
-BridgeWidthOption = Annotated[
-    float,
-    typer.Option(
-        "--bridge-width",
-        "-w",
-        help="Bridge width as percent of a reference stroke of 10% of font UPM (30-110)",
-        min=30.0,
-        max=110.0,
-    ),
-]
-WidthScalingOption = Annotated[
-    BridgeWidthScaling,
-    typer.Option(
-        "--width-scaling",
-        help="Variable fonts: keep bridge gaps fixed or scale them with each master's stroke weight",
-    ),
-]
-ScalingStrengthOption = Annotated[
-    float,
-    typer.Option(
-        "--scaling-strength",
-        help="Proportional width scaling: 0 (fixed) to 100 (fully proportional)",
-        min=0.0,
-        max=100.0,
-    ),
-]
-MinBridgeWidthOption = Annotated[
-    float,
-    typer.Option(
-        "--min-bridge-width",
-        help="Proportional width scaling: smallest gap as percent of a reference stroke (10-110)",
-        min=10.0,
-        max=110.0,
-    ),
-]
 InstanceOption = Annotated[
     str | None,
     typer.Option(
@@ -197,25 +167,17 @@ def _run_command(
     validate_input(input_font, verbose, quiet)
     if not quiet:
         print_header(__version__)
+    # Resolved once so every pass of a run logs to the same file.
+    logging_config = LoggingConfig(
+        log_file=log_file or default_log_path(), log_level=log_level if not quiet else "WARNING"
+    )
     settings = StencilizerSettings(
-        bridge=bridge,
-        processing=ProcessingConfig(max_workers=workers),
-        logging=LoggingConfig(log_file=log_file, log_level=log_level if not quiet else "WARNING"),
+        bridge=bridge, processing=ProcessingConfig(max_workers=workers), logging=logging_config
     )
     try:
-        settings = resolve_width_scaling(settings, input_font, instance, quiet)
-        output_path = output or FontWriter.get_stenciled_path(input_font)
-        if instance and not (list_islands or dry_run) and _is_proportional(settings):
-            _run_stencil_first(input_font, output_path, instance, settings, workers, quiet, verbose)
-            return
-        with pinned_input(input_font, instance) as font_path:
-            if list_islands:
-                _handle_list_islands(font_path, input_font, quiet)
-                raise typer.Exit(code=0)
-            if dry_run:
-                _handle_dry_run(font_path, input_font, settings, quiet, verbose)
-                raise typer.Exit(code=0)
-            _run_standard(font_path, input_font, output_path, settings, workers, quiet, verbose)
+        _dispatch(
+            input_font, output, instance, settings, workers, list_islands, dry_run, quiet, verbose
+        )
     except FontLoadError as error:
         print_error(f"Could not load font: {error.reason}")
         raise typer.Exit(code=1) from error
@@ -230,6 +192,32 @@ def _run_command(
     except Exception as error:
         print_error(f"Unexpected error: {error}")
         raise typer.Exit(code=1) from error
+
+
+def _dispatch(
+    input_font: Path,
+    output: Path | None,
+    instance: str | None,
+    settings: StencilizerSettings,
+    workers: int | None,
+    list_islands: bool,
+    dry_run: bool,
+    quiet: bool,
+    verbose: bool,
+) -> None:
+    settings = resolve_width_scaling(settings, input_font, instance, quiet)
+    output_path = output or FontWriter.get_stenciled_path(input_font)
+    if instance and not (list_islands or dry_run) and _is_proportional(settings):
+        _run_stencil_first(input_font, output_path, instance, settings, workers, quiet, verbose)
+        return
+    with pinned_input(input_font, instance) as font_path:
+        if list_islands:
+            _handle_list_islands(font_path, input_font, quiet)
+            raise typer.Exit(code=0)
+        if dry_run:
+            _handle_dry_run(font_path, input_font, settings, quiet, verbose)
+            raise typer.Exit(code=0)
+        _run_standard(font_path, input_font, output_path, settings, workers, quiet, verbose)
 
 
 def _is_proportional(settings: StencilizerSettings) -> bool:
@@ -283,10 +271,7 @@ def _stencil(
         actual_workers = workers if workers else os.cpu_count() or 1
         print_step("Processing")
         print_processing_info(actual_workers, is_auto=(workers is None))
-    stats = _process_font(processor, font_path, output_path, workers, quiet, classification)
-    if stats.error_count:
-        raise FontProcessingError(stats.errors)
-    return stats
+    return _process_font(processor, font_path, output_path, workers, quiet, classification)
 
 
 def _run_standard(
@@ -313,16 +298,20 @@ def _run_stencil_first(
 ) -> None:
     """Stencil the variable font, pin it at ``instance``, then stencil the static result."""
     validate_instance(input_font, instance)
-    with tempfile.TemporaryDirectory(prefix="stencilizer-instance-") as tmp:
+    started = time.time()
+    with instance_workdir() as tmp:
         stenciled = Path(tmp) / f"{input_font.stem}-variable{input_font.suffix}"
         first = _stencil(input_font, input_font, stenciled, settings, workers, quiet, verbose)
         second = stencil_pinned(
-            stenciled, input_font, instance, Path(tmp), output_path, settings, workers
+            stenciled, input_font, instance, Path(tmp), output_path, settings, workers, quiet=quiet
         )
+    # Both passes ran inside the window, so the report shows their combined time.
     stats = replace(
         first,
         bridges_added=first.bridges_added + second.bridges_added,
         unbridged_count=second.unbridged_count,
+        start_time=started,
+        end_time=time.time(),
     )
     finish_run(output_path, stats, quiet)
 
@@ -335,7 +324,6 @@ def _process_font(
     quiet: bool,
     classification: GlyphClassification,
 ) -> ProcessingStats:
-    stats: ProcessingStats | None = None
     try:
         if quiet:
             return processor.process(
@@ -353,22 +341,15 @@ def _process_font(
             def update_progress(completed: int, *_: object) -> None:
                 progress.update(task_id, completed=completed)
 
-            stats = processor.process(
+            return processor.process(
                 font_path=font_path,
                 output_path=output_path,
                 max_workers=workers,
                 progress_callback=update_progress,
                 classification=classification,
             )
-            return stats
     except KeyboardInterrupt:
-        if not quiet:
-            print_cancellation_notice()
-            print_cancellation_summary(
-                processed=stats.processed_count if stats else 0,
-                cancelled=stats.cancelled_count if stats else 0,
-            )
-        raise typer.Exit(code=130) from None
+        raise exit_cancelled(quiet) from None
 
 
 def cli() -> None:

@@ -14,26 +14,38 @@ from stencilizer.io.writer import update_font_names
 from stencilizer.variable.reader import is_variable
 
 
+def instance_workdir() -> tempfile.TemporaryDirectory[str]:
+    """Temporary directory that holds pinned instances and stenciled intermediates."""
+    return tempfile.TemporaryDirectory(prefix="stencilizer-instance-")
+
+
+@contextmanager
+def _open_lazy(path: Path) -> Iterator[TTFont]:
+    """Open ``path`` without loading its tables; an open failure becomes ``FontLoadError``."""
+    try:
+        font = TTFont(path, lazy=True)
+    except Exception as error:
+        raise FontLoadError(str(path), str(error)) from error
+    try:
+        yield font
+    finally:
+        font.close()
+
+
 @contextmanager
 def pinned_input(input_font: Path, instance: str | None) -> Iterator[Path]:
     """Yield the input font, or a temporary static instance when requested."""
     if instance is None:
         yield input_font
         return
-    with tempfile.TemporaryDirectory(prefix="stencilizer-instance-") as tmp:
+    with instance_workdir() as tmp:
         yield instantiate_static(input_font, instance, Path(tmp))
 
 
 def validate_instance(input_font: Path, instance: str) -> None:
     """Validate an instance specification against the input font's axes."""
-    try:
-        font = TTFont(input_font, lazy=True)
-    except Exception as error:
-        raise FontLoadError(str(input_font), str(error)) from error
-    try:
+    with _open_lazy(input_font) as font:
         parse_instance_spec(instance, font)
-    finally:
-        font.close()
 
 
 def pin_stenciled(stenciled: Path, source: Path, instance: str, workdir: Path) -> Path:
@@ -71,23 +83,11 @@ def publish_pinned(pinned: Path, output_path: Path) -> Path:
 
 def is_variable_font(path: Path) -> bool:
     """Return whether ``path`` contains a variable-font table."""
-    try:
-        font = TTFont(path, lazy=True)
-    except Exception as error:
-        raise FontLoadError(str(path), str(error)) from error
-    try:
+    with _open_lazy(path) as font:
         return is_variable(font)
-    finally:
-        font.close()
 
 
 def is_cff2_font(path: Path) -> bool:
     """Return whether ``path`` contains CFF2 outlines."""
-    try:
-        font = TTFont(path, lazy=True)
-    except Exception as error:
-        raise FontLoadError(str(path), str(error)) from error
-    try:
+    with _open_lazy(path) as font:
         return "CFF2" in font
-    finally:
-        font.close()

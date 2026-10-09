@@ -88,6 +88,10 @@ class BridgeWidthScaling(StrEnum):
     PROPORTIONAL = "proportional"  # each gap follows the thickness of the stroke it cuts
 
 
+# BridgeConfig's width fields are percentages of a reference stroke of this fraction of the UPM.
+REFERENCE_STROKE_FRACTION = 0.1
+
+
 class BridgeConfig(BaseModel):
     """Configuration for bridge generation."""
 
