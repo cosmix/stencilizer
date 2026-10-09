@@ -1,29 +1,85 @@
-# Stencilizer
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="doc/images/stencilizer-logo-dark.svg">
+    <img alt="Stencilizer" src="doc/images/stencilizer-logo-light.svg" width="420">
+  </picture>
+</h1>
 
-Convert TrueType fonts to stencil-ready versions by automatically adding bridges to enclosed contours.
+<p align="center">
+  Convert TrueType and OpenType fonts into stencil fonts by adding bridges to enclosed contours.
+</p>
 
-<img width="1024" height="409" alt="stencil" src="https://github.com/user-attachments/assets/03d0c074-4d97-4d39-a457-60366c400de2" />
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="doc/images/stencil-hero-dark.png">
+    <img alt="A Lato Black B stenciled in three steps: its two counters are found as islands, a bridge is placed through them, and the cut plate is sprayed with the counters still attached" src="doc/images/stencil-hero-light.png" width="1024">
+  </picture>
+</p>
 
 ## Overview
 
-Stencilizer is a Python CLI tool that transforms regular fonts into stencil fonts by detecting "islands" (enclosed contours) in glyphs and adding bridges to connect them. This is essential for creating fonts suitable for stencil cutting, where disconnected parts would fall out.
+Stencilizer is a Python command-line tool and desktop app that transforms regular fonts into stencil fonts by detecting "islands" (enclosed contours) in glyphs and adding bridges to connect them. This is essential for creating fonts suitable for stencil cutting, where disconnected parts would fall out.
 
 Characters like **O**, **A**, **B**, **D**, **P**, **R**, **Q**, **4**, **6**, **8**, **9**, **@** and others often have enclosed contours that need bridges to remain connected during cutting.
 
 ## Features
 
-- **Automatic Island Detection**: Intelligently identifies enclosed contours using contour hierarchy analysis
+- **Automatic Island Detection**: Identifies enclosed contours using contour hierarchy analysis
 - **Smart Bridge Placement**: Places bridges optimally based on contour geometry
-- **Parallel Processing**: Leverages multicore CPUs for fast processing of large fonts
+- **Parallel Processing**: Uses every CPU core for fast processing of large fonts
 - **Flexible Configuration**: Control bridge width and parallel workers
 - **Font Coexistence**: Output fonts get a "Stenciled" suffix in their internal name table, allowing installation alongside the original font
 - **Multiple Output Modes**:
   - Full processing (default)
   - Dry-run analysis
   - Island listing
-- **Rich CLI Output**: Beautiful console output with progress tracking
+- **Rich CLI Output**: Console output with progress tracking
 - **Detailed Logging**: Optional file logging for debugging and analysis
 - **Format Support**: Works with TTF and OTF fonts with TrueType, CFF or CFF2 outlines, including variable fonts (see [Font Format Support](#font-format-support))
+- **Desktop App**: Preview every bridged glyph before saving, tune the bridges live, and inspect the font's metadata (see [Desktop App](#desktop-app))
+
+## Desktop App
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="doc/images/stencilizer-gui-dark.png">
+  <img alt="Stencilizer desktop app with Lato Black open: bridge and processing controls and the font's details in the sidebar, a grid of glyphs with islands, and the original and stencilized B side by side" src="doc/images/stencilizer-gui-light.png">
+</picture>
+
+*Lato Black open in the desktop app, with a live preview of the bridges added to B.*
+
+The desktop app ships in the release archives; from source it needs the `gui` extra (see
+[Installation](#installation)).
+
+```bash
+# Launch the window, optionally opening a font straight away
+stencilizer-gui [font]
+```
+
+Open a TTF or OTF font with "Open Font…" or the command-line argument. If reading the outlines
+and finding the islands takes more than half a second, an animated stencil cutter fills the glyph
+area until the font is ready. The window then lists the glyphs that need bridges as thumbnails.
+Selecting one shows it before and after stenciling, side by side at one shared scale, recomputed as
+you change the bridge width (30-110 %) or the spanning-bridges toggle in the sidebar. The worker
+slider below them sets the number of processes used for the save; its left end is "Auto".
+
+The FONT card at the bottom of the sidebar lists everything the font says about itself: names and
+version, outline format and container, vertical metrics, glyph, island and composite counts,
+OpenType features and scripts, its tables, copyright, designer, license and embedding rights, and
+creation and modification dates. The text is selectable for copying.
+
+"Stencilize & Save…" writes the full font and shows its progress in the status bar. It refuses to
+overwrite the input font, and refuses a source file that changed on disk since it was opened. A
+variable font adds one slider per axis to the sidebar; the preview shows the glyph at the slider
+location, and composite glyphs preview at the default location. The window uses a light or a dark
+theme and follows the system setting, switching when the system does.
+
+The grid also lists composite glyphs (accented letters such as `Aacute`) that draw an island
+glyph: they inherit their bridges from the base glyph. The direction picker sets Auto, Vertical
+or Horizontal for the selected glyph (an `O` loses its top and bottom strokes under Vertical, its
+left and right strokes under Horizontal); a composite follows its base glyph's direction and its
+picker is disabled. Choices apply to the preview and the saved font for the session, and are not
+written to a file. Glyphs where no bridge can be placed are marked red in the grid and the
+preview says "no bridge could be placed".
 
 ## Installation
 
@@ -163,37 +219,6 @@ stencilizer input.ttf --log-file stencilizer.log
 # Set log level
 stencilizer input.ttf --log-level DEBUG
 ```
-
-### Graphical Interface
-
-![Stencilizer GUI with Lato-Black loaded, bridge controls, a glyph grid, and the original and stencilized B side by side](doc/images/stencilizer-gui-lato-black.png)
-
-*Lato-Black with a live preview of the bridges added to B.*
-
-```bash
-# Launch the window, optionally opening a font straight away
-stencilizer-gui [font]
-```
-
-A top bar holds "Open Font…" and "Stencilize & Save…", next to the name and details of the open
-font. Open a TTF/OTF font through it (or the command-line argument) and the window lists its island
-glyphs as thumbnails. Selecting one shows the glyph before and after stencilization side by side
-at one shared scale, recomputed as you change the bridge width (30-110 %) or the spanning-bridges
-toggle in the sidebar. The worker slider below them sets the number of processes used for the
-save; its left end is "Auto". "Stencilize & Save…" writes the full font and shows its progress as
-a percentage and bar in the status bar. It refuses to overwrite the input font, and refuses a
-source file that changed on disk since it was opened. A variable font adds one slider per axis to
-the sidebar; the preview shows the glyph at the slider location, and composite glyphs preview at
-the default location. The window uses a light or a dark theme and follows the system setting, switching when
-the system does.
-
-The grid also lists composite glyphs (accented letters such as `Aacute`) that draw an island
-glyph: they inherit their bridges from the base glyph. The direction picker sets Auto, Vertical
-or Horizontal for the selected glyph (an `O` loses its top and bottom strokes under Vertical, its
-left and right strokes under Horizontal); a composite follows its base glyph's direction and its
-picker is disabled. Choices apply to the preview and the saved font for the session, and are not
-written to a file. Glyphs where no bridge can be placed are marked red in the grid and the
-preview says "no bridge could be placed".
 
 ## Configuration
 
@@ -352,7 +377,7 @@ To build locally, run `uv sync --locked --no-dev --group build --extra gui` and 
 
 ### Font not loading
 
-Ensure your font file is a valid TTF file (or OTF with TrueType outlines) and not corrupted. See [Font Format Support](#font-format-support) for details on supported formats.
+Ensure your font file is a valid TTF or OTF file and not corrupted. See [Font Format Support](#font-format-support) for details on supported formats.
 
 ### No islands found
 
