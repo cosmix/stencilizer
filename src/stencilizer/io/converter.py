@@ -29,7 +29,7 @@ def fonttools_glyph_to_domain(
 
     # CFF fonts use opposite winding convention from TrueType.
     # Reverse contour points to normalize to TrueType convention.
-    is_cff = "CFF " in font
+    is_cff = "CFF " in font or "CFF2" in font
     if is_cff:
         for contour in contours:
             contour.points = list(reversed(contour.points))
@@ -68,6 +68,8 @@ def domain_glyph_to_fonttools(glyph: Glyph, original_glyph: Any, font: TTFont) -
         _update_truetype_glyph(glyph, original_glyph, font)
     elif "CFF " in font:
         _update_cff_glyph(glyph, original_glyph, font)
+    elif "CFF2" in font:
+        _update_cff2_glyph(glyph, original_glyph, font)
     else:
         raise NotImplementedError("Unsupported font format")
 
@@ -251,6 +253,35 @@ def _update_cff_glyph(glyph: Glyph, _: Any, font: TTFont) -> None:
 
     for contour in glyph.contours:
         # Reverse points to restore CFF winding convention.
+        _draw_closed_contour(pen, list(reversed(contour.points)), PointType.OFF_CURVE_CUBIC)
+
+    charstring = pen.getCharString(private=private, globalSubrs=global_subrs, optimize=False)
+    charstrings[glyph_name] = charstring
+
+
+def _update_cff2_glyph(glyph: Glyph, _: Any, font: TTFont) -> None:
+    """Update a static CFF2 glyph from the domain model.
+
+    Domain contours use TrueType winding, so points are reversed on write.
+    CFF2 charstrings carry no width (advances live in hmtx), and the private
+    dict comes from the glyph's FDArray entry because CFF2 has no top-level one.
+
+    Args:
+        glyph: Domain glyph model
+        _: Original fonttools glyph (unused)
+        font: The TTFont object
+    """
+    cff_table = font["CFF2"]
+    top_dict = cff_table.cff.topDictIndex[0]
+    charstrings = top_dict.CharStrings
+    glyph_name = glyph.name
+    _, fd_index = charstrings.getItemAndSelector(glyph_name)
+    private = top_dict.FDArray[fd_index or 0].Private
+    global_subrs = cff_table.cff.GlobalSubrs
+
+    pen = T2CharStringPen(width=None, glyphSet=font.getGlyphSet(), CFF2=True)
+
+    for contour in glyph.contours:
         _draw_closed_contour(pen, list(reversed(contour.points)), PointType.OFF_CURVE_CUBIC)
 
     charstring = pen.getCharString(private=private, globalSubrs=global_subrs, optimize=False)

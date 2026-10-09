@@ -51,10 +51,11 @@ class FontReader:
             raise FileNotFoundError(f"Font file not found: {self._font_path}")
 
         font = TTFont(str(self._font_path))
-        if "fvar" in font or "CFF2" in font:
-            reason = "variable fonts (fvar table)" if "fvar" in font else "CFF2 outlines"
+        if "fvar" in font:
             font.close()
-            raise FontFormatError(str(self._font_path), f"{reason} are not supported")
+            raise FontFormatError(
+                str(self._font_path), "variable fonts (fvar table) are not supported"
+            )
         self._font = font
         self._glyph_names = None
         self._glyph_set = None

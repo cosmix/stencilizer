@@ -25,19 +25,15 @@ def test_open_font_reports_invalid_file(
     assert controller.is_busy is False
 
 
-def test_open_font_rejects_cff2(
+def test_open_font_accepts_cff2(
     controller: GuiController, qtbot: QtBot, cff2_font_path: Path
 ) -> None:
-    """CFF2 fonts are rejected before a session can be published."""
-    with (
-        qtbot.assertNotEmitted(controller.font_loaded),
-        qtbot.waitSignal(controller.error, timeout=LOAD_TIMEOUT) as blocker,
-    ):
-        controller.open_font(cff2_font_path)
+    """A static CFF2 font publishes a session without an error."""
+    with qtbot.assertNotEmitted(controller.error):
+        session = load_session(controller, qtbot, cff2_font_path)
 
-    assert blocker.args[0].startswith("Failed to load font")
-    assert "CFF2 outlines are not supported" in blocker.args[0]
-    assert controller.session is None
+    assert controller.session is session
+    assert session.island_glyphs
     assert controller.is_busy is False
 
 

@@ -488,3 +488,66 @@ class TestCffGlyphUpdate:
 
             # Verify the charstring was stored
             assert "space" in mock_charstrings
+
+
+class TestCff2GlyphUpdate:
+    """Tests for static CFF2 glyph update functionality."""
+
+    @staticmethod
+    def _font() -> tuple[MagicMock, dict[str, MagicMock], MagicMock, MagicMock]:
+        mock_font = MagicMock()
+        mock_cff_table = MagicMock()
+        mock_top_dict = MagicMock()
+        charstrings = MagicMock()
+        stored: dict[str, MagicMock] = {}
+        charstrings.getItemAndSelector.return_value = (MagicMock(), 1)
+        charstrings.__setitem__.side_effect = stored.__setitem__
+        private = MagicMock()
+        fd_other = MagicMock()
+        mock_top_dict.FDArray = [fd_other, MagicMock(Private=private)]
+        mock_top_dict.CharStrings = charstrings
+        mock_cff_table.cff.topDictIndex = [mock_top_dict]
+        mock_font.__getitem__ = Mock(return_value=mock_cff_table)
+        mock_font.getGlyphSet.return_value = {}
+        return mock_font, stored, private, mock_cff_table.cff.GlobalSubrs
+
+    def test_uses_fdarray_private_and_global_subrs(self):
+        from stencilizer.io.converter import _update_cff2_glyph
+
+        mock_font, stored, private, global_subrs = self._font()
+        glyph = Glyph(metadata=GlyphMetadata("A", None, 500, 0), contours=[])
+
+        with patch("stencilizer.io.converter.T2CharStringPen") as mock_pen_class:
+            mock_pen = mock_pen_class.return_value
+            _update_cff2_glyph(glyph, None, mock_font)
+
+            mock_pen.getCharString.assert_called_once_with(
+                private=private, globalSubrs=global_subrs, optimize=False
+            )
+        assert stored["A"] is mock_pen.getCharString.return_value
+
+    def test_passes_cff2_flag_and_no_width_to_pen(self):
+        from stencilizer.io.converter import _update_cff2_glyph
+
+        mock_font, _, _, _ = self._font()
+        glyph = Glyph(metadata=GlyphMetadata("A", None, 500, 0), contours=[])
+
+        with patch("stencilizer.io.converter.T2CharStringPen") as mock_pen_class:
+            _update_cff2_glyph(glyph, None, mock_font)
+
+        mock_pen_class.assert_called_once_with(width=None, glyphSet={}, CFF2=True)
+
+    def test_reverses_points_to_cff_winding(self):
+        from stencilizer.domain.contour import Contour, Point
+        from stencilizer.io.converter import _update_cff2_glyph
+
+        mock_font, _, _, _ = self._font()
+        points = [Point(0, 0), Point(10, 0), Point(10, 10)]
+        glyph = Glyph(metadata=GlyphMetadata("A", None, 500, 0), contours=[Contour(points=points)])
+
+        with patch("stencilizer.io.converter.T2CharStringPen") as mock_pen_class:
+            _update_cff2_glyph(glyph, None, mock_font)
+            mock_pen = mock_pen_class.return_value
+
+            mock_pen.moveTo.assert_called_once_with((10, 10))
+            assert [call.args[0] for call in mock_pen.lineTo.call_args_list] == [(10, 0), (0, 0)]

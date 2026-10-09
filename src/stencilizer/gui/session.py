@@ -62,10 +62,8 @@ def unsupported_reason(font: Any) -> str | None:
     """Why the core cannot stencilize this TTFont, or None when it can."""
     if "fvar" in font:
         return "variable fonts (fvar table) are not supported"
-    if "CFF2" in font:
-        return "CFF2 outlines are not supported"
-    if "glyf" not in font and "CFF " not in font:
-        return "no supported outline table (glyf or CFF)"
+    if "glyf" not in font and "CFF " not in font and "CFF2" not in font:
+        return "no supported outline table (glyf, CFF or CFF2)"
     return None
 
 
