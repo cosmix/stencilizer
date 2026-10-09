@@ -121,6 +121,7 @@ class MainWindow(QMainWindow):
         self.controls.parameters_changed.connect(self._update_parameters)
         self.controls.workers_slider.valueChanged.connect(self._update_parameters)
         self.grid.glyph_selected.connect(self.controller.select_glyph)
+        self.controls.axes_panel.location_changed.connect(self.controller.set_location)
         self.controller.font_loaded.connect(self._on_font_loaded)
         self.controller.preview_ready.connect(self._on_preview_ready)
         self.controller.save_progress.connect(self.set_progress)
@@ -200,6 +201,7 @@ class MainWindow(QMainWindow):
         """Populate the window from a newly loaded font session."""
         session = cast("FontSession", result)
         self.grid.set_glyphs(session.display_glyphs, session.ascender, session.descender)
+        self.controls.axes_panel.set_axes(session.axes)
         self.header.set_font_info(
             session.path.name,
             f"{session.font_format} · {session.units_per_em} UPM · {session.glyph_count} glyphs · "
@@ -220,6 +222,7 @@ class MainWindow(QMainWindow):
         if session is None:
             return
         self._current_glyph = name
+        self.controls.axes_panel.set_location_applies(not session.is_composite(name))
         sources = session.direction_sources(name)
         direction = self.controller.direction_for(sources[0]) if sources else BridgeDirection.AUTO
         self.direction_picker.show_for(name, sources, direction)
