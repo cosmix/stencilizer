@@ -13,6 +13,7 @@ from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 
 from stencilizer.domain.contour import Contour, Point, PointType
 from stencilizer.domain.glyph import Glyph, GlyphMetadata
+from stencilizer.exceptions import GlyphProcessingError
 
 
 def fonttools_glyph_to_domain(
@@ -60,7 +61,7 @@ def domain_glyph_to_fonttools(glyph: Glyph, original_glyph: Any, font: TTFont) -
         font: The TTFont object
 
     Raises:
-        NotImplementedError: If glyph format is not supported
+        GlyphProcessingError: If the font has no glyf, CFF or CFF2 table
     """
     is_truetype = "glyf" in font
 
@@ -71,7 +72,7 @@ def domain_glyph_to_fonttools(glyph: Glyph, original_glyph: Any, font: TTFont) -
     elif "CFF2" in font:
         _update_cff2_glyph(glyph, original_glyph, font)
     else:
-        raise NotImplementedError("Unsupported font format")
+        raise GlyphProcessingError(glyph.name, "font has no glyf, CFF or CFF2 table")
 
 
 def _recording_to_contours(recording: list[tuple[str, tuple[Any, ...]]]) -> list[Contour]:
