@@ -23,7 +23,7 @@ Characters like **O**, **A**, **B**, **D**, **P**, **R**, **Q**, **4**, **6**, *
   - Island listing
 - **Rich CLI Output**: Beautiful console output with progress tracking
 - **Detailed Logging**: Optional file logging for debugging and analysis
-- **Format Support**: Works with TTF and OTF fonts containing TrueType outlines (see [Font Format Support](#font-format-support))
+- **Format Support**: Works with TTF and OTF fonts with TrueType, CFF or CFF2 outlines, including variable fonts (see [Font Format Support](#font-format-support))
 
 ## Installation
 
@@ -110,6 +110,24 @@ stencilizer input.ttf -o output.ttf
 stencilizer input.ttf --bridge-width 70
 ```
 
+### Variable Fonts
+
+Variable fonts (an `fvar` table, with `glyf`/`gvar` or `CFF2` outlines) are stenciled as variable
+fonts: the output keeps every axis, and the bridges follow the design at every location. A glyph
+whose variation data cannot be bridged consistently everywhere is left unchanged and counted among
+the unbridged islands. Pin a variable font to a static instance first with `--instance`:
+
+```bash
+# Stencilize the Bold, Condensed instance as a static font
+stencilizer input.ttf --instance wght=700,wdth=75
+
+# Axes you omit stay at their default
+stencilizer input.ttf --instance wght=700
+```
+
+`--instance` takes comma-separated `tag=value` pairs inside the axis ranges and requires a
+variable font. For a CFF2 font the static instance has CFF outlines.
+
 ### Analysis Modes
 
 ```bash
@@ -164,8 +182,9 @@ at one shared scale, recomputed as you change the bridge width (30-110 %) or the
 toggle in the sidebar. The worker slider below them sets the number of processes used for the
 save; its left end is "Auto". "Stencilize & Save…" writes the full font and shows its progress as
 a percentage and bar in the status bar. It refuses to overwrite the input font, and refuses a
-source file that changed on disk since it was opened. Variable fonts and CFF2 fonts are rejected
-on open. The window uses a light or a dark theme and follows the system setting, switching when
+source file that changed on disk since it was opened. A variable font adds one slider per axis to
+the sidebar; the preview shows the glyph at the slider location, and composite glyphs preview at
+the default location. The window uses a light or a dark theme and follows the system setting, switching when
 the system does.
 
 The grid also lists composite glyphs (accented letters such as `Aacute`) that draw an island
@@ -360,8 +379,10 @@ Stencilizer supports the following font formats:
 | TrueType                        | `.ttf`        | TrueType (`glyf` table)   | ✅ Fully supported |
 | OpenType with TrueType outlines | `.otf`        | TrueType (`glyf` table)   | ✅ Fully supported |
 | OpenType with CFF outlines      | `.otf`        | PostScript (`CFF` table)  | ✅ Fully supported |
-| OpenType with CFF2 outlines     | `.otf`        | PostScript (`CFF2` table) | ❌ Not supported   |
-| Variable fonts                  | `.ttf`/`.otf` | Variable (`fvar` table)   | ❌ Not supported   |
+| OpenType with CFF2 outlines     | `.otf`        | PostScript (`CFF2` table) | ✅ Fully supported |
+| Variable TrueType fonts         | `.ttf`        | `glyf` + `gvar` tables    | ✅ Fully supported |
+| Variable fonts with CFF2        | `.otf`        | `CFF2` table              | ✅ Fully supported |
+| Variable fonts, CFF outlines    | `.otf`        | `CFF` table               | ❌ Fails at save   |
 
 ### How to identify your font's format
 
@@ -369,14 +390,15 @@ Most `.ttf` files use TrueType outlines and will work. For `.otf` files, the sit
 
 - **OTF with TrueType outlines**: Some foundries package TrueType outlines in an OpenType container. These are fully supported.
 - **OTF with CFF outlines**: Traditional PostScript-based OpenType fonts. These are fully supported.
-- **OTF with CFF2 outlines**: Modern variable OpenType fonts use CFF2. These are not yet supported.
+- **OTF with CFF2 outlines**: Modern variable OpenType fonts use CFF2. These are fully supported, static or variable.
+- **Variable fonts**: Any font with an `fvar` table. Glyphs with islands are bridged in every master and the output stays variable.
 
 If you're unsure about your font's format, try processing it—Stencilizer will report an error if the format is unsupported.
 
 ## Future Work
 
-- OpenType CFF2 font support
-- Variable font support (fonts with `fvar` table)
+- Variable fonts with `CFF` outlines (an `fvar` table without `CFF2`)
+- `avar2` axis mappings in the GUI preview
 
 ## License
 

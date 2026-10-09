@@ -8,13 +8,13 @@
 
 | File | Description | Lines |
 | --- | --- | --- |
-| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 38 |
-| [entry-points.md](entry-points.md) | Key files agents should read first | 21 |
-| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 22 |
-| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 47 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 202 |
+| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 42 |
+| [entry-points.md](entry-points.md) | Key files agents should read first | 25 |
+| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 26 |
+| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 57 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 210 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 26 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 72 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 86 |
 
 ## Tier 2 — Topics
 
@@ -22,13 +22,14 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [gui](architecture/gui.md) | GUI package layout, threading model, save safety | 72 |
+| [gui](architecture/gui.md) | GUI package layout, threading model, save safety | 76 |
 
 ### patterns
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [bridge-algorithm](patterns/bridge-algorithm.md) | Island detection, bridge placement, contour surgery, multi-island cases | 69 |
+| [variable-replay](patterns/variable-replay.md) | Variable-font stencil replay, validation, delta solve, rounding, measured rates | 43 |
 
 ### mistakes
 
@@ -37,4 +38,5 @@
 | [ci-release](mistakes/ci-release.md) | setup-uv lacks major tags; version bumps need uv lock | 23 |
 | [offscreen-screenshots](mistakes/offscreen-screenshots.md) | Offscreen 2x GUI grabs need a large screen config file | 10 |
 | [readme-layout](mistakes/readme-layout.md) | Place README screenshots beside the content they illustrate | 13 |
-| [review-and-completion-gates](mistakes/review-and-completion-gates.md) | Malformed reviewer rounds, sandbox fingerprint drift, codex lint leftovers | 33 |
+| [review-and-completion-gates](mistakes/review-and-completion-gates.md) | Malformed reviews, fingerprint drift, IV process traps, loom tool quirks | 59 |
+| [variable-fonts](mistakes/variable-fonts.md) | Pool start-method side effects, CFF2 delta checks, analyzer blind spots | 24 |
