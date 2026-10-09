@@ -83,8 +83,8 @@ smoke() {
     exit 1
   fi
 
-  # Exercises the ProcessPoolExecutor path of the frozen binary. Only where the
-  # start method is spawn (macOS) does this test freeze_support; Linux forks.
+  # Exercises the ProcessPoolExecutor path of the frozen binary. The processor always
+  # starts workers with spawn, so this tests freeze_support on every platform.
   for font in Roboto-Regular.ttf CommitMono-Cosmix-700-Regular.otf; do
     dist/stencilizer "tests/fixtures/$font" -o "$tmp/$font" --workers 2
     test -s "$tmp/$font" || { echo "error: no output for $font" >&2; exit 1; }

@@ -12,6 +12,7 @@ from typing import Any
 from stencilizer.config import BridgeConfig, StencilizerSettings
 from stencilizer.config.settings import BridgeDirection, GeometryConfig
 from stencilizer.core.analyzer import GlyphAnalyzer
+from stencilizer.core.pool import config_for_glyph, pool_options
 from stencilizer.core.surgery import GlyphTransformer
 from stencilizer.domain import Glyph
 from stencilizer.exceptions import FontFormatError, FontProcessingError, FontSaveError
@@ -105,17 +106,6 @@ def process_glyph(
             "traceback": traceback.format_exc(),
             "duration_ms": (time.time() - start_time) * 1000,
         }
-
-
-def _config_for_glyph(
-    config_dict: dict[str, Any],
-    directions: Mapping[str, BridgeDirection] | None,
-    name: str,
-) -> dict[str, Any]:
-    """Return the shared config or a glyph-specific direction override."""
-    if directions is None or name not in directions:
-        return config_dict
-    return {**config_dict, "direction": directions[name]}
 
 
 class FontProcessor:
@@ -280,13 +270,13 @@ class FontProcessor:
         geometry_dict = self.config.geometry.model_dump()
         tasks = {glyph.name: glyph.to_dict() for glyph in glyphs}
         self.logger.info("Starting parallel run", glyph_count=len(tasks), max_workers=max_workers)
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        with ProcessPoolExecutor(max_workers=max_workers, **pool_options()) as executor:
             pending: dict[Any, str] = {}
             for name, glyph_dict in tasks.items():
                 future = executor.submit(
                     worker,
                     glyph_dict,
-                    _config_for_glyph(config_dict, directions, name),
+                    config_for_glyph(config_dict, directions, name),
                     upm,
                     geometry_dict=geometry_dict,
                 )

@@ -1,11 +1,6 @@
 """Integration tests for processor bridge counts and per-glyph directions."""
 
-import functools
-import multiprocessing
-from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-
-import pytest
 
 from stencilizer.config import BridgeConfig, LoggingConfig, StencilizerSettings
 from stencilizer.config.settings import BridgeDirection
@@ -13,15 +8,6 @@ from stencilizer.core.processor import FontProcessor, _islands_bridged, process_
 from stencilizer.domain import Glyph
 from stencilizer.io import FontReader
 from tests.integration.conftest import FIXTURES_DIR
-
-
-@pytest.fixture(autouse=True)
-def spawn_process_pool(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Start processor workers with the same spawn context as the application."""
-    monkeypatch.setattr(
-        "stencilizer.core.processor.ProcessPoolExecutor",
-        functools.partial(ProcessPoolExecutor, mp_context=multiprocessing.get_context("spawn")),
-    )
 
 
 def _processor(tmp_path: Path) -> FontProcessor:

@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import structlog
 
@@ -50,6 +50,72 @@ class ProcessingStats:
         return sum(self.glyph_timings_ms) / len(self.glyph_timings_ms)
 
 
+LOGGER_NAME = "stencilizer"
+
+# Picklable worker logging settings: log file path, file level, console level.
+WorkerLogArgs = tuple[str, int, int]
+
+
+def _attach_handlers(
+    log_file: Path, file_level: int, console_level: int, *, delay: bool = False
+) -> logging.Logger:
+    """Replace the handlers on the ``stencilizer`` logger with a file and a console handler."""
+    file_handler = logging.FileHandler(log_file, encoding="utf-8", delay=delay)
+    file_handler.setLevel(file_level)
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s | %(levelname)-8s | %(name)s | %(message)s")
+    )
+
+    owned_logger = logging.getLogger(LOGGER_NAME)
+    owned_logger.setLevel(logging.DEBUG)
+    owned_logger.propagate = False
+    for handler in owned_logger.handlers[:]:
+        owned_logger.removeHandler(handler)
+        handler.close()
+    owned_logger.addHandler(file_handler)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(console_level)
+    console_handler.setFormatter(logging.Formatter("%(message)s"))
+    owned_logger.addHandler(console_handler)
+    return owned_logger
+
+
+def worker_logging_initargs() -> WorkerLogArgs | None:
+    """Describe the ``stencilizer`` logger's handlers so a spawned worker can rebuild them.
+
+    Returns None when no file handler is attached (logging is not configured).
+    """
+    handlers = logging.getLogger(LOGGER_NAME).handlers
+    file_handler = next((h for h in handlers if isinstance(h, logging.FileHandler)), None)
+    if file_handler is None:
+        return None
+    console_levels = [
+        h.level
+        for h in handlers
+        if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
+    ]
+    console_level = console_levels[0] if console_levels else logging.CRITICAL + 1
+    return (file_handler.baseFilename, file_handler.level, console_level)
+
+
+def init_worker_logging(log_file: str, file_level: int, console_level: int) -> None:
+    """Process pool initializer: attach the parent's logging handlers inside a worker.
+
+    A spawned worker starts with no handlers, so its debug records would be lost. The
+    file opens lazily so a log path that has since disappeared cannot break the pool.
+    """
+    _attach_handlers(Path(log_file), file_level, console_level, delay=True)
+
+
+def worker_pool_options() -> dict[str, Any]:
+    """Return ``ProcessPoolExecutor`` keyword arguments that carry logging into workers."""
+    initargs = worker_logging_initargs()
+    if initargs is None:
+        return {}
+    return {"initializer": init_worker_logging, "initargs": initargs}
+
+
 def configure_logging(
     log_file: Path | None = None,
     console_level: str = "INFO",
@@ -61,24 +127,11 @@ def configure_logging(
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         log_file = Path(f"stencilizer_{timestamp}.log")
 
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setLevel(getattr(logging, file_level.upper()))
-    file_handler.setFormatter(
-        logging.Formatter("%(asctime)s | %(levelname)-8s | %(name)s | %(message)s")
+    owned_logger = _attach_handlers(
+        log_file,
+        getattr(logging, file_level.upper()),
+        logging.ERROR if quiet else getattr(logging, console_level.upper()),
     )
-
-    owned_logger = logging.getLogger("stencilizer")
-    owned_logger.setLevel(logging.DEBUG)
-    owned_logger.propagate = False
-    for handler in owned_logger.handlers[:]:
-        owned_logger.removeHandler(handler)
-        handler.close()
-    owned_logger.addHandler(file_handler)
-
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.ERROR if quiet else getattr(logging, console_level.upper()))
-    console_handler.setFormatter(logging.Formatter("%(message)s"))
-    owned_logger.addHandler(console_handler)
 
     logger = structlog.wrap_logger(
         owned_logger,
