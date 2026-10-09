@@ -74,3 +74,9 @@ Decision: use the XDG Settings portal when Qt reports an unknown colour scheme o
 ## Constructing D-Bus test replies
 
 **What happened:** The portal read test returned Unknown despite a dark fixture. **Why:** PySide overload selection for createReply with a list wraps the list as a single argument. **Prevention:** Build the reply and set its arguments explicitly. **Fix:** Use createReply followed by setArguments in the fake bus. PySide also incorrectly annotates connect slot signatures as bytes; the SLOT string requires a narrow call-overload suppression.
+
+## Packaged GUI assets
+
+The header wordmark is `src/stencilizer/gui/assets/stencilizer.svg`: one `currentColor` path. `header.Wordmark` loads it with `importlib.resources.files(stencilizer.gui.assets)`, substitutes `currentColor` with `palette().windowText()`, reloads on `PaletteChange` and paints it with `QSvgRenderer` at the device pixel ratio, so the theme needs no QSS rule for it (object name `appLogo`).
+
+Shipping: hatchling `packages = ["src/stencilizer"]` puts the asset in the wheel and sdist with no config. The PyInstaller GUI builds in `packaging/build.sh` pass `--add-data "$ROOT/src/stencilizer/gui/assets:stencilizer/gui/assets"`. The source must be absolute, because PyInstaller resolves a relative `--add-data` source against `--specpath` (`build/gui`), not the working directory.

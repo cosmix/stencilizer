@@ -72,7 +72,6 @@ _DISABLED_ROLES = (
 
 _CHROME_QSS = """
 #headerBar { background: $surface; border-bottom: 1px solid $border; }
-#appTitle { font-size: 14pt; font-weight: 700; color: $text; padding-right: 12px; }
 #fontName { font-size: 10pt; font-weight: 600; color: $text; }
 #fontDetails { font-size: 9pt; color: $muted_text; }
 #sidebar { background: $window; }

@@ -43,15 +43,21 @@ pyinstaller() {
     --distpath "dist/$kind" --workpath "build/$kind" --specpath "build/$kind" "$@"
 }
 
+# The GUI reads its assets (the wordmark SVG) through importlib.resources, which PyInstaller
+# resolves on disk next to the frozen package; the directory has to be bundled explicitly.
+# The source is absolute because --add-data resolves relative paths against --specpath.
+GUI_ASSETS="$ROOT/src/stencilizer/gui/assets:stencilizer/gui/assets"
+
 build() {
   rm -rf dist build
   pyinstaller cli --onefile --console --name stencilizer \
     --exclude-module PySide6 packaging/entry_cli.py
   if [ "$OS" = "Darwin" ]; then
-    pyinstaller gui --onedir --windowed --name Stencilizer \
+    pyinstaller gui --onedir --windowed --name Stencilizer --add-data "$GUI_ASSETS" \
       --osx-bundle-identifier io.github.cosmix.stencilizer packaging/entry_gui.py
   else
-    pyinstaller gui --onedir --windowed --name stencilizer-gui packaging/entry_gui.py
+    pyinstaller gui --onedir --windowed --name stencilizer-gui --add-data "$GUI_ASSETS" \
+      packaging/entry_gui.py
   fi
 }
 
