@@ -11,23 +11,30 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from statistics import fmean
 
-from stencilizer.domain.contour import Contour, Point
+from stencilizer.domain.contour import Contour
 from stencilizer.domain.glyph import Glyph
+from stencilizer.variable.bridge_width import WidthRule, pair_targets
 from stencilizer.variable.model import glyph_coordinates, with_coordinates
+from stencilizer.variable.realign import (
+    Placed,
+    Span,
+    axis_value,
+    contour_spans,
+    lerp,
+    mean_target,
+    project,
+    realign_line,
+)
 from stencilizer.variable.solver import Coords
 
 _VERTEX_DECIMALS = 6
 _EDGE_DISTANCE = 1e-4
 _EDGE_T_SLACK = 1e-9
 _LINE_DECIMALS = 5
-_SEARCH_EDGES = 12
-_MIN_EDGE_SPAN = 1e-12
 # Core surgery's point dedup at 1000 UPM; callers pass their geometry's snap distance.
 _SNAP_DISTANCE = 0.5
 
 _Pt = tuple[float, float]
-_Span = tuple[int, int]
-_Placed = list[list[list[float]]]
 
 Slot = tuple[int, int]
 """An output point: (contour index, point index within that contour)."""
@@ -78,15 +85,15 @@ class BridgeLine:
 
 @dataclass(frozen=True, slots=True)
 class SurgeryMap:
-    """The source of every output point, per output contour, and the bridge lines."""
+    """The source of every output point, per output contour, and the bridge lines.
+
+    Without ``widths`` every line goes to the mean of its cut points in each master. With
+    it, each bridge's two lines go to the bridge's centre -/+ half its gap in that master.
+    """
 
     sources: tuple[tuple[Source, ...], ...]
     lines: tuple[BridgeLine, ...]
-
-
-def axis_value(point: Point, axis: int) -> float:
-    """``point.x`` for axis 0, ``point.y`` for axis 1."""
-    return point.x if axis == 0 else point.y
+    widths: WidthRule | None = None
 
 
 def slot_values(glyph: Glyph, slots: Sequence[Slot], axis: int) -> list[float]:
@@ -98,16 +105,7 @@ def _key(point: _Pt) -> _Pt:
     return (round(point[0], _VERTEX_DECIMALS), round(point[1], _VERTEX_DECIMALS))
 
 
-def _contour_spans(glyph: Glyph) -> list[_Span]:
-    """For each point of the concatenated point list, (start, length) of its contour."""
-    spans: list[_Span] = []
-    for contour in glyph.contours:
-        start = len(spans)
-        spans += [(start, len(contour.points))] * len(contour.points)
-    return spans
-
-
-def _edge_point(point: _Pt, coords: Coords, spans: list[_Span]) -> EdgePoint | None:
+def _edge_point(point: _Pt, coords: Coords, spans: list[Span]) -> EdgePoint | None:
     """The input edge nearest to ``point`` within the mapping distance, if any."""
     best: EdgePoint | None = None
     best_distance = _EDGE_DISTANCE
@@ -142,7 +140,7 @@ def _neighbour_owners(owners: list[frozenset[int]], k: int) -> frozenset[int]:
     return found
 
 
-def _resolve(row: list[_Candidate], spans: list[_Span]) -> tuple[Source, ...]:
+def _resolve(row: list[_Candidate], spans: list[Span]) -> tuple[Source, ...]:
     """Pick one input vertex per ambiguous point, preferring its neighbours' contour."""
     owners = [
         frozenset({spans[c.a][0]} if isinstance(c, EdgePoint) else {spans[i][0] for i in c})
@@ -160,7 +158,7 @@ def _resolve(row: list[_Candidate], spans: list[_Span]) -> tuple[Source, ...]:
     return tuple(sources)
 
 
-def _edges_on(source: Source, spans: list[_Span]) -> tuple[int, int]:
+def _edges_on(source: Source, spans: list[Span]) -> tuple[int, int]:
     """First and last input edge (by start index) that an output point lies on."""
     if isinstance(source, EdgePoint):
         return (source.a, source.a)
@@ -168,7 +166,7 @@ def _edges_on(source: Source, spans: list[_Span]) -> tuple[int, int]:
     return (start + (source.index - start - 1) % length, source.index)
 
 
-def _bridge_axes(contour: Contour, row: tuple[Source, ...], spans: list[_Span]) -> list[set[int]]:
+def _bridge_axes(contour: Contour, row: tuple[Source, ...], spans: list[Span]) -> list[set[int]]:
     """Per output point, the axes of its adjacent segments that surgery created.
 
     A segment is inherited when both ends lie on one input edge. Any other segment runs
@@ -205,7 +203,7 @@ _Loose = list[tuple[Slot, int, Vertex, float]]
 
 
 def _collect(
-    output_glyph: Glyph, sources: list[tuple[Source, ...]], coords: Coords, spans: list[_Span]
+    output_glyph: Glyph, sources: list[tuple[Source, ...]], coords: Coords, spans: list[Span]
 ) -> tuple[_Groups, _Loose]:
     """Cut points keyed by bridge line, and vertices at the ends of bridge segments."""
     groups: _Groups = defaultdict(list)
@@ -226,7 +224,7 @@ def _bridge_lines(
     output_glyph: Glyph,
     sources: list[tuple[Source, ...]],
     coords: Coords,
-    spans: list[_Span],
+    spans: list[Span],
     snap: float,
 ) -> tuple[BridgeLine, ...]:
     """Every bridge line with at least two points.
@@ -257,7 +255,7 @@ def map_surgery(
 ) -> SurgeryMap | None:
     """Source of every output point in the (polygon) input, or None when one has none."""
     coords = glyph_coordinates(input_glyph)
-    spans = _contour_spans(input_glyph)
+    spans = contour_spans(input_glyph)
     vertices: dict[_Pt, list[int]] = defaultdict(list)
     for index, coord in enumerate(coords):
         vertices[_key(coord)].append(index)
@@ -274,18 +272,14 @@ def map_surgery(
     return SurgeryMap(tuple(sources), _bridge_lines(output_glyph, sources, coords, spans, snap))
 
 
-def _lerp(a: _Pt, b: _Pt, t: float) -> list[float]:
-    return [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]
-
-
-def _place(smap: SurgeryMap, master: Coords) -> _Placed | None:
+def _place(smap: SurgeryMap, master: Coords) -> Placed | None:
     """Vertices at their master positions, cut points at their default edge parameter."""
-    placed: _Placed = []
+    placed: Placed = []
     for sources in smap.sources:
         row: list[list[float]] = []
         for source in sources:
             if isinstance(source, EdgePoint):
-                row.append(_lerp(master[source.a], master[source.b], source.t))
+                row.append(lerp(master[source.a], master[source.b], source.t))
                 continue
             position = master[source.index]
             if any(_key(master[i]) != _key(position) for i in source.ties):
@@ -295,81 +289,16 @@ def _place(smap: SurgeryMap, master: Coords) -> _Placed | None:
     return placed
 
 
-def _cross(a: _Pt, b: _Pt, axis: int, target: float) -> list[float] | None:
-    """Where edge a -> b crosses the line ``axis == target``; exact on that axis."""
-    low, high = a[axis], b[axis]
-    if (low - target) * (high - target) > 0 or abs(high - low) <= _MIN_EDGE_SPAN:
-        return None
-    point = _lerp(a, b, (target - low) / (high - low))
-    point[axis] = target
-    return point
-
-
-def _crossing(
-    member: LineMember,
-    axis: int,
-    target: float,
-    master: Coords,
-    spans: list[_Span],
-    fixed: list[float],
-) -> list[float] | None:
-    """Nearest master edge crossing the line, by edge count from the member's edges.
-
-    At equal edge count, the crossing closest to the fixed-parameter position wins.
-    """
-    first, last = member.edges
-    start, length = spans[first]
-    low = first - start
-    high = low + (last - first) % length
-    for distance in range(_SEARCH_EDGES + 1):
-        offsets = range(low, high + 1) if distance == 0 else (low - distance, high + distance)
-        found: list[list[float]] = []
-        for offset in offsets:
-            a, b = master[start + offset % length], master[start + (offset + 1) % length]
-            point = _cross(a, b, axis, target)
-            if point is not None:
-                found.append(point)
-        if found:
-            return min(found, key=lambda p: math.dist(p, fixed))
-    return None
-
-
-def _project(
-    slot: Slot,
-    line: BridgeLine,
-    target: float,
-    sources: tuple[Source, ...],
-    placed: _Placed,
-    reference: list[Point],
-    stops: frozenset[Slot],
-) -> None:
-    """Snap the vertices next to a line point that crossed to the wrong side of the line."""
-    ci, pi = slot
-    count = len(sources)
-    for step in (1, -1):
-        k = pi
-        for _ in range(count - 1):
-            k = (k + step) % count
-            if (ci, k) in stops or not isinstance(sources[k], Vertex):
-                break
-            default_side = axis_value(reference[k], line.axis) - line.coordinate
-            if default_side * (placed[ci][k][line.axis] - target) >= 0:
-                break
-            placed[ci][k][line.axis] = target
-
-
-def _realign(line: BridgeLine, placed: _Placed, master: Coords, spans: list[_Span]) -> float | None:
-    """Put every point of ``line`` on its master line; that line's coordinate, or None."""
-    axis = line.axis
-    cuts = [member.slot for member in line.members if member.cut]
-    target = fmean(placed[ci][pi][axis] for ci, pi in cuts)
-    for member in line.members:
-        ci, pi = member.slot
-        point = _crossing(member, axis, target, master, spans, placed[ci][pi])
-        if point is None:
-            return None
-        placed[ci][pi] = point
-    return target
+def _stops(smap: SurgeryMap) -> frozenset[Slot]:
+    """Line points and cut points: the slots projection never moves or walks past."""
+    members = {member.slot for line in smap.lines for member in line.members}
+    cuts = {
+        (ci, pi)
+        for ci, sources in enumerate(smap.sources)
+        for pi, source in enumerate(sources)
+        if isinstance(source, EdgePoint)
+    }
+    return frozenset(members | cuts)
 
 
 def replay(
@@ -381,17 +310,18 @@ def replay(
     no crossing master edge, or an ambiguous vertex's candidates differ in the master.
     """
     master = glyph_coordinates(master_input)
-    spans = _contour_spans(input_default)
+    spans = contour_spans(input_default)
     placed = _place(smap, master)
     if placed is None:
         return None
-    stops = frozenset(member.slot for line in smap.lines for member in line.members)
-    for line in smap.lines:
-        target = _realign(line, placed, master, spans)
-        if target is None:
+    targets = [mean_target(line, placed) for line in smap.lines]
+    if smap.widths is not None:
+        targets = pair_targets(smap.widths, smap.lines, placed, master_input, targets)
+    stops = _stops(smap)
+    for line, target in zip(smap.lines, targets, strict=True):
+        if not realign_line(line, target, placed, master, spans):
             return None
         for member in line.members:
-            ci = member.slot[0]
-            reference = output_default.contours[ci].points
-            _project(member.slot, line, target, smap.sources[ci], placed, reference, stops)
+            reference = output_default.contours[member.slot[0]].points
+            project(member.slot, line, target, placed, reference, stops)
     return with_coordinates(output_default, [(p[0], p[1]) for row in placed for p in row])

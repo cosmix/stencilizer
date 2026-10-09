@@ -2,15 +2,16 @@
 
 import time
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
-from stencilizer.config import BridgeConfig, GeometryConfig
+from stencilizer.config import BridgeConfig, BridgeWidthScaling, GeometryConfig
 from stencilizer.core.analyzer import GlyphAnalyzer
 from stencilizer.core.surgery import GlyphTransformer
 from stencilizer.domain.glyph import Glyph
 from stencilizer.exceptions import VariationDataError
 from stencilizer.variable.align import align_to_lines, snap_distance
+from stencilizer.variable.bridge_width import fallback_steps, width_rule
 from stencilizer.variable.flatten import flatten_compatible
 from stencilizer.variable.model import VariableGlyph
 from stencilizer.variable.overlaps import remove_overlaps_compatible
@@ -38,8 +39,14 @@ def _bridged(
     bridge: BridgeConfig,
     geometry: GeometryConfig,
     upm: int,
+    *,
+    step: BridgeWidthScaling | None = None,
 ) -> VariableOutcome | None:
-    """Default surgery replayed on every master, rounded and validated; None on failure."""
+    """Default surgery replayed on every master, rounded and validated; None on failure.
+
+    ``step`` is the width mode that sizes each bridge's gap in every master; None keeps
+    every bridge line at the mean of its cut points, unpaired.
+    """
     transformer = GlyphTransformer(
         analyzer=GlyphAnalyzer(), bridge_config=bridge, geometry_config=geometry
     )
@@ -53,6 +60,9 @@ def _bridged(
     default = align_to_lines(smap, merged.default, outcome.glyph, snap=snap)
     if default is None:
         return None
+    if step is not None:
+        scaling = bridge.model_copy(update={"width_scaling": step})
+        smap = replace(smap, widths=width_rule(smap, merged.default, default, scaling, upm))
     replayed: list[Glyph] = []
     for master in merged.masters:
         glyph = replay(smap, merged.default, default, master)
@@ -67,14 +77,31 @@ def _bridged(
     return VariableOutcome(result, outcome.bridge_count, outcome.unbridged_count)
 
 
+def _first_bridged(
+    vg: VariableGlyph,
+    merged: VariableGlyph,
+    bridge: BridgeConfig,
+    geometry: GeometryConfig,
+    upm: int,
+) -> VariableOutcome | None:
+    """The outcome of the first fallback step that succeeds, or None when every one fails."""
+    for step in fallback_steps(bridge):
+        outcome = _bridged(vg, merged, bridge, geometry, upm, step=step)
+        if outcome is not None:
+            return outcome
+    return None
+
+
 def transform_variable_glyph(
     vg: VariableGlyph, bridge: BridgeConfig, geometry: GeometryConfig, upm: int
 ) -> VariableOutcome:
     """Bridge ``vg`` in every master, or return it unchanged with its islands counted.
 
-    The unchanged outcome counts the islands of the deepest stage reached: the
-    overlap-merged default, else the flattened default, else the input default. A
-    ``VariationDataError`` from any step gives the unchanged outcome; it never escapes.
+    The replay tries ``bridge``'s width mode, then fixed width, then per-line mean
+    targets; the first that bridges every master wins. The unchanged outcome counts the
+    islands of the deepest stage reached: the overlap-merged default, else the flattened
+    default, else the input default. A ``VariationDataError`` from any step gives the
+    unchanged outcome; it never escapes.
     """
     if vg.default.is_empty():
         return VariableOutcome(vg, 0, 0)
@@ -89,7 +116,7 @@ def transform_variable_glyph(
         islands = _island_count(merged.default, upm)
         if islands == 0:
             return VariableOutcome(vg, 0, 0)
-        outcome = _bridged(vg, merged, bridge, geometry, upm)
+        outcome = _first_bridged(vg, merged, bridge, geometry, upm)
         return outcome if outcome is not None else VariableOutcome(vg, 0, islands)
     except VariationDataError:
         return VariableOutcome(vg, 0, _island_count(counted, upm))
