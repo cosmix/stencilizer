@@ -9,6 +9,7 @@ from stencilizer.cli.output import (
     console,
     print_error,
     print_font_info,
+    print_glyph_islands,
     print_step,
     variable_axes,
 )
@@ -18,15 +19,15 @@ from stencilizer.io import FontReader
 from stencilizer.variable.reader import is_variable
 
 
-def _handle_list_islands(font_path: Path, quiet: bool) -> None:
-    """List each glyph with islands."""
+def _handle_list_islands(font_path: Path, display_path: Path, quiet: bool) -> None:
+    """List each glyph with islands; ``display_path`` is the font as the user named it."""
     if not quiet:
         print_step("Loading font")
     try:
         with FontReader(font_path) as reader:
             if not quiet:
                 print_font_info(
-                    font_path=str(font_path),
+                    font_path=str(display_path),
                     font_type=reader.format,
                     glyph_count=reader.glyph_count,
                     upm=reader.units_per_em,
@@ -37,8 +38,7 @@ def _handle_list_islands(font_path: Path, quiet: bool) -> None:
         if not quiet:
             console.print(f"\n[bold]{len(island_glyphs)} glyphs with islands[/bold]\n")
         for glyph_name, island_count in island_glyphs:
-            plural = "island" if island_count == 1 else "islands"
-            console.print(f"  {glyph_name}: {island_count} {plural}")
+            print_glyph_islands(glyph_name, island_count)
     except Exception as error:
         print_error(f"Could not analyze font: {error}")
         raise typer.Exit(code=1) from error
@@ -61,16 +61,20 @@ def _scan_islands(reader: FontReader) -> list[tuple[str, int]]:
 
 
 def _handle_dry_run(
-    font_path: Path, settings: StencilizerSettings, quiet: bool, verbose: bool
+    font_path: Path,
+    display_path: Path,
+    settings: StencilizerSettings,
+    quiet: bool,
+    verbose: bool,
 ) -> None:
-    """Analyze a font without changing it."""
+    """Analyze a font without changing it; ``display_path`` is the font as the user named it."""
     if not quiet:
         print_step("Loading font")
     try:
         with FontReader(font_path) as reader:
             if not quiet:
                 print_font_info(
-                    font_path=str(font_path),
+                    font_path=str(display_path),
                     font_type=reader.format,
                     glyph_count=reader.glyph_count,
                     upm=reader.units_per_em,
@@ -100,8 +104,7 @@ def _report_dry_run(
     if verbose and island_glyphs:
         console.print("\n[bold]Glyphs[/bold]")
         for glyph_name, island_count in island_glyphs[:20]:
-            plural = "island" if island_count == 1 else "islands"
-            console.print(f"  {glyph_name}: {island_count} {plural}")
+            print_glyph_islands(glyph_name, island_count)
         if len(island_glyphs) > 20:
             console.print(f"  ... +{len(island_glyphs) - 20} more")
     console.print(f"\n[bold green]{SYM_OK} Dry run complete[/bold green] – no changes made")  # noqa: RUF001

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 from rich.console import Console
+from rich.markup import escape
 from rich.progress import (
     BarColumn,
     Progress,
@@ -93,7 +94,7 @@ def print_font_info(
     console.print(line1)
     console.print(f"  {glyph_count:,} glyphs {SYM_DOT} {upm:,} UPM")
     if axes is not None:
-        console.print(f"  Variable axes: {axes}")
+        console.print(f"  Variable axes: {escape(axes)}")
 
 
 def variable_axes(font: TTFont) -> str | None:
@@ -123,7 +124,18 @@ def print_islands_found(count: int, glyph_names: list[str], verbose: bool) -> No
         names_str = ", ".join(glyph_names[:20])
         if len(glyph_names) > 20:
             names_str += f" {SYM_DOT}{SYM_DOT}{SYM_DOT} (+{len(glyph_names) - 20} more)"
-        console.print(f"  {names_str}")
+        console.print(f"  {escape(names_str)}")
+
+
+def print_glyph_islands(glyph_name: str, island_count: int) -> None:
+    """Print one glyph and its island count.
+
+    Args:
+        glyph_name: Glyph name taken from the font, so it is printed verbatim
+        island_count: Number of islands in the glyph
+    """
+    plural = "island" if island_count == 1 else "islands"
+    console.print(f"  {escape(glyph_name)}: {island_count} {plural}")
 
 
 def _format_time(seconds: float) -> str:
@@ -201,9 +213,11 @@ def print_error(message: str, details: str | None = None) -> None:
         message: Main error message
         details: Optional detailed error information
     """
-    console.print(f"\n[bold red]{SYM_ERR} Error:[/bold red] {message}")
+    # Messages carry file paths, glyph names and axis tags from the user's font, so they are
+    # escaped instead of parsed as Rich markup.
+    console.print(f"\n[bold red]{SYM_ERR} Error:[/bold red] {escape(message)}")
     if details:
-        console.print(f"  {details}")
+        console.print(f"  {escape(details)}")
 
 
 def print_cancellation_notice() -> None:
