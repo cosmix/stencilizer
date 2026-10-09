@@ -28,25 +28,30 @@ if [ -z "$VERSION" ]; then
 fi
 
 if [ "$OS" = "Darwin" ]; then
-  GUI_BIN="dist/Stencilizer.app/Contents/MacOS/Stencilizer"
+  GUI_BIN="dist/gui/Stencilizer.app/Contents/MacOS/Stencilizer"
 else
-  GUI_BIN="dist/stencilizer-gui/stencilizer-gui"
+  GUI_BIN="dist/gui/stencilizer-gui/stencilizer-gui"
 fi
+CLI_BIN="dist/cli/stencilizer"
 
+# The CLI and GUI get separate directories: on case-insensitive filesystems (macOS)
+# the GUI's "Stencilizer" outputs would otherwise overwrite the CLI's "stencilizer".
 pyinstaller() {
+  local kind="$1"
+  shift
   uv run --no-sync pyinstaller --noconfirm --clean \
-    --distpath dist --workpath build --specpath build "$@"
+    --distpath "dist/$kind" --workpath "build/$kind" --specpath "build/$kind" "$@"
 }
 
 build() {
   rm -rf dist build
-  pyinstaller --onefile --console --name stencilizer \
+  pyinstaller cli --onefile --console --name stencilizer \
     --exclude-module PySide6 packaging/entry_cli.py
   if [ "$OS" = "Darwin" ]; then
-    pyinstaller --onedir --windowed --name Stencilizer \
+    pyinstaller gui --onedir --windowed --name Stencilizer \
       --osx-bundle-identifier io.github.cosmix.stencilizer packaging/entry_gui.py
   else
-    pyinstaller --onedir --windowed --name stencilizer-gui packaging/entry_gui.py
+    pyinstaller gui --onedir --windowed --name stencilizer-gui packaging/entry_gui.py
   fi
 }
 
@@ -55,14 +60,14 @@ package() {
   local stage="dist/release/$name"
   rm -rf dist/release
   mkdir -p "$stage"
-  cp dist/stencilizer "$stage/"
+  cp "$CLI_BIN" "$stage/"
   if [ "$OS" = "Darwin" ]; then
     # ditto preserves the bundle's symlinks and extended attributes.
-    ditto dist/Stencilizer.app "$stage/Stencilizer.app"
+    ditto dist/gui/Stencilizer.app "$stage/Stencilizer.app"
     (cd dist/release && ditto -c -k --keepParent "$name" "$name.zip")
     ARCHIVE="dist/release/$name.zip"
   else
-    cp -a dist/stencilizer-gui "$stage/"
+    cp -a dist/gui/stencilizer-gui "$stage/"
     tar -C dist/release -czf "dist/release/$name.tar.gz" "$name"
     ARCHIVE="dist/release/$name.tar.gz"
   fi
@@ -76,7 +81,7 @@ smoke() {
   tmp="$(mktemp -d)"
   trap 'rm -rf "${tmp:-}"' EXIT
 
-  out="$(dist/stencilizer --version)"
+  out="$("$CLI_BIN" --version)"
   echo "$out"
   if [ "$out" != "Stencilizer v$VERSION" ]; then
     echo "error: expected 'Stencilizer v$VERSION'" >&2
@@ -86,7 +91,7 @@ smoke() {
   # Exercises the ProcessPoolExecutor path of the frozen binary. The processor always
   # starts workers with spawn, so this tests freeze_support on every platform.
   for font in Roboto-Regular.ttf CommitMono-Cosmix-700-Regular.otf; do
-    dist/stencilizer "tests/fixtures/$font" -o "$tmp/$font" --workers 2
+    "$CLI_BIN" "tests/fixtures/$font" -o "$tmp/$font" --workers 2
     test -s "$tmp/$font" || { echo "error: no output for $font" >&2; exit 1; }
   done
 
