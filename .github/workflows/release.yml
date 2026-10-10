@@ -22,11 +22,10 @@ jobs:
             echo "::error::Tag $GITHUB_REF_NAME points to a commit that is not on main"
             exit 1
           fi
-      - name: Tag must match package version
+      - name: Tag must be a release version
         run: |
-          version="$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/stencilizer/__init__.py)"
-          if [ "$version" != "${GITHUB_REF_NAME#v}" ]; then
-            echo "::error::src/stencilizer/__init__.py version is '$version', tag $GITHUB_REF_NAME requires '${GITHUB_REF_NAME#v}'"
+          if ! [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?$ ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME must be vMAJOR.MINOR.PATCH, optionally followed by a PEP 440 suffix (a, b, rc) and a number, for example v1.0.0rc1"
             exit 1
           fi
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -62,9 +61,9 @@ jobs:
           cd release
           sha256sum -- * > SHA256SUMS
           flags=()
-          # Hyphenated tags and PEP 440 pre-releases (a, b, rc) are pre-releases.
+          # PEP 440 pre-releases (a, b, rc) are pre-releases.
           case "$GITHUB_REF_NAME" in
-            *-* | *[0-9]a[0-9]* | *[0-9]b[0-9]* | *[0-9]rc[0-9]*) flags+=(--prerelease) ;;
+            *[0-9]a[0-9]* | *[0-9]b[0-9]* | *[0-9]rc[0-9]*) flags+=(--prerelease) ;;
           esac
           gh release create "$GITHUB_REF_NAME" --verify-tag \
             --title "Stencilizer $GITHUB_REF_NAME" --generate-notes \

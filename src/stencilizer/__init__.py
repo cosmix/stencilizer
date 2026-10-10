@@ -11,7 +11,8 @@ This will create Roboto-Regular-stenciled.ttf with bridges added to glyphs like
 O, A, B, D, P, R, Q, 4, 6, 8, 9, @, etc.
 """
 
-__version__ = "0.1.0"
+from stencilizer._version import __version__
+
 __author__ = "Dimosthenis Kaponis"
 
 __all__ = ["__author__", "__version__"]

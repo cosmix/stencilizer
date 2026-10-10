@@ -401,14 +401,15 @@ ruff format src tests
 
 ## Releasing
 
-1. Bump `__version__` in `src/stencilizer/__init__.py` (the single version source; `pyproject.toml` reads it and `uv.lock` does not record it), commit, and push `main`.
-2. Tag and push the tag:
+The git tag is the only source of the version (hatch-vcs); no file holds it. Push `main`, then tag and push the tag:
 
 ```bash
 git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
-The release workflow refuses tags whose commit is not on `origin/main` or whose version does not match `__version__`, and checks that `uv.lock` is current. Otherwise it runs the checks, builds the Linux and macOS executables, and publishes a GitHub release with the archives and `SHA256SUMS`. Tags containing `-` or a PEP 440 pre-release suffix (`a`, `b`, `rc`, for example `v1.0.0rc1`) are marked as pre-releases.
+The tag sets the version. Untagged builds get `X.Y.(Z+1).devN+g<sha>`, and `src/stencilizer/_version.py` is generated at build time and git-ignored.
+
+The release workflow refuses tags that are not `vMAJOR.MINOR.PATCH` (optionally with a PEP 440 pre-release suffix `a`, `b` or `rc` plus a number, for example `v1.0.0rc1`) and tags whose commit is not on `origin/main`, and checks that `uv.lock` is current. Otherwise it runs the checks, builds the Linux and macOS executables, and publishes a GitHub release with the archives and `SHA256SUMS`. Pre-release suffixes mark the release as a pre-release.
 
 - Push `main` before the tag. A tag on a commit not yet on `origin/main` fails the verify job; push `main`, then re-run the workflow.
 - To re-release a version, delete the existing GitHub release and its tag first.

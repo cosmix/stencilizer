@@ -21,9 +21,11 @@ case "$OS-$ARCH" in
   *) echo "error: unsupported platform $OS-$ARCH" >&2; exit 1 ;;
 esac
 
-VERSION="$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/stencilizer/__init__.py)"
+# The version comes from the git tag through hatch-vcs; dev builds look like
+# 0.1.dev5+g8d13a85, and "+" is valid in file names.
+VERSION="$(uv run --no-sync python -c 'from stencilizer import __version__; print(__version__)')"
 if [ -z "$VERSION" ]; then
-  echo "error: cannot read __version__ from src/stencilizer/__init__.py" >&2
+  echo "error: cannot read __version__ from the installed stencilizer package" >&2
   exit 1
 fi
 
