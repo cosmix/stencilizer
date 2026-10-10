@@ -1,11 +1,6 @@
 """Integration tests for processor bridge counts and per-glyph directions."""
 
-import functools
-import multiprocessing
-from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-
-import pytest
 
 from stencilizer.config import BridgeConfig, LoggingConfig, StencilizerSettings
 from stencilizer.config.settings import BridgeDirection
@@ -13,15 +8,6 @@ from stencilizer.core.processor import FontProcessor, _islands_bridged, process_
 from stencilizer.domain import Glyph
 from stencilizer.io import FontReader
 from tests.integration.conftest import FIXTURES_DIR
-
-
-@pytest.fixture(autouse=True)
-def spawn_process_pool(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Start processor workers with the same spawn context as the application."""
-    monkeypatch.setattr(
-        "stencilizer.core.processor.ProcessPoolExecutor",
-        functools.partial(ProcessPoolExecutor, mp_context=multiprocessing.get_context("spawn")),
-    )
 
 
 def _processor(tmp_path: Path) -> FontProcessor:
@@ -57,10 +43,10 @@ def test_duplicate_islands_are_counted_once_each() -> None:
 
 def test_unbridgeable_glyph_reports_zero_bridges() -> None:
     """Report bridges only for islands that the transformer changed."""
-    reader = FontReader(FIXTURES_DIR / "Roboto-Regular.ttf")
+    reader = FontReader(FIXTURES_DIR / "Lato-Black.ttf")
     reader.load()
     try:
-        expected_counts = {"four": 0, "AE": 0, "O": 1, "B": 2, "eight": 2}
+        expected_counts = {"uni0234": 0, "glyph00144": 0, "O": 1, "B": 2}
         for name, expected_count in expected_counts.items():
             glyph = _glyph(reader, name)
             result = process_glyph(

@@ -6,7 +6,9 @@ with progress bars, tables, and formatted messages.
 
 from pathlib import Path
 
+from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 from rich.console import Console
+from rich.markup import escape
 from rich.progress import (
     BarColumn,
     Progress,
@@ -73,7 +75,9 @@ def print_step(message: str) -> None:
     console.print(f"\n{SYM_STEP} {message}")
 
 
-def print_font_info(font_path: str, font_type: str, glyph_count: int, upm: int) -> None:
+def print_font_info(
+    font_path: str, font_type: str, glyph_count: int, upm: int, axes: str | None = None
+) -> None:
     """Print font information.
 
     Args:
@@ -81,6 +85,7 @@ def print_font_info(font_path: str, font_type: str, glyph_count: int, upm: int) 
         font_type: Font format type (e.g., "TrueType", "OpenType")
         glyph_count: Total number of glyphs in font
         upm: Units per em value
+        axes: Variable font axis ranges, if present
     """
     # Use Text to safely handle paths with special characters
     line1 = Text("  ")
@@ -88,6 +93,22 @@ def print_font_info(font_path: str, font_type: str, glyph_count: int, upm: int) 
     line1.append(f" ({font_type})")
     console.print(line1)
     console.print(f"  {glyph_count:,} glyphs {SYM_DOT} {upm:,} UPM")
+    if axes is not None:
+        console.print(f"  Variable axes: {escape(axes)}")
+
+
+def variable_axes(font: TTFont) -> str | None:
+    """Return a compact description of a variable font's axes."""
+    if "fvar" not in font:
+        return None
+    return ", ".join(
+        f"{axis.axisTag} {_axis_value(axis.minValue)}\N{EN DASH}{_axis_value(axis.maxValue)}"
+        for axis in font["fvar"].axes
+    )
+
+
+def _axis_value(value: float) -> str:
+    return str(int(value)) if value.is_integer() else str(value)
 
 
 def print_islands_found(count: int, glyph_names: list[str], verbose: bool) -> None:
@@ -103,7 +124,18 @@ def print_islands_found(count: int, glyph_names: list[str], verbose: bool) -> No
         names_str = ", ".join(glyph_names[:20])
         if len(glyph_names) > 20:
             names_str += f" {SYM_DOT}{SYM_DOT}{SYM_DOT} (+{len(glyph_names) - 20} more)"
-        console.print(f"  {names_str}")
+        console.print(f"  {escape(names_str)}")
+
+
+def print_glyph_islands(glyph_name: str, island_count: int) -> None:
+    """Print one glyph and its island count.
+
+    Args:
+        glyph_name: Glyph name taken from the font, so it is printed verbatim
+        island_count: Number of islands in the glyph
+    """
+    plural = "island" if island_count == 1 else "islands"
+    console.print(f"  {escape(glyph_name)}: {island_count} {plural}")
 
 
 def _format_time(seconds: float) -> str:
@@ -181,9 +213,11 @@ def print_error(message: str, details: str | None = None) -> None:
         message: Main error message
         details: Optional detailed error information
     """
-    console.print(f"\n[bold red]{SYM_ERR} Error:[/bold red] {message}")
+    # Messages carry file paths, glyph names and axis tags from the user's font, so they are
+    # escaped instead of parsed as Rich markup.
+    console.print(f"\n[bold red]{SYM_ERR} Error:[/bold red] {escape(message)}")
     if details:
-        console.print(f"  {details}")
+        console.print(f"  {escape(details)}")
 
 
 def print_cancellation_notice() -> None:

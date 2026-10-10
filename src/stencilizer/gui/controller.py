@@ -57,6 +57,7 @@ class GuiController(QObject):
         self._bridge: BridgeConfig = BridgeConfig()
         self._max_workers: int | None = None
         self._directions: dict[str, BridgeDirection] = {}
+        self._location: dict[str, float] = {}
         self._survey_timer = QTimer(self)
         self._survey_timer.setSingleShot(True)
         self._survey_timer.setInterval(SURVEY_DELAY_MS)
@@ -97,6 +98,7 @@ class GuiController(QObject):
         self._session = session
         self._selected_glyph = None
         self._directions = {}
+        self._location = {axis.tag: axis.default for axis in session.axes}
         self._finish_task()
         self.font_loaded.emit(session)
         self._schedule_survey()
@@ -132,6 +134,11 @@ class GuiController(QObject):
         self._max_workers = max_workers
         self._refresh_preview()
         self._schedule_survey()
+
+    def set_location(self, location: dict[str, float]) -> None:
+        """Store the user-space axis location and refresh the selected glyph."""
+        self._location = dict(location)
+        self._refresh_preview()
 
     def direction_for(self, name: str) -> BridgeDirection:
         """Return the explicit bridge direction selected for a glyph."""
@@ -172,6 +179,7 @@ class GuiController(QObject):
                 self._bridge,
                 GeometryConfig(),
                 directions=self._directions,
+                location=self._location,
             )
         except StencilizerError as error:
             self.error.emit(str(error))

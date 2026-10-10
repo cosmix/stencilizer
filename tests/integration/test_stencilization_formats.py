@@ -134,12 +134,11 @@ class TestEdgeCases:
 
         pytest.fail("Glyph 'B' not found")
 
-    def test_output_font_tables_preserved(self) -> None:
+    def test_output_font_tables_preserved(self, settings: StencilizerSettings) -> None:
         """Test that important font tables are preserved in output."""
         if not ROBOTO_PATH.exists():
             pytest.skip("Roboto font fixture not available")
 
-        settings = StencilizerSettings()
         processor = FontProcessor(settings)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -162,12 +161,11 @@ class TestEdgeCases:
             original.close()
             processed.close()
 
-    def test_processed_font_has_same_glyph_count(self) -> None:
+    def test_processed_font_has_same_glyph_count(self, settings: StencilizerSettings) -> None:
         """Test that processing doesn't add or remove glyphs."""
         if not ROBOTO_PATH.exists():
             pytest.skip("Roboto font fixture not available")
 
-        settings = StencilizerSettings()
         processor = FontProcessor(settings)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -196,12 +194,11 @@ class TestOpenTypeFonts:
         font_format = commit_mono_otf_reader.format
         assert font_format == "OpenType", f"Expected 'OpenType', got '{font_format}'"
 
-    def test_process_otf_font_creates_valid_output(self) -> None:
+    def test_process_otf_font_creates_valid_output(self, settings: StencilizerSettings) -> None:
         """Test that processing OTF creates a valid, loadable font."""
         if not COMMIT_MONO_OTF_PATH.exists():
             pytest.skip("CommitMono OTF font fixture not available")
 
-        settings = StencilizerSettings()
         processor = FontProcessor(settings)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -226,12 +223,11 @@ class TestOpenTypeFonts:
             assert "CFF " in output_font, "Output should be a valid OpenType/CFF font"
             output_font.close()
 
-    def test_otf_glyphs_have_valid_charstrings(self) -> None:
+    def test_otf_glyphs_have_valid_charstrings(self, settings: StencilizerSettings) -> None:
         """Test that processed OTF glyphs have valid charstrings that can be drawn."""
         if not COMMIT_MONO_OTF_PATH.exists():
             pytest.skip("CommitMono OTF font fixture not available")
 
-        settings = StencilizerSettings()
         processor = FontProcessor(settings)
 
         with tempfile.TemporaryDirectory() as tmpdir:

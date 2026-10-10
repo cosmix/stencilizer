@@ -95,3 +95,10 @@ Icon
 # loom worktrees
 .worktrees/
 .worktrees
+
+# Generated output: pytest basetemp, stenciled fonts, video renders
+pytest-of-*/
+*-Stenciled.ttf
+*-Stenciled.otf
+*.mp4
+intro-encodes/

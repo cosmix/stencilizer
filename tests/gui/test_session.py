@@ -19,6 +19,7 @@ from stencilizer.exceptions import FontLoadError, FontSaveError
 from stencilizer.gui.session import FontSession, source_digest, unsupported_reason
 from stencilizer.io import FontReader
 from stencilizer.utils import ProcessingStats
+from tests.font_helpers import CANTARELL
 from tests.gui.conftest import build_settings
 
 pytestmark = pytest.mark.usefixtures("staging_root")
@@ -58,13 +59,12 @@ def _geometry() -> GeometryConfig:
 
 def test_open_rejects_unsupported_fonts(
     processor: FontProcessor,
-    cff2_font_path: Path,
-    variable_font_path: Path,
     roboto_path: Path,
     commit_mono_path: Path,
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Unsupported tables are rejected before glyph classification."""
+    """Fonts without a supported outline table are rejected before classification."""
     calls: list[FontReader] = []
 
     def record_classification(reader: FontReader) -> GlyphClassification:
@@ -74,16 +74,37 @@ def test_open_rejects_unsupported_fonts(
 
     monkeypatch.setattr(processor, "classify_glyphs", record_classification)
 
-    with pytest.raises(FontLoadError, match="CFF2 outlines are not supported"):
-        FontSession.open(cff2_font_path, processor)
-    with pytest.raises(FontLoadError, match="variable fonts \\(fvar table\\) are not supported"):
-        FontSession.open(variable_font_path, processor)
+    outline_less = tmp_path / "outline-less.ttf"
+    font = TTFont(roboto_path)
+    del font["glyf"]
+    del font["loca"]
+    font.save(outline_less)
+    with pytest.raises(FontLoadError, match="no supported outline table"):
+        FontSession.open(outline_less, processor)
 
     assert unsupported_reason(TTFont()) is not None
-    assert "glyf or CFF" in (unsupported_reason(TTFont()) or "")
+    assert "glyf, CFF or CFF2" in (unsupported_reason(TTFont()) or "")
     assert unsupported_reason(TTFont(roboto_path)) is None
     assert unsupported_reason(TTFont(commit_mono_path)) is None
     assert calls == []
+
+
+def test_open_variable_font_lists_axes(processor: FontProcessor, variable_font_path: Path) -> None:
+    """A variable font opens with its axes."""
+    session = FontSession.open(variable_font_path, processor)
+    assert [(axis.tag, axis.name) for axis in session.axes] == [("wght", "wght")]
+
+
+@pytest.mark.parametrize("cff2_font_path", [CANTARELL], ids=["variable"])
+def test_open_accepts_cff2(processor: FontProcessor, cff2_font_path: Path) -> None:
+    """A variable CFF2 font opens and lists its island glyphs.
+
+    The static CFF2 case is covered by test_cff2_session_contracts.py.
+    """
+    session = FontSession.open(cff2_font_path, processor)
+
+    assert "O" in {glyph.name for glyph in session.island_glyphs}
+    assert unsupported_reason(TTFont(cff2_font_path)) is None
 
 
 @pytest.mark.parametrize(

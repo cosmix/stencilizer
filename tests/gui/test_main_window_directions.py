@@ -69,7 +69,7 @@ def test_grid_lists_bridged_composites(window: MainWindow, qtbot: QtBot, roboto_
     }
     assert window.grid.count() == 1027
     assert "Aacute" in names
-    assert "465 composites" in window.header.font_details_label.text()
+    assert "465" in [label.text() for label in window.controls.font_info.value_labels]
 
 
 def test_choosing_direction_updates_preview_and_marker(
@@ -104,13 +104,13 @@ def test_composite_selection_shows_following_picker(
 
 
 def test_unbridged_glyphs_marked_in_grid(
-    window: MainWindow, qtbot: QtBot, roboto_path: Path
+    window: MainWindow, qtbot: QtBot, lato_black_path: Path
 ) -> None:
     """Glyphs the survey reports as unbridged are marked in the grid; others are not."""
     with qtbot.waitSignal(window.controller.unbridged_changed, timeout=10_000):
-        _load_font(window, qtbot, roboto_path)
+        _load_font(window, qtbot, lato_black_path)
 
-    assert _grid_item(window, "four").data(UNBRIDGED_ROLE) is True
+    assert _grid_item(window, "uni0234").data(UNBRIDGED_ROLE) is True
     assert _grid_item(window, "O").data(UNBRIDGED_ROLE) is False
 
 

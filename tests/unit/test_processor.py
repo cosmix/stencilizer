@@ -119,6 +119,7 @@ class TestFontProcessor:
         mock_reader.glyph_count = 1
         mock_reader.iter_glyphs.return_value = [sample_glyph_no_island]
         mock_reader._font = Mock()
+        mock_reader.font = MagicMock()
         mock_reader_class.return_value = mock_reader
 
         mock_writer = Mock()
@@ -157,6 +158,7 @@ class TestFontProcessor:
         mock_reader.glyph_count = 1
         mock_reader.iter_glyphs.return_value = [sample_glyph_with_island]
         mock_reader._font = Mock()
+        mock_reader.font = MagicMock()
         mock_reader_class.return_value = mock_reader
 
         mock_writer = Mock()
@@ -216,6 +218,7 @@ class TestFontProcessor:
         mock_reader.glyph_count = 1
         mock_reader.iter_glyphs.return_value = [empty_glyph]
         mock_reader._font = Mock()
+        mock_reader.font = MagicMock()
         mock_reader_class.return_value = mock_reader
 
         mock_writer = Mock()
@@ -251,6 +254,7 @@ class TestFontProcessor:
         mock_reader.glyph_count = 1
         mock_reader.iter_glyphs.return_value = [sample_glyph_with_island]
         mock_reader._font = Mock()
+        mock_reader.font = MagicMock()
         mock_reader_class.return_value = mock_reader
 
         mock_writer = Mock()

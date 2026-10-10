@@ -13,6 +13,7 @@ from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
 
 from stencilizer.domain.contour import Contour, Point, PointType
 from stencilizer.domain.glyph import Glyph, GlyphMetadata
+from stencilizer.exceptions import GlyphProcessingError
 
 
 def fonttools_glyph_to_domain(
@@ -29,7 +30,7 @@ def fonttools_glyph_to_domain(
 
     # CFF fonts use opposite winding convention from TrueType.
     # Reverse contour points to normalize to TrueType convention.
-    is_cff = "CFF " in font
+    is_cff = "CFF " in font or "CFF2" in font
     if is_cff:
         for contour in contours:
             contour.points = list(reversed(contour.points))
@@ -60,7 +61,7 @@ def domain_glyph_to_fonttools(glyph: Glyph, original_glyph: Any, font: TTFont) -
         font: The TTFont object
 
     Raises:
-        NotImplementedError: If glyph format is not supported
+        GlyphProcessingError: If the font has no glyf, CFF or CFF2 table
     """
     is_truetype = "glyf" in font
 
@@ -68,8 +69,10 @@ def domain_glyph_to_fonttools(glyph: Glyph, original_glyph: Any, font: TTFont) -
         _update_truetype_glyph(glyph, original_glyph, font)
     elif "CFF " in font:
         _update_cff_glyph(glyph, original_glyph, font)
+    elif "CFF2" in font:
+        _update_cff2_glyph(glyph, original_glyph, font)
     else:
-        raise NotImplementedError("Unsupported font format")
+        raise GlyphProcessingError(glyph.name, "font has no glyf, CFF or CFF2 table")
 
 
 def _recording_to_contours(recording: list[tuple[str, tuple[Any, ...]]]) -> list[Contour]:
@@ -128,6 +131,14 @@ def _append_quadratic_points(points: list[Point], args: tuple[Any, ...]) -> None
         points.append(Point(x, y, point_type))
 
 
+def build_unicode_by_name(font: TTFont) -> dict[str, int]:
+    """Map each glyph name to its lowest-listed code point in the best cmap."""
+    mapping: dict[str, int] = {}
+    for code_point, glyph_name in (font.getBestCmap() or {}).items():
+        mapping.setdefault(glyph_name, code_point)
+    return mapping
+
+
 def _extract_glyph_metadata(
     name: str, font: TTFont, unicode_by_name: dict[str, int] | None = None
 ) -> GlyphMetadata:
@@ -148,9 +159,7 @@ def _extract_glyph_metadata(
         advance_width, lsb = hmtx.metrics[name]
 
     if unicode_by_name is None:
-        unicode_by_name = {}
-        for code_point, glyph_name in (font.getBestCmap() or {}).items():
-            unicode_by_name.setdefault(glyph_name, code_point)
+        unicode_by_name = build_unicode_by_name(font)
     unicode_value = unicode_by_name.get(name)
 
     return GlyphMetadata(
@@ -229,11 +238,32 @@ def _emit_segment(
         raise ValueError("Cubic segment requires exactly two control points")
 
 
+def _store_cff_charstring(
+    glyph: Glyph, pen: T2CharStringPen, charstrings: Any, private: Any, global_subrs: Any
+) -> None:
+    """Draw ``glyph`` on ``pen`` and store the compiled charstring under its name.
+
+    Domain contours use TrueType winding (normalized on read), so each contour's points
+    are reversed to restore the CFF winding convention.
+    """
+    for contour in glyph.contours:
+        _draw_closed_contour(pen, list(reversed(contour.points)), PointType.OFF_CURVE_CUBIC)
+
+    charstring = pen.getCharString(private=private, globalSubrs=global_subrs, optimize=False)
+    charstrings[glyph.name] = charstring
+
+
+def _fd_private_dict(top_dict: Any, charstrings: Any, name: str) -> Any:
+    """Private dict of the font dict (FDArray entry) that governs glyph ``name``.
+
+    A font without FDSelect reports no selector and uses FDArray[0].
+    """
+    _, fd_index = charstrings.getItemAndSelector(name)
+    return top_dict.FDArray[fd_index or 0].Private
+
+
 def _update_cff_glyph(glyph: Glyph, _: Any, font: TTFont) -> None:
     """Update CFF/OpenType glyph from domain model.
-
-    Note: Domain contours use TrueType winding convention (normalized on read).
-    We must reverse points when writing back to restore CFF winding convention.
 
     Args:
         glyph: Domain glyph model
@@ -243,15 +273,31 @@ def _update_cff_glyph(glyph: Glyph, _: Any, font: TTFont) -> None:
     cff_table = font["CFF "]
     top_dict = cff_table.cff.topDictIndex[0]
     charstrings = top_dict.CharStrings
-    glyph_name = glyph.name
-    private = top_dict.Private
-    global_subrs = cff_table.cff.GlobalSubrs
+    private = getattr(top_dict, "Private", None)
+    if private is None:
+        # CID-keyed fonts have no top-level Private; the glyph's FDSelect entry names it.
+        private = _fd_private_dict(top_dict, charstrings, glyph.name)
+    # The pen writes ``width`` verbatim, but a CFF charstring stores it as the offset from
+    # the private dict's nominalWidthX.
+    width = glyph.metadata.advance_width - private.nominalWidthX
+    pen = T2CharStringPen(width=width, glyphSet=font.getGlyphSet())
+    _store_cff_charstring(glyph, pen, charstrings, private, cff_table.cff.GlobalSubrs)
 
-    pen = T2CharStringPen(width=glyph.metadata.advance_width, glyphSet=font.getGlyphSet())
 
-    for contour in glyph.contours:
-        # Reverse points to restore CFF winding convention.
-        _draw_closed_contour(pen, list(reversed(contour.points)), PointType.OFF_CURVE_CUBIC)
+def _update_cff2_glyph(glyph: Glyph, _: Any, font: TTFont) -> None:
+    """Update a static CFF2 glyph from the domain model.
 
-    charstring = pen.getCharString(private=private, globalSubrs=global_subrs, optimize=False)
-    charstrings[glyph_name] = charstring
+    CFF2 charstrings carry no width (advances live in hmtx), and the private dict
+    comes from the glyph's FDArray entry because CFF2 has no top-level one.
+
+    Args:
+        glyph: Domain glyph model
+        _: Original fonttools glyph (unused)
+        font: The TTFont object
+    """
+    cff_table = font["CFF2"]
+    top_dict = cff_table.cff.topDictIndex[0]
+    charstrings = top_dict.CharStrings
+    private = _fd_private_dict(top_dict, charstrings, glyph.name)
+    pen = T2CharStringPen(width=None, glyphSet=font.getGlyphSet(), CFF2=True)
+    _store_cff_charstring(glyph, pen, charstrings, private, cff_table.cff.GlobalSubrs)

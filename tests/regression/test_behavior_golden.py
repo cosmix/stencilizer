@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from stencilizer.config.settings import StencilizerSettings
+from stencilizer.config.settings import LoggingConfig, StencilizerSettings
 from stencilizer.core.processor import FontProcessor
 from tests.regression._golden import (
     FIXTURES,
@@ -74,7 +74,8 @@ def test_island_glyphs_match_golden(font_key: str) -> None:
 def test_commitmono_full_pipeline_matches_golden(tmp_path: Path) -> None:
     expected: dict[str, Any] = _load_golden(GOLDEN_DIR / "commitmono_pipeline.json.gz")
     output_path = tmp_path / "out.otf"
-    FontProcessor(StencilizerSettings()).process(FIXTURES["commitmono"], output_path)
+    settings = StencilizerSettings(logging=LoggingConfig(log_file=tmp_path / "run.log"))
+    FontProcessor(settings).process(FIXTURES["commitmono"], output_path)
     actual = _record_font(output_path)
 
     assert set(actual) == set(expected), (

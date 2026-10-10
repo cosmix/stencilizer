@@ -59,12 +59,11 @@ def analyze_glyph_from_font(font: TTFont, glyph_name: str):
 class TestEndToEndOutput:
     """Test that stencilized fonts have correct winding in output file."""
 
-    def test_stencilize_and_verify_b(self):
+    def test_stencilize_and_verify_b(self, settings: StencilizerSettings):
         """Stencilize font and verify 'b' glyph in output."""
         if not LATO_BLACK_PATH.exists():
             pytest.skip("Lato Black not available")
 
-        settings = StencilizerSettings()
         processor = FontProcessor(settings)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -108,12 +107,11 @@ class TestEndToEndOutput:
                 print(f"Hole ratio: {ratio:.2%}")
                 assert ratio >= 0.5, f"'b' lost too much hole area: {ratio:.2%}"
 
-    def test_stencilize_and_verify_registered(self):
+    def test_stencilize_and_verify_registered(self, settings: StencilizerSettings):
         """Stencilize font and verify ® glyph in output."""
         if not LATO_BLACK_PATH.exists():
             pytest.skip("Lato Black not available")
 
-        settings = StencilizerSettings()
         processor = FontProcessor(settings)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -153,12 +151,11 @@ class TestEndToEndOutput:
             orig_font.close()
             out_font.close()
 
-    def test_compare_all_glyphs_with_holes(self):
+    def test_compare_all_glyphs_with_holes(self, settings: StencilizerSettings):
         """Compare all glyphs that had holes - verify they still have holes."""
         if not LATO_BLACK_PATH.exists():
             pytest.skip("Lato Black not available")
 
-        settings = StencilizerSettings()
         processor = FontProcessor(settings)
 
         with tempfile.TemporaryDirectory() as tmpdir:

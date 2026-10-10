@@ -117,7 +117,7 @@ Reviewer rounds recorded malformed because the report went through the hand-back
 
 ## README image placement
 
-Place screenshots alongside the instructions they illustrate; avoid stacking large visuals at the top.
+Place screenshots in the section they illustrate, never stacked directly under another large visual. The user wants the GUI screenshot high in the README: the Desktop App section sits right after Features, separated from the logo and hero image by the Overview and Features text.
 See [README layout](mistakes/readme-layout.md) for the correction and placement rule.
 
 ## Review probes must supply complete glyph metadata
@@ -180,6 +180,56 @@ See [README layout](mistakes/readme-layout.md) for the correction and placement 
 
 A 2x offscreen grab clamps the window to the tiny default offscreen screen, so the UI comes out cropped and magnified. Pass a 3840x2160 screen through `offscreen:configfile=` and keep `QT_SCALE_FACTOR=2`. See [offscreen-screenshots](mistakes/offscreen-screenshots.md).
 
+## Fixed-parameter replay breaks bridge-cut coincidence across masters
+
+**What happened**: While planning variable-font support, replaying the default master's bridge surgery in other masters by keeping each cut point at the same edge parameter t was recommended and accepted. A spike on Ubuntu[wdth,wght] showed islands at an axis extreme in 554 of 561 bridged glyphs.
+
+**Why**: Surgery output relies on exact coincidence: a cut hole piece touches its outer piece along the bridge line, and the analyzer only accepts touching contours as non-nested. Fixed t keeps each point on its edge but moves the points of one bridge line off a common line, leaving hairline slivers that close the counter.
+
+**Prevention**: Any cross-master replay of surgery must keep every point of one bridge line on one axis-aligned line in each master: recompute the line coordinate per master, intersect it with the polyline near the default edge, and project same-contour vertices that land on the wrong side onto the line. Validate every master with the analyzer before trusting a replay design.
+
+**Fix**: The variable-font plan uses per-master realignment; the spike measured 23 of 561 (Ubuntu) and 27 of 576 (Inter) bridged glyphs still failing at some extreme, which the plan leaves unbridged and counts.
+
 ## CI action refs and release version bumps
 
 setup-uv has no floating major tags, so `@v10` fails at job setup; verify every action ref with `gh api`. A version bump must also run `uv lock`, or `uv sync --locked` fails. See [ci-release](mistakes/ci-release.md).
+
+## GUI tests open real windows when QT_QPA_PLATFORM is set
+
+**What happened**: During the 2026-10-09 pressure test of the variable-font plan, a teammate timed `uv run pytest tests/gui/test_session.py tests/gui/test_main_window.py tests/gui/test_controller_errors.py` from a desktop session. The test windows appeared on the user's screen, showing a stenciled glyph preview.
+**Why**: `tests/gui/conftest.py:24` sets `os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")`, and the desktop session exports `QT_QPA_PLATFORM=wayland;xcb`, so the default never applies.
+**Prevention**: Run every Qt command with `QT_QPA_PLATFORM=offscreen` set explicitly on the command line; probes and acceptance commands must not rely on the conftest default. Assign the variable instead of setdefault-ing it in conftest.
+**Fix**: The variable-font plan forces offscreen in `tests/gui/conftest.py` (stage cff2-static) and prefixes its GUI acceptance commands with `QT_QPA_PLATFORM=offscreen`.
+
+## Integration-verify process traps
+
+A hardening round on non-blocking suggestions, workers skipping format and type checks, refactors that break earlier wiring patterns, and relay and watch quirks. See [review-and-completion-gates](mistakes/review-and-completion-gates.md).
+
+## Variable-font engine and pool mistakes
+
+Switching the processor pool to spawn dropped worker logging; snapping CFF2 deltas to a 16.16 grid still reopened counters after fontTools' instancer rounded each operand; `GlyphAnalyzer` passed outputs whose counters were closed by a one-unit hairline or a bow-tie. Recreate what fork inherited in a pool initializer, validate through the consumer of the stored format, and count holes with the pathops union. See [variable-fonts](mistakes/variable-fonts.md).
+
+## Subagent used git stash to measure a baseline
+
+**What happened**: While fixing the triangular-counter bridge placement (Inter four), a worker ran git stash in a scratch command to compare output against the base tree, then git stash pop. The tree came back intact, but a stash on a dirty tree shared with concurrent agents can drop or misapply their edits.
+**Why**: The brief asked for before/after counts of unbridged glyphs without naming a safe way to get the before numbers.
+**Prevention**: Briefs that ask for before/after measurements name the baseline source: the tests/regression goldens, or a JSON dump the worker writes from the unchanged tree before editing. State that git stash, checkout and reset are forbidden, not only commit and add.
+**Fix**: None needed; the stash list was empty afterwards and no file was lost.
+
+## Bridge changes judged by counts alone hid a rendering regression
+
+**What happened**: The triangular-counter fallback (core/merger_candidates.py) was declared regression-free because no glyph's bridge count fell and no unbridged count rose. Roboto uniA66E had gone from 6 to 3 unbridged counters while its render got worse: off-centre bridge bands crossed sibling eye counters without splitting them, leaving black wedges (uniA69A and uniA69B too at 1000 UPM).
+**Why**: The transformer's counts and GlyphAnalyzer's island count are both unreliable once output contours touch or overlap. CommitMono .notdef went from 4 to 6 analyzer islands with a pixel-identical render, and uniA66E from 6 to 2 while the render got worse.
+**Prevention**: Check any change to bridge placement with a nonzero-winding raster count of enclosed paper per glyph, plus HEAD-versus-new rendered sheets of every glyph whose output changed. Counts alone do not show a regression.
+**Fix**: _band_line_clear rejects a candidate band whose lines cross any other contour, holes included.
+
+## GUI font-info mistakes
+
+Iterating a fontTools `TTFont` with `for tag in font` (ruff SIM118 suggests it) raises `KeyError('0')` and broke every GUI open; iterate `font.keys()` and test with real fixtures through `FontSession.open`. A parentless widget used as a temporary in a test is collected mid-call. See [gui](mistakes/gui.md).
+
+## Whole-file staging committed another session's uncommitted edits
+
+**What happened**: Committing the triangular-counter fix, git add on whole files staged a concurrent session's unfinished edits in tests/gui/test_main_window_directions.py (an assertion on its new font_info panel) and doc/loom/knowledge/mistakes.md (a section linking a file it had not committed). A follow-up commit stripped those hunks, but the other session had committed its font-info work in between, relying on them, so that follow-up broke its test and dropped its section until a third commit restored them.
+**Why**: Only two of the shared files were diffed before staging. The others were assumed to hold only this change because a subagent had edited them. The cleanup was then written against a stale picture of HEAD, without checking git log for commits made in the meantime.
+**Prevention**: When another session works in the same checkout, run git diff on every file before staging it, not a sample, and stage only your own hunks (git apply --cached with your own patch). Before any corrective commit, run git log to see what landed since, and run the gate on a detached worktree of the new HEAD before calling it done.
+**Fix**: Commit 63c5615 removed the hunks, and the next commit restored them once the other session's commits were found to need them.

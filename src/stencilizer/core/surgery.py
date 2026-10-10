@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from stencilizer.config.settings import BridgeConfig, GeometryConfig
+from stencilizer.config.settings import REFERENCE_STROKE_FRACTION, BridgeConfig, GeometryConfig
 from stencilizer.core.analyzer import GlyphAnalyzer
 from stencilizer.core.curve import curve_tolerance, flatten_contour
 from stencilizer.core.merger import ContourMerger
@@ -53,7 +53,7 @@ class GlyphTransformer:
         hierarchy = self.analyzer.analyze(working)
         if not hierarchy.islands:
             return TransformOutcome(glyph, 0, 0)
-        reference_stroke = upm * 0.1
+        reference_stroke = upm * REFERENCE_STROKE_FRACTION
         bridge_width = (self.bridge_config.width_percent / 100.0) * reference_stroke
         use_spanning = self.bridge_config.use_spanning_bridges
         ctx = SurgeryContext(

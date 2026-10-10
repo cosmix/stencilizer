@@ -1,6 +1,6 @@
 # Review And Completion Gates
 
-> Malformed reviewer rounds, sandbox fingerprint drift, codex lint leftovers
+> Malformed reviews, fingerprint drift, IV process traps, loom tool quirks
 
 ## Reviewer rounds recorded malformed
 
@@ -31,3 +31,43 @@
 **Fix:** Restore the pulled manifests, reapply stable dependency updates through uv, preserve GUI changes, and verify the combined tree before committing.
 
 The recovered early font-format rejection initially used different wording from the pulled GUI. Preserve the existing GUI wording for CFF2 and variable fonts when rejecting in FontReader; GUI integration tests cover this boundary.
+
+## Hardening round on non-blocking suggestions
+
+**What happened**: In integration-verify, after the gate was green and review round 13 was clean, an extra hardening round (an engineer spawn, another full gate and another review) went to non-blocking reviewer suggestions and added about 30 minutes; the user objected to the time.
+**Why**: Suggestions were treated as work to finish before completion.
+**Prevention**: Once the gate is green and the review round matching the tree has no findings, commit and complete; leave suggestions pending for knowledge-distill unless one names a concrete correctness failure.
+
+## Workers skipped format and type checks
+
+**What happened**: Gate round 1 of variable-engine failed on `ruff format` (overlaps.py) and mypy (replay.py:258, a loop variable reused with two types).
+**Why**: Workers read the no-verify rule as covering format and type checks.
+**Prevention**: Briefs ask each worker to run `ruff format` and mypy once on its own files as its single narrow check.
+
+## Refactors in integration-verify break earlier stages' wiring patterns
+
+**What happened**: Completion of integration-verify re-runs every earlier stage's wiring grep patterns; moving code (a classification dataclass into its own module) or folding calls into a helper (`print_reader_info`) broke patterns such as `unsupported_islands` in core/processor.py and `axes=` in cli/app.py.
+**Prevention**: Before refactoring in integration-verify, list the plan's wiring entries (`rg -n 'pattern:' doc/plans/*PLAN*.md`) and re-check them after every fix round.
+
+## Orchestration tool traps
+
+- Piping `loom stage commit` through `rg` or `head` drops the `LOOM_RELAY_V1` line, so the relay hook never sees the ticket and `loom request status` reports "not relayed yet". Pipe only through `tail -3`, or not at all.
+- The completion artifact check flags any `raise NotImplementedError` in an artifact file, including an old unsupported-format branch; raise a typed error instead.
+- `loom subagents watch` exits 5 ("worker set does not resolve to one Claude parent UUID") when started right after spawning a mixed Claude and codex pair, and exits 3 when a codex job record still says running while its process is gone even though the job ended `completed`, exit 0. Check the job record before treating exit 3 as a codex failure; fall back to the agent completion notifications on exit 5.
+- Untracked dotfiles at the worktree root (`.bashrc`, `.zshrc`, `.gitconfig`, `.idea`, `.vscode`, `.mcp.json`, ...) are sandbox mount points; stage named files only (see "Review fingerprint differs inside and outside the Bash sandbox").
+- The Read tool is blocked for files under `$TMPDIR`; copy the file into the scratchpad directory or read it with `rg -n '' <file>`.
+- A codex unit that times out at 540 s leaves its fix unfinished (fontTools `instantiateVariableFont(downgradeCFF2=True)` raises "Input font does not contain a CFF2 table" on glyf fonts; pass `downgradeCFF2="CFF2" in font`); the orchestrator finishes it or re-splits the unit.
+
+## Docstring rewrap left a 120-character line
+
+**What happened**: Rewrapping `transform_variable_glyph`'s docstring split only the line before the long one, leaving a 120-character line that review round 2 caught.
+**Why**: The edit was not followed by a re-read of the lines after it, and the format check does not wrap docstring prose.
+**Prevention**: After rewrapping prose, run `rg '^.{101,}' <file>` on the file before the gate.
+**Fix**: Rewrapped the paragraph and re-ran the gate.
+
+## Watching a codex unit before its wrapper started
+
+**What happened**: `loom subagents watch --worker codex:<unit-id>` exited 5 ("worker set does not resolve to one Claude parent UUID") when the unit id was named before the forwarder had started its wrapper.
+**Why**: The unit id binds only once the wrapper writes its start record (`.loom/work/subagents/<stage>/starts.jsonl`).
+**Prevention**: Watch the forwarder's own `claude:<agent-id>` from the spawn result; name a `codex:` worker only after its start record exists.
+**Fix**: Re-armed the watch on the forwarder's agent id.

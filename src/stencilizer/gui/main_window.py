@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QProgressBar,
+    QScrollArea,
     QSplitter,
     QStackedWidget,
     QVBoxLayout,
@@ -25,11 +26,46 @@ from stencilizer.gui.direction_picker import DirectionPicker
 from stencilizer.gui.glyph_grid import GlyphGrid
 from stencilizer.gui.glyph_view import ComparisonView
 from stencilizer.gui.header import HeaderBar
+from stencilizer.gui.loader import LOADER_DELAY_MS, LoadingView
 from stencilizer.io.writer import FontWriter
 
 if TYPE_CHECKING:
     from stencilizer.gui.session import FontSession, PreviewResult
     from stencilizer.utils import ProcessingStats
+
+
+class _SidebarScroll(QScrollArea):
+    """Scroll area that keeps tall controls at their minimum heights, sized so nothing is clipped.
+
+    The bounds come from the controls' own minimum and maximum widths: a scroll area does not
+    inherit its widget's maximum, and a shown scroll bar takes its width from the viewport.
+    """
+
+    def __init__(self, controls: QWidget) -> None:
+        """Wrap ``controls`` in a frameless area that never scrolls sideways."""
+        super().__init__()
+        self._controls = controls
+        self.setWidget(controls)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._fit_width()
+
+    def bar_extent(self) -> int:
+        """Width the themed vertical scroll bar takes from the viewport when shown."""
+        return self.verticalScrollBar().sizeHint().width()
+
+    def _fit_width(self) -> None:
+        """Bound the width by the controls' limits and the themed scroll bar's width."""
+        extent = self.bar_extent()
+        self.setMinimumWidth(self._controls.minimumWidth() + extent)
+        self.setMaximumWidth(self._controls.maximumWidth() + extent)
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802
+        """Refit the width when a new style changes the scroll bar's width."""
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.StyleChange:
+            self._fit_width()
 
 
 class MainWindow(QMainWindow):
@@ -41,6 +77,12 @@ class MainWindow(QMainWindow):
         self.controller = controller
         self._output_path: Path | None = None
         self._current_glyph: str | None = None
+        self._opening: str | None = None
+        self._page_before_loader: QWidget | None = None
+        self._loader_timer = QTimer(self)
+        self._loader_timer.setSingleShot(True)
+        self._loader_timer.setInterval(LOADER_DELAY_MS)
+        self._loader_timer.timeout.connect(self._show_loader)
         self.setWindowTitle("Stencilizer")
         self.resize(1280, 800)
         self.setMinimumSize(960, 600)
@@ -62,9 +104,12 @@ class MainWindow(QMainWindow):
         self.grid_stack = QStackedWidget()
         self.grid_stack.addWidget(self.empty_state)
         self.grid_stack.addWidget(self.grid)
+        self.loading_view = LoadingView()
+        self.grid_stack.addWidget(self.loading_view)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self.controls)
+        sidebar = _SidebarScroll(self.controls)
+        splitter.addWidget(sidebar)
         splitter.addWidget(self.grid_stack)
         splitter.addWidget(self._build_preview_pane())
         splitter.setChildrenCollapsible(False)
@@ -72,7 +117,7 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 0)
-        splitter.setSizes([300, 520, 460])
+        splitter.setSizes([300 + sidebar.bar_extent(), 520, 460])
 
         central = QWidget()
         layout = QVBoxLayout(central)
@@ -121,10 +166,12 @@ class MainWindow(QMainWindow):
         self.controls.parameters_changed.connect(self._update_parameters)
         self.controls.workers_slider.valueChanged.connect(self._update_parameters)
         self.grid.glyph_selected.connect(self.controller.select_glyph)
+        self.controls.axes_panel.location_changed.connect(self.controller.set_location)
         self.controller.font_loaded.connect(self._on_font_loaded)
         self.controller.preview_ready.connect(self._on_preview_ready)
         self.controller.save_progress.connect(self.set_progress)
         self.controller.busy_changed.connect(self.header.set_busy)
+        self.controller.busy_changed.connect(self._on_busy_changed)
         self.controller.save_finished.connect(self._on_save_finished)
         self.controller.error.connect(self._on_error)
 
@@ -136,8 +183,31 @@ class MainWindow(QMainWindow):
         self.controller.unbridged_changed.connect(self._on_unbridged_changed)
 
     def load_font(self, path: Path) -> None:
-        """Ask the controller to load a font from ``path``."""
+        """Ask the controller to load a font from ``path``; show the loader if it runs long."""
         self.controller.open_font(path)
+        if self.controller.is_busy and self._opening is None:
+            self._opening = path.name
+            self._loader_timer.start()
+
+    def _show_loader(self) -> None:
+        """Swap the glyph area for the loading view while a slow open is still running."""
+        if self._opening is None:
+            return
+        self._page_before_loader = self.grid_stack.currentWidget()
+        self.loading_view.start(self._opening)
+        self.grid_stack.setCurrentWidget(self.loading_view)
+        self.statusBar().showMessage(f"Opening {self._opening}…")
+
+    def _on_busy_changed(self, busy: bool) -> None:
+        """End a pending open: cancel the loader delay and restore the previous page."""
+        if busy or self._opening is None:
+            return
+        self._opening = None
+        self._loader_timer.stop()
+        if self.grid_stack.currentWidget() is self.loading_view:
+            self.loading_view.stop()
+            self.grid_stack.setCurrentWidget(self._page_before_loader or self.empty_state)
+            self.statusBar().clearMessage()
 
     def save_font(self, path: Path) -> None:
         """Ask the controller to save; remember ``path`` only when not already busy."""
@@ -200,11 +270,10 @@ class MainWindow(QMainWindow):
         """Populate the window from a newly loaded font session."""
         session = cast("FontSession", result)
         self.grid.set_glyphs(session.display_glyphs, session.ascender, session.descender)
-        self.header.set_font_info(
-            session.path.name,
-            f"{session.font_format} · {session.units_per_em} UPM · {session.glyph_count} glyphs · "
-            f"{len(session.island_glyphs)} with islands · {len(session.composites)} composites",
-        )
+        self.controls.axes_panel.set_axes(session.axes)
+        self.controls.set_variable(bool(session.axes))
+        self.controls.font_info.set_info(session.info)
+        self.setWindowTitle(f"{session.path.name} — Stencilizer")
         self.header.set_font_loaded(True)
         self.grid_stack.setCurrentWidget(self.grid)
         self.comparison.clear()
@@ -220,6 +289,7 @@ class MainWindow(QMainWindow):
         if session is None:
             return
         self._current_glyph = name
+        self.controls.axes_panel.set_location_applies(not session.is_composite(name))
         sources = session.direction_sources(name)
         direction = self.controller.direction_for(sources[0]) if sources else BridgeDirection.AUTO
         self.direction_picker.show_for(name, sources, direction)

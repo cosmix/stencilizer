@@ -1,18 +1,11 @@
 """Shared fixtures for GUI tests."""
 
-import functools
-import multiprocessing
 import os
 import tempfile
 from collections.abc import Callable, Iterator
-from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import pytest
-from fontTools.cffLib.CFFToCFF2 import convertCFFToCFF2  # type: ignore[import-untyped]
-from fontTools.misc.textTools import Tag  # type: ignore[import-untyped]
-from fontTools.ttLib import TTFont  # type: ignore[import-untyped]
-from fontTools.ttLib.tables._f_v_a_r import Axis, table__f_v_a_r  # type: ignore[import-untyped]
 from pytestqt.qtbot import QtBot
 
 from stencilizer.config import BridgeConfig, LoggingConfig, ProcessingConfig, StencilizerSettings
@@ -20,21 +13,18 @@ from stencilizer.core import FontProcessor
 from stencilizer.domain import Glyph
 from stencilizer.gui.controller import GuiController
 from stencilizer.gui.session import FontSession
+from tests.font_helpers import (
+    COMMIT_MONO,
+    LATO_BLACK,
+    ROBOTO,
+    fvar_only_roboto,
+    write_commit_mono_cff2,
+)
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
-FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 LOAD_TIMEOUT = 30_000
 SAVE_TIMEOUT = 120_000
-
-
-@pytest.fixture(autouse=True)
-def spawn_process_pool(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Save workers start with spawn, as app.main does, without the process-global switch."""
-    monkeypatch.setattr(
-        "stencilizer.core.processor.ProcessPoolExecutor",
-        functools.partial(ProcessPoolExecutor, mp_context=multiprocessing.get_context("spawn")),
-    )
 
 
 @pytest.fixture
@@ -57,41 +47,32 @@ def staging_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Pa
 @pytest.fixture
 def roboto_path() -> Path:
     """Roboto Regular (TrueType, UPM 2048)."""
-    return FIXTURES_DIR / "Roboto-Regular.ttf"
+    return ROBOTO
+
+
+@pytest.fixture
+def lato_black_path() -> Path:
+    """Lato Black (TrueType), whose glyphs include some that get no bridge."""
+    return LATO_BLACK
 
 
 @pytest.fixture
 def commit_mono_path() -> Path:
     """CommitMono 700 (OpenType/CFF)."""
-    return FIXTURES_DIR / "CommitMono-Cosmix-700-Regular.otf"
+    return COMMIT_MONO
 
 
 @pytest.fixture
-def cff2_font_path(tmp_path: Path, commit_mono_path: Path) -> Path:
-    """CommitMono converted to CFF2 outlines (unsupported by the core)."""
-    font = TTFont(commit_mono_path)
-    convertCFFToCFF2(font)
-    path = tmp_path / "converted.otf"
-    font.save(path)
-    return path
+def cff2_font_path(tmp_path: Path) -> Path:
+    """CommitMono converted to static CFF2 outlines, a font the application opens and saves."""
+    return write_commit_mono_cff2(tmp_path / "converted.otf")
 
 
 @pytest.fixture
-def variable_font_path(tmp_path: Path, roboto_path: Path) -> Path:
-    """Roboto with a one-axis fvar table: a variable font (unsupported by the core)."""
-    font = TTFont(roboto_path)
-    axis = Axis()
-    axis.axisTag = Tag("wght")
-    axis.minValue = 100.0
-    axis.defaultValue = 400.0
-    axis.maxValue = 900.0
-    axis.axisNameID = 256
-    fvar = table__f_v_a_r()
-    fvar.axes = [axis]
-    fvar.instances = []
-    font["fvar"] = fvar
+def variable_font_path(tmp_path: Path) -> Path:
+    """Roboto with a one-axis fvar table: a variable font whose glyphs carry no variation data."""
     path = tmp_path / "modified.ttf"
-    font.save(path)
+    fvar_only_roboto().save(path)
     return path
 
 

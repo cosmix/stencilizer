@@ -110,7 +110,7 @@ def test_quiet_mode_reports_unbridged_islands(
 
 
 def test_unsupported_format_keeps_its_error_type(tmp_path: Path) -> None:
-    error = FontFormatError(str(tmp_path / "font.ttf"), "CFF2 is unsupported")
+    error = FontFormatError(str(tmp_path / "font.ttf"), "no supported outline table")
     reader = MagicMock()
     reader.__enter__.side_effect = error
     with (

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from stencilizer.config import LoggingConfig, StencilizerSettings
 from stencilizer.io import FontReader
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
@@ -32,3 +33,9 @@ def commit_mono_otf_reader() -> Generator[FontReader, None, None]:
     reader.load()
     yield reader
     reader.close()
+
+
+@pytest.fixture
+def settings(tmp_path: Path) -> StencilizerSettings:
+    """Default settings logging into tmp_path, never the working directory."""
+    return StencilizerSettings(logging=LoggingConfig(log_file=tmp_path / "run.log"))

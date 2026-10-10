@@ -19,15 +19,16 @@ class MergeDispatch:
     geometry: GeometryConfig
     upm: int
 
-    def horizontal(self, center_y: float | None = None) -> list[Contour]:
+    def horizontal(
+        self, center_y: float | None = None, extent: tuple[float, float] | None = None
+    ) -> list[Contour]:
         m = self.measure
         return create_horizontal_bridge_contours(
             self.inner,
             self.outer,
             m.center_y if center_y is None else center_y,
             m.half_width,
-            m.inner_min_x,
-            m.inner_max_x,
+            *(extent or (m.inner_min_x, m.inner_max_x)),
             all_contours=self.all_contours,
             processed_nested=self.processed_nested,
             epsilon=self.geometry.get_line_epsilon(self.upm),
@@ -35,15 +36,16 @@ class MergeDispatch:
             point_tolerance=self.geometry.get_point_dedup_tolerance(self.upm),
         )
 
-    def vertical(self) -> list[Contour]:
+    def vertical(
+        self, center_x: float | None = None, extent: tuple[float, float] | None = None
+    ) -> list[Contour]:
         m = self.measure
         return create_vertical_bridge_contours(
             self.inner,
             self.outer,
-            m.center_x,
+            m.center_x if center_x is None else center_x,
             m.half_width,
-            m.inner_min_y,
-            m.inner_max_y,
+            *(extent or (m.inner_min_y, m.inner_max_y)),
             all_contours=self.all_contours,
             processed_nested=self.processed_nested,
             epsilon=self.geometry.get_line_epsilon(self.upm),

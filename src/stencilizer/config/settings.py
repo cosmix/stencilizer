@@ -81,6 +81,17 @@ class BridgeDirection(StrEnum):
     HORIZONTAL = "horizontal"  # bridge line at a fixed y: an O loses its left and right strokes
 
 
+class BridgeWidthScaling(StrEnum):
+    """How a variable font's bridge gaps change from master to master."""
+
+    FIXED = "fixed"  # the default master's gap in every master
+    PROPORTIONAL = "proportional"  # each gap follows the thickness of the stroke it cuts
+
+
+# BridgeConfig's width fields are percentages of a reference stroke of this fraction of the UPM.
+REFERENCE_STROKE_FRACTION = 0.1
+
+
 class BridgeConfig(BaseModel):
     """Configuration for bridge generation."""
 
@@ -97,6 +108,22 @@ class BridgeConfig(BaseModel):
     direction: BridgeDirection = Field(
         default=BridgeDirection.AUTO,
         description="Bridge direction for every island of the glyph (auto keeps the analyzer's choice)",
+    )
+    width_scaling: BridgeWidthScaling = Field(
+        default=BridgeWidthScaling.FIXED,
+        description="How a variable font's bridge gaps change across masters (fixed: the default master's gap everywhere; proportional: each gap follows the stroke it cuts)",
+    )
+    scaling_strength: float = Field(
+        default=100.0,
+        ge=0.0,
+        le=100.0,
+        description="Proportional mode: how strongly gaps follow stroke thickness, 0 (fixed) to 100 (fully proportional)",
+    )
+    min_width_percent: float = Field(
+        default=30.0,
+        ge=10.0,
+        le=110.0,
+        description="Proportional mode: the smallest gap, as a percentage of the reference stroke, never above the default master's gap",
     )
 
 
