@@ -35,7 +35,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [ci-release](mistakes/ci-release.md) | setup-uv lacks major tags; version bumps need uv lock | 33 |
+| [ci-release](mistakes/ci-release.md) | setup-uv tags, uv lock on bumps, Typer forces ANSI under GITHUB_ACTIONS | 43 |
 | [gui](mistakes/gui.md) | fontTools TTFont iteration, Qt widget lifetime in tests | 16 |
 | [offscreen-screenshots](mistakes/offscreen-screenshots.md) | Offscreen 2x GUI grabs need a large screen config file | 10 |
 | [readme-layout](mistakes/readme-layout.md) | Place README screenshots beside the content they illustrate | 13 |
