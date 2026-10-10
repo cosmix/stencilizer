@@ -30,6 +30,9 @@ from tests.font_helpers import CANTARELL, INTER, ROBOTO, island_count, units_per
 def _wide_console(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NO_COLOR", "1")
     monkeypatch.setenv("COLUMNS", "200")
+    # Typer forces a terminal at import time under GITHUB_ACTIONS, so Rich splits option names
+    # with ANSI codes; NO_COLOR drops colors only.
+    monkeypatch.setattr("typer.rich_utils.FORCE_TERMINAL", False)
 
 
 def _cli(*args: str) -> Result:
